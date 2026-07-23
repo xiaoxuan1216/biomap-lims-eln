@@ -71,6 +71,69 @@ export const SEQ_TYPES: Record<string, string> = {
   protein: "蛋白质",
 };
 
+// ─── 序列特性 ───────────────────────────────────────────────────────────
+export const FEATURE_TYPES: Record<string, string> = {
+  promoter: "启动子",
+  cds: "CDS",
+  resistance: "抗性基因",
+  origin: "复制起点",
+  terminator: "终止子",
+  tag: "标签",
+  primer_bind: "引物结合位点",
+  restriction_site: "酶切位点",
+  regulatory: "调控元件",
+  other: "其他",
+};
+
+export const FEATURE_COLORS: Record<string, string> = {
+  teal: "#14b8a6",
+  indigo: "#6366f1",
+  emerald: "#10b981",
+  amber: "#f59e0b",
+  rose: "#f43f5e",
+  cyan: "#06b6d4",
+  violet: "#8b5cf6",
+  orange: "#f97316",
+  slate: "#64748b",
+};
+
+// ─── Pipeline ───────────────────────────────────────────────────────────
+export const PIPELINE_TYPES: Record<string, { label: string; cls: string }> = {
+  gibson_assembly: { label: "Gibson 组装", cls: "bg-teal-50 text-teal-700 border-teal-200" },
+  golden_gate: { label: "Golden Gate", cls: "bg-amber-50 text-amber-700 border-amber-200" },
+  strain_engineering: { label: "菌株编辑", cls: "bg-rose-50 text-rose-700 border-rose-200" },
+  protein_expression: { label: "蛋白表达", cls: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+  dbtl_cycle: { label: "DBTL 循环", cls: "bg-violet-50 text-violet-700 border-violet-200" },
+  custom: { label: "自定义", cls: "bg-slate-100 text-slate-600 border-slate-200" },
+};
+
+export const PIPELINE_STATUS: Record<string, { label: string; cls: string }> = {
+  active: { label: "进行中", cls: "bg-blue-50 text-blue-700 border-blue-200" },
+  paused: { label: "已暂停", cls: "bg-amber-50 text-amber-700 border-amber-200" },
+  completed: { label: "已完成", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+};
+
+// ─── 设备 ───────────────────────────────────────────────────────────────
+export const EQUIP_CATEGORIES: Record<string, { label: string; cls: string }> = {
+  analytical: { label: "分析设备", cls: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+  execution: { label: "执行设备", cls: "bg-teal-50 text-teal-700 border-teal-200" },
+  automation: { label: "自动化岛台", cls: "bg-violet-50 text-violet-700 border-violet-200" },
+  support: { label: "辅助设施", cls: "bg-slate-100 text-slate-600 border-slate-200" },
+};
+
+export const EQUIP_STATUS: Record<string, { label: string; cls: string; dot: string }> = {
+  available: { label: "可用", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" },
+  in_use: { label: "使用中", cls: "bg-blue-50 text-blue-700 border-blue-200", dot: "bg-blue-500" },
+  maintenance: { label: "维护中", cls: "bg-amber-50 text-amber-700 border-amber-200", dot: "bg-amber-500" },
+  fault: { label: "故障", cls: "bg-red-50 text-red-700 border-red-200", dot: "bg-red-500" },
+};
+
+export const MAINT_TYPES: Record<string, string> = {
+  calibration: "校准",
+  maintenance: "维护",
+  repair: "维修",
+};
+
 // ─── 样本状态计算 ────────────────────────────────────────────────────────
 export type SampleAlert = "expired" | "expiring" | "low" | "empty" | null;
 

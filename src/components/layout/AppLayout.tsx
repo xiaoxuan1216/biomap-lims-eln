@@ -22,12 +22,15 @@ import {
   LogOut,
   Menu,
   X,
+  Workflow,
+  MonitorCog,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthLayoutSkeleton } from "../AuthLayoutSkeleton";
+import Copilot from "../copilot/Copilot";
 
 const NAV_GROUPS = [
   {
@@ -42,14 +45,16 @@ const NAV_GROUPS = [
     items: [
       { icon: FolderKanban, label: "项目管理", path: "/projects" },
       { icon: NotebookPen, label: "实验记录本", path: "/experiments" },
+      { icon: Workflow, label: "合成 Pipeline", path: "/pipelines" },
       { icon: Dna, label: "序列库", path: "/sequences" },
     ],
   },
   {
-    label: "库存",
+    label: "资源",
     items: [
       { icon: TestTubes, label: "样本库存", path: "/samples" },
       { icon: Snowflake, label: "存储管理", path: "/storage" },
+      { icon: MonitorCog, label: "设备管理", path: "/equipment" },
     ],
   },
 ];
@@ -232,6 +237,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </main>
       </div>
       <Toaster richColors position="top-right" />
+      <Copilot />
     </div>
   );
 }

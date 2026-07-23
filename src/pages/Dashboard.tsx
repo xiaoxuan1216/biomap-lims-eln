@@ -6,12 +6,15 @@ import {
   FolderKanban,
   NotebookPen,
   TestTubes,
-  Snowflake,
+  Workflow,
   AlertTriangle,
   Clock,
-  Dna,
   ArrowRight,
   FileCheck2,
+  MonitorCog,
+  Sparkles,
+  FlaskConical,
+  Gauge,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { ALERT_LABELS, fmtDate, sampleAlert, timeAgo, SAMPLE_TYPES } from "@/lib/labels";
@@ -32,6 +35,9 @@ export default function Dashboard() {
   const { data: expiring } = trpc.dashboard.expiringSamples.useQuery();
   const { data: lowStock } = trpc.dashboard.lowStockSamples.useQuery();
   const { data: experiments } = trpc.experiment.list.useQuery();
+  const { data: pipelines } = trpc.pipeline.list.useQuery();
+  const { data: equipmentList } = trpc.equipment.list.useQuery();
+  const { data: insights } = trpc.ai.insights.useQuery();
 
   const chartData = [
     { name: "计划中", value: experiments?.filter((e) => e.status === "planning").length ?? 0, fill: "#94a3b8" },
@@ -44,8 +50,24 @@ export default function Dashboard() {
     { label: "进行中项目", value: stats?.activeProjects, icon: FolderKanban, color: "text-teal-600 bg-teal-50", to: "/projects" },
     { label: "进行中实验", value: stats?.inProgressExperiments, icon: NotebookPen, color: "text-blue-600 bg-blue-50", to: "/experiments" },
     { label: "样本总数", value: stats?.totalSamples, icon: TestTubes, color: "text-violet-600 bg-violet-50", to: "/samples" },
-    { label: "存储位置", value: stats?.totalLocations, icon: Snowflake, color: "text-cyan-600 bg-cyan-50", to: "/storage" },
+    { label: "进行中 Pipeline", value: pipelines?.filter((p) => p.status === "active").length, icon: Workflow, color: "text-amber-600 bg-amber-50", to: "/pipelines" },
+    { label: "设备总数", value: equipmentList?.length, icon: MonitorCog, color: "text-indigo-600 bg-indigo-50", to: "/equipment" },
+    {
+      label: "设备可用",
+      value: equipmentList?.filter((e) => e.status === "available").length,
+      icon: Gauge,
+      color: "text-emerald-600 bg-emerald-50",
+      to: "/equipment",
+    },
   ];
+
+  const INSIGHT_ICONS: Record<string, typeof FlaskConical> = {
+    flask: FlaskConical,
+    alert: AlertTriangle,
+    gauge: Gauge,
+    workflow: Workflow,
+    sparkles: Sparkles,
+  };
 
   return (
     <div className="space-y-6">
@@ -75,7 +97,7 @@ export default function Dashboard() {
       )}
 
       {/* 统计卡片 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         {statCards.map((c) => (
           <Card
             key={c.label}
@@ -163,8 +185,44 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* 右：预警面板 */}
+        {/* 右：AI 洞察 + 预警面板 */}
         <div className="space-y-6">
+          <Card className="border-teal-200 bg-gradient-to-br from-teal-50/80 to-cyan-50/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-teal-600" />
+                Copilot 洞察
+                <span className="text-[10px] font-normal text-teal-600 bg-teal-100 rounded-full px-2 py-0.5 ml-auto">
+                  AI 生成
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {insights?.map((ins, i) => {
+                const Icon = INSIGHT_ICONS[ins.icon] ?? Sparkles;
+                const body = (
+                  <div
+                    className={`flex items-start gap-2.5 rounded-lg px-3 py-2 text-sm bg-white/70 border border-transparent ${
+                      ins.url ? "hover:border-teal-300 cursor-pointer transition-colors" : ""
+                    }`}
+                  >
+                    <Icon
+                      className={`h-4 w-4 mt-0.5 shrink-0 ${
+                        ins.level === "warn" ? "text-amber-500" : ins.level === "ok" ? "text-emerald-500" : "text-teal-500"
+                      }`}
+                    />
+                    <span className="text-slate-700 leading-snug">{ins.text}</span>
+                  </div>
+                );
+                return ins.url ? (
+                  <Link key={i} to={ins.url}>{body}</Link>
+                ) : (
+                  <div key={i}>{body}</div>
+                );
+              }) ?? <p className="text-sm text-muted-foreground py-2">洞察生成中…</p>}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
@@ -232,16 +290,6 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-teal-600 to-teal-700 text-white border-0">
-            <CardContent className="p-5">
-              <Dna className="h-6 w-6 mb-3 text-teal-100" />
-              <div className="text-lg font-bold">{stats?.totalSequences ?? 0} 条序列</div>
-              <p className="text-sm text-teal-100 mt-1 mb-3">序列库支持 GC% 分析与反向互补计算</p>
-              <Link to="/sequences" className="text-sm font-medium flex items-center gap-1 hover:underline">
-                进入序列库 <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>

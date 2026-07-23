@@ -6,6 +6,9 @@ import { sampleRouter } from "./sampleRouter";
 import { storageRouter } from "./storageRouter";
 import { sequenceRouter } from "./sequenceRouter";
 import { dashboardRouter } from "./dashboardRouter";
+import { pipelineRouter } from "./pipelineRouter";
+import { equipmentRouter } from "./equipmentRouter";
+import { aiRouter } from "./aiRouter";
 
 export const appRouter = createRouter({
   ping: publicQuery.query(() => ({ ok: true, ts: Date.now() })),
@@ -16,6 +19,9 @@ export const appRouter = createRouter({
   storage: storageRouter,
   sequence: sequenceRouter,
   dashboard: dashboardRouter,
+  pipeline: pipelineRouter,
+  equipment: equipmentRouter,
+  ai: aiRouter,
 });
 
 export type AppRouter = typeof appRouter;

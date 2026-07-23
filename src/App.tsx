@@ -10,6 +10,10 @@ import SampleDetail from "@/pages/SampleDetail";
 import Storage from "@/pages/Storage";
 import BoxDetail from "@/pages/BoxDetail";
 import Sequences from "@/pages/Sequences";
+import Pipelines from "@/pages/Pipelines";
+import PipelineDetail from "@/pages/PipelineDetail";
+import Equipment from "@/pages/Equipment";
+import EquipmentDetail from "@/pages/EquipmentDetail";
 import ActivityLog from "@/pages/ActivityLog";
 import SearchResults from "@/pages/SearchResults";
 import Login from "@/pages/Login";
@@ -34,6 +38,10 @@ export default function App() {
               <Route path="/storage" element={<Storage />} />
               <Route path="/storage/box/:id" element={<BoxDetail />} />
               <Route path="/sequences" element={<Sequences />} />
+              <Route path="/pipelines" element={<Pipelines />} />
+              <Route path="/pipelines/:id" element={<PipelineDetail />} />
+              <Route path="/equipment" element={<Equipment />} />
+              <Route path="/equipment/:id" element={<EquipmentDetail />} />
               <Route path="/activity" element={<ActivityLog />} />
               <Route path="/search" element={<SearchResults />} />
               <Route path="*" element={<NotFound />} />

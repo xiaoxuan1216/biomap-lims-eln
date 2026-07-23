@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import BlockEditor from "@/components/eln/BlockEditor";
 import { EXP_STATUS, PROJECT_COLORS, fmtDate, fmtDateTime, parseBlocks, type ElnBlock } from "@/lib/labels";
+import { setCopilotContext, registerInsertHandler } from "@/lib/copilotContext";
 import { toast } from "sonner";
 
 export default function ExperimentDetail() {
@@ -73,6 +74,29 @@ export default function ExperimentDetail() {
       loadedRef.current = true;
     }
   }, [exp]);
+
+  // Copilot 上下文注册（AI 方案可直接插入本实验）
+  useEffect(() => {
+    if (exp) {
+      setCopilotContext({
+        entityType: "experiment",
+        entityId: exp.id,
+        entityName: exp.code,
+      });
+      registerInsertHandler((newBlocks) => {
+        setBlocks((prev) => {
+          const next = [...prev, ...newBlocks];
+          scheduleAutoSave(next);
+          return next;
+        });
+      });
+    }
+    return () => {
+      setCopilotContext({});
+      registerInsertHandler(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exp?.id, signed]);
 
   const saveMut = trpc.experiment.saveContent.useMutation({
     onSuccess: () => setSaveState("saved"),

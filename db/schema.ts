@@ -195,6 +195,130 @@ export const sequences = mysqlTable("sequences", {
 
 export type Sequence = typeof sequences.$inferSelect;
 
+// ─── 序列特性注释（SnapGene 风格）──────────────────────────────────────
+export const sequenceFeatures = mysqlTable("sequence_features", {
+  id: serial("id").primaryKey(),
+  sequenceId: bigint("sequenceId", { mode: "number", unsigned: true }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  type: mysqlEnum("type", [
+    "promoter",
+    "cds",
+    "resistance",
+    "origin",
+    "terminator",
+    "tag",
+    "primer_bind",
+    "restriction_site",
+    "regulatory",
+    "other",
+  ])
+    .default("other")
+    .notNull(),
+  start: int("start").notNull(),
+  end: int("end").notNull(),
+  strand: int("strand").notNull().default(1),
+  color: varchar("color", { length: 20 }).default("teal").notNull(),
+  note: varchar("note", { length: 500 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SequenceFeature = typeof sequenceFeatures.$inferSelect;
+
+// ─── 合成生物学 Pipeline ────────────────────────────────────────────────
+export const pipelines = mysqlTable("pipelines", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  type: mysqlEnum("type", [
+    "gibson_assembly",
+    "golden_gate",
+    "strain_engineering",
+    "protein_expression",
+    "dbtl_cycle",
+    "custom",
+  ]).notNull(),
+  status: mysqlEnum("status", ["active", "paused", "completed"])
+    .default("active")
+    .notNull(),
+  iteration: int("iteration").notNull().default(1),
+  projectId: bigint("projectId", { mode: "number", unsigned: true }),
+  description: text("description"),
+  createdByName: varchar("createdByName", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt")
+    .defaultNow()
+    .notNull()
+    .$onUpdate(() => new Date()),
+});
+
+export type Pipeline = typeof pipelines.$inferSelect;
+
+export const pipelineStages = mysqlTable("pipeline_stages", {
+  id: serial("id").primaryKey(),
+  pipelineId: bigint("pipelineId", { mode: "number", unsigned: true }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  orderIndex: int("orderIndex").notNull(),
+  status: mysqlEnum("status", ["pending", "in_progress", "done", "skipped"])
+    .default("pending")
+    .notNull(),
+  linkedExperimentId: bigint("linkedExperimentId", { mode: "number", unsigned: true }),
+  notes: text("notes"),
+  completedAt: timestamp("completedAt"),
+});
+
+export type PipelineStage = typeof pipelineStages.$inferSelect;
+
+// ─── 实验室设备 ─────────────────────────────────────────────────────────
+export const equipment = mysqlTable("equipment", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  category: mysqlEnum("category", [
+    "analytical",
+    "execution",
+    "automation",
+    "support",
+  ]).notNull(),
+  model: varchar("model", { length: 255 }),
+  serialNo: varchar("serialNo", { length: 100 }),
+  status: mysqlEnum("status", ["available", "in_use", "maintenance", "fault"])
+    .default("available")
+    .notNull(),
+  room: varchar("room", { length: 100 }),
+  responsibleName: varchar("responsibleName", { length: 255 }),
+  specs: text("specs"),
+  nextCalibrationDate: date("nextCalibrationDate", { mode: "string" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Equipment = typeof equipment.$inferSelect;
+
+export const equipmentBookings = mysqlTable("equipment_bookings", {
+  id: serial("id").primaryKey(),
+  equipmentId: bigint("equipmentId", { mode: "number", unsigned: true }).notNull(),
+  userName: varchar("userName", { length: 255 }).notNull(),
+  purpose: varchar("purpose", { length: 500 }),
+  startTime: timestamp("startTime").notNull(),
+  endTime: timestamp("endTime").notNull(),
+  status: mysqlEnum("status", ["active", "cancelled", "completed"])
+    .default("active")
+    .notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type EquipmentBooking = typeof equipmentBookings.$inferSelect;
+
+export const equipmentMaintenance = mysqlTable("equipment_maintenance", {
+  id: serial("id").primaryKey(),
+  equipmentId: bigint("equipmentId", { mode: "number", unsigned: true }).notNull(),
+  type: mysqlEnum("type", ["calibration", "maintenance", "repair"]).notNull(),
+  description: varchar("description", { length: 500 }),
+  performedBy: varchar("performedBy", { length: 255 }),
+  performedAt: timestamp("performedAt").notNull(),
+  nextDueDate: date("nextDueDate", { mode: "string" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type EquipmentMaintenance = typeof equipmentMaintenance.$inferSelect;
+
 // ─── 活动日志（审计追踪）────────────────────────────────────────────────
 export const activities = mysqlTable(
   "activities",
