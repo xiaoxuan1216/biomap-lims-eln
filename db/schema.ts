@@ -4,8 +4,13 @@ import {
   serial,
   varchar,
   text,
+  longtext,
   timestamp,
-  // bigint,
+  bigint,
+  int,
+  decimal,
+  date,
+  index,
 } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
@@ -26,15 +31,186 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here. See docs/Database.md for schema examples and patterns.
-//
-// Example:
-// export const posts = mysqlTable("posts", {
-//   id: serial("id").primaryKey(),
-//   title: varchar("title", { length: 255 }).notNull(),
-//   content: text("content"),
-//   createdAt: timestamp("created_at").notNull().defaultNow(),
-// });
-//
-// Note: FK columns referencing a serial() PK must use:
-//   bigint("columnName", { mode: "number", unsigned: true }).notNull()
+// ─── 项目 ───────────────────────────────────────────────────────────────
+export const projects = mysqlTable("projects", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  color: varchar("color", { length: 20 }).default("teal").notNull(),
+  status: mysqlEnum("status", ["active", "on_hold", "completed"])
+    .default("active")
+    .notNull(),
+  createdById: bigint("createdById", { mode: "number", unsigned: true }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt")
+    .defaultNow()
+    .notNull()
+    .$onUpdate(() => new Date()),
+});
+
+export type Project = typeof projects.$inferSelect;
+
+// ─── 实验记录 (ELN) ─────────────────────────────────────────────────────
+export const experiments = mysqlTable(
+  "experiments",
+  {
+    id: serial("id").primaryKey(),
+    code: varchar("code", { length: 30 }).notNull().unique(),
+    projectId: bigint("projectId", { mode: "number", unsigned: true }).notNull(),
+    title: varchar("title", { length: 255 }).notNull(),
+    objective: text("objective"),
+    status: mysqlEnum("status", [
+      "planning",
+      "in_progress",
+      "completed",
+      "signed",
+    ])
+      .default("planning")
+      .notNull(),
+    content: longtext("content"),
+    signedById: bigint("signedById", { mode: "number", unsigned: true }),
+    signedByName: varchar("signedByName", { length: 255 }),
+    signedAt: timestamp("signedAt"),
+    createdById: bigint("createdById", { mode: "number", unsigned: true }),
+    createdByName: varchar("createdByName", { length: 255 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    projectIdx: index("exp_project_idx").on(table.projectId),
+    statusIdx: index("exp_status_idx").on(table.status),
+  }),
+);
+
+export type Experiment = typeof experiments.$inferSelect;
+
+// ─── 实验中消耗的样本 ───────────────────────────────────────────────────
+export const experimentSamples = mysqlTable("experiment_samples", {
+  id: serial("id").primaryKey(),
+  experimentId: bigint("experimentId", { mode: "number", unsigned: true }).notNull(),
+  sampleId: bigint("sampleId", { mode: "number", unsigned: true }).notNull(),
+  amountUsed: decimal("amountUsed", { precision: 14, scale: 3, mode: "number" })
+    .notNull()
+    .default(0),
+  note: varchar("note", { length: 500 }),
+  createdByName: varchar("createdByName", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ExperimentSample = typeof experimentSamples.$inferSelect;
+
+// ─── 存储位置（树形：实验室→冰箱→层架→冻存盒）──────────────────────────
+export const storageLocations = mysqlTable("storage_locations", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  type: mysqlEnum("type", ["lab", "freezer", "fridge", "shelf", "rack", "box"])
+    .notNull(),
+  parentId: bigint("parentId", { mode: "number", unsigned: true }),
+  temperature: varchar("temperature", { length: 20 }),
+  rows: int("rows"),
+  cols: int("cols"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type StorageLocation = typeof storageLocations.$inferSelect;
+
+// ─── 样本 ───────────────────────────────────────────────────────────────
+export const samples = mysqlTable(
+  "samples",
+  {
+    id: serial("id").primaryKey(),
+    sku: varchar("sku", { length: 30 }).notNull().unique(),
+    name: varchar("name", { length: 255 }).notNull(),
+    type: mysqlEnum("type", [
+      "cell_line",
+      "plasmid",
+      "primer",
+      "antibody",
+      "reagent",
+      "chemical",
+      "protein",
+      "virus",
+      "tissue",
+      "other",
+    ])
+      .default("other")
+      .notNull(),
+    quantity: decimal("quantity", { precision: 14, scale: 3, mode: "number" })
+      .notNull()
+      .default(0),
+    unit: varchar("unit", { length: 20 }).default("管").notNull(),
+    alertThreshold: decimal("alertThreshold", {
+      precision: 14,
+      scale: 3,
+      mode: "number",
+    }),
+    locationId: bigint("locationId", { mode: "number", unsigned: true }),
+    boxRow: int("boxRow"),
+    boxCol: int("boxCol"),
+    projectId: bigint("projectId", { mode: "number", unsigned: true }),
+    expiryDate: date("expiryDate", { mode: "string" }),
+    notes: text("notes"),
+    createdById: bigint("createdById", { mode: "number", unsigned: true }),
+    createdByName: varchar("createdByName", { length: 255 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    typeIdx: index("sample_type_idx").on(table.type),
+    locationIdx: index("sample_location_idx").on(table.locationId),
+  }),
+);
+
+export type Sample = typeof samples.$inferSelect;
+
+// ─── 库存流水 ───────────────────────────────────────────────────────────
+export const stockTransactions = mysqlTable("stock_transactions", {
+  id: serial("id").primaryKey(),
+  sampleId: bigint("sampleId", { mode: "number", unsigned: true }).notNull(),
+  delta: decimal("delta", { precision: 14, scale: 3, mode: "number" }).notNull(),
+  reason: mysqlEnum("reason", ["restock", "consume", "adjust", "dispose"]).notNull(),
+  note: varchar("note", { length: 500 }),
+  userName: varchar("userName", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type StockTransaction = typeof stockTransactions.$inferSelect;
+
+// ─── 序列库 ─────────────────────────────────────────────────────────────
+export const sequences = mysqlTable("sequences", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  type: mysqlEnum("type", ["dna", "rna", "protein"]).default("dna").notNull(),
+  sequence: text("sequence").notNull(),
+  description: text("description"),
+  createdByName: varchar("createdByName", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Sequence = typeof sequences.$inferSelect;
+
+// ─── 活动日志（审计追踪）────────────────────────────────────────────────
+export const activities = mysqlTable(
+  "activities",
+  {
+    id: serial("id").primaryKey(),
+    userName: varchar("userName", { length: 255 }),
+    action: varchar("action", { length: 50 }).notNull(),
+    entityType: varchar("entityType", { length: 30 }).notNull(),
+    entityId: bigint("entityId", { mode: "number", unsigned: true }),
+    entityName: varchar("entityName", { length: 255 }),
+    detail: text("detail"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    createdIdx: index("activity_created_idx").on(table.createdAt),
+  }),
+);
+
+export type Activity = typeof activities.$inferSelect;

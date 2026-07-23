@@ -1,14 +1,46 @@
-import { Routes, Route } from 'react-router'
-import Home from './pages/Home'
-import Login from "./pages/Login"
-import NotFound from "./pages/NotFound"
+import { Routes, Route } from "react-router";
+import AppLayout from "@/components/layout/AppLayout";
+import Dashboard from "@/pages/Dashboard";
+import Projects from "@/pages/Projects";
+import ProjectDetail from "@/pages/ProjectDetail";
+import Experiments from "@/pages/Experiments";
+import ExperimentDetail from "@/pages/ExperimentDetail";
+import Samples from "@/pages/Samples";
+import SampleDetail from "@/pages/SampleDetail";
+import Storage from "@/pages/Storage";
+import BoxDetail from "@/pages/BoxDetail";
+import Sequences from "@/pages/Sequences";
+import ActivityLog from "@/pages/ActivityLog";
+import SearchResults from "@/pages/SearchResults";
+import Login from "@/pages/Login";
+import NotFound from "@/pages/NotFound";
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
-      <Route path="*" element={<NotFound />} />
+      <Route
+        path="/*"
+        element={
+          <AppLayout>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/projects" element={<Projects />} />
+              <Route path="/projects/:id" element={<ProjectDetail />} />
+              <Route path="/experiments" element={<Experiments />} />
+              <Route path="/experiments/:id" element={<ExperimentDetail />} />
+              <Route path="/samples" element={<Samples />} />
+              <Route path="/samples/:id" element={<SampleDetail />} />
+              <Route path="/storage" element={<Storage />} />
+              <Route path="/storage/box/:id" element={<BoxDetail />} />
+              <Route path="/sequences" element={<Sequences />} />
+              <Route path="/activity" element={<ActivityLog />} />
+              <Route path="/search" element={<SearchResults />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </AppLayout>
+        }
+      />
     </Routes>
-  )
+  );
 }

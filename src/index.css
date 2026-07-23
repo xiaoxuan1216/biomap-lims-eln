@@ -4,64 +4,64 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    --background: 210 20% 98%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 175 84% 28%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 174 30% 94%;
+    --secondary-foreground: 175 84% 22%;
+    --muted: 210 20% 96%;
+    --muted-foreground: 215 16% 44%;
+    --accent: 174 40% 92%;
+    --accent-foreground: 175 84% 22%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
+    --border: 214 20% 90%;
+    --input: 214 20% 88%;
+    --ring: 175 84% 32%;
     --radius: 0.625rem;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-background: 222 47% 10%;
+    --sidebar-foreground: 215 20% 75%;
+    --sidebar-primary: 175 84% 36%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 222 40% 16%;
+    --sidebar-accent-foreground: 174 60% 70%;
+    --sidebar-border: 222 40% 16%;
+    --sidebar-ring: 175 84% 36%;
   }
 
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
+    --background: 222 47% 7%;
+    --foreground: 210 20% 96%;
+    --card: 222 44% 10%;
+    --card-foreground: 210 20% 96%;
+    --popover: 222 44% 10%;
+    --popover-foreground: 210 20% 96%;
+    --primary: 174 72% 42%;
+    --primary-foreground: 222 47% 8%;
+    --secondary: 222 40% 16%;
+    --secondary-foreground: 174 60% 75%;
+    --muted: 222 40% 14%;
+    --muted-foreground: 215 16% 60%;
+    --accent: 222 40% 18%;
+    --accent-foreground: 174 60% 75%;
+    --destructive: 0 62% 45%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --border: 222 40% 17%;
+    --input: 222 40% 20%;
+    --ring: 174 72% 42%;
+    --sidebar-background: 222 47% 8%;
+    --sidebar-foreground: 215 20% 70%;
+    --sidebar-primary: 174 72% 42%;
+    --sidebar-primary-foreground: 222 47% 8%;
+    --sidebar-accent: 222 40% 15%;
+    --sidebar-accent-foreground: 174 60% 70%;
+    --sidebar-border: 222 40% 15%;
+    --sidebar-ring: 174 72% 42%;
   }
 }
 
@@ -71,5 +71,36 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "cv02", "cv03", "cv04";
   }
 }
+
+/* 序列查看器 */
+.sequence-view {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  line-height: 1.7;
+  letter-spacing: 0.05em;
+  word-break: break-all;
+}
+.sequence-view .base-a { color: #0e9f8c; font-weight: 600; }
+.sequence-view .base-t { color: #d97706; font-weight: 600; }
+.sequence-view .base-c { color: #2563eb; font-weight: 600; }
+.sequence-view .base-g { color: #dc2626; font-weight: 600; }
+.sequence-view .base-u { color: #d97706; font-weight: 600; }
+
+/* ELN 编辑器 */
+.eln-block textarea {
+  background: transparent;
+  resize: none;
+  outline: none;
+  width: 100%;
+}
+.eln-block:focus-within {
+  background: hsl(var(--accent) / 0.35);
+}
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: hsl(215 16% 70% / 0.4); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(215 16% 60% / 0.6); }
