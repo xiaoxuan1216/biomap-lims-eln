@@ -338,3 +338,65 @@ export const activities = mysqlTable(
 );
 
 export type Activity = typeof activities.$inferSelect;
+
+// ─── 业务流 DAG（合成生物学流程编排）────────────────────────────────────
+export const workflows = mysqlTable("workflows", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  scenario: varchar("scenario", { length: 64 }).default("synbio").notNull(),
+  status: mysqlEnum("status", ["draft", "active", "completed", "archived"])
+    .default("draft")
+    .notNull(),
+  projectId: bigint("projectId", { mode: "number", unsigned: true }),
+  createdByName: varchar("createdByName", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type Workflow = typeof workflows.$inferSelect;
+
+export const workflowNodes = mysqlTable(
+  "workflow_nodes",
+  {
+    id: serial("id").primaryKey(),
+    workflowId: bigint("workflowId", { mode: "number", unsigned: true }).notNull(),
+    nodeKey: varchar("nodeKey", { length: 64 }).notNull(),
+    type: mysqlEnum("type", ["manual", "equipment", "decision", "data"]).notNull(),
+    templateKey: varchar("templateKey", { length: 64 }),
+    label: varchar("label", { length: 255 }).notNull(),
+    owner: varchar("owner", { length: 255 }),
+    equipmentId: bigint("equipmentId", { mode: "number", unsigned: true }),
+    config: text("config"),
+    status: mysqlEnum("status", ["pending", "in_progress", "done", "skipped"])
+      .default("pending")
+      .notNull(),
+    posX: int("posX").notNull().default(0),
+    posY: int("posY").notNull().default(0),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    wfIdx: index("wfnode_wf_idx").on(table.workflowId),
+  }),
+);
+
+export type WorkflowNode = typeof workflowNodes.$inferSelect;
+
+export const workflowEdges = mysqlTable(
+  "workflow_edges",
+  {
+    id: serial("id").primaryKey(),
+    workflowId: bigint("workflowId", { mode: "number", unsigned: true }).notNull(),
+    edgeKey: varchar("edgeKey", { length: 64 }).notNull(),
+    sourceKey: varchar("sourceKey", { length: 64 }).notNull(),
+    targetKey: varchar("targetKey", { length: 64 }).notNull(),
+    sourceHandle: varchar("sourceHandle", { length: 16 }),
+    label: varchar("label", { length: 64 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    wfIdx: index("wfedge_wf_idx").on(table.workflowId),
+  }),
+);
+
+export type WorkflowEdge = typeof workflowEdges.$inferSelect;

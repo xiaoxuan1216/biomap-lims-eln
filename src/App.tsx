@@ -14,6 +14,8 @@ import Pipelines from "@/pages/Pipelines";
 import PipelineDetail from "@/pages/PipelineDetail";
 import Equipment from "@/pages/Equipment";
 import EquipmentDetail from "@/pages/EquipmentDetail";
+import Workflows from "@/pages/Workflows";
+import WorkflowEditor from "@/pages/WorkflowEditor";
 import ActivityLog from "@/pages/ActivityLog";
 import SearchResults from "@/pages/SearchResults";
 import Login from "@/pages/Login";
@@ -42,6 +44,8 @@ export default function App() {
               <Route path="/pipelines/:id" element={<PipelineDetail />} />
               <Route path="/equipment" element={<Equipment />} />
               <Route path="/equipment/:id" element={<EquipmentDetail />} />
+              <Route path="/workflows" element={<Workflows />} />
+              <Route path="/workflows/:id" element={<WorkflowEditor />} />
               <Route path="/activity" element={<ActivityLog />} />
               <Route path="/search" element={<SearchResults />} />
               <Route path="*" element={<NotFound />} />

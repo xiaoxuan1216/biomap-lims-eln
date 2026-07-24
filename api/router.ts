@@ -9,6 +9,7 @@ import { dashboardRouter } from "./dashboardRouter";
 import { pipelineRouter } from "./pipelineRouter";
 import { equipmentRouter } from "./equipmentRouter";
 import { aiRouter } from "./aiRouter";
+import { workflowRouter } from "./workflowRouter";
 
 export const appRouter = createRouter({
   ping: publicQuery.query(() => ({ ok: true, ts: Date.now() })),
@@ -22,6 +23,7 @@ export const appRouter = createRouter({
   pipeline: pipelineRouter,
   equipment: equipmentRouter,
   ai: aiRouter,
+  workflow: workflowRouter,
 });
 
 export type AppRouter = typeof appRouter;

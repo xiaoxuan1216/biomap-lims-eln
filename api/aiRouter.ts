@@ -11,6 +11,8 @@ import {
   projects,
   samples,
   sequences,
+  workflows,
+  workflowNodes,
 } from "@db/schema";
 import {
   designGibsonPrimers,
@@ -368,6 +370,28 @@ export const aiRouter = createRouter({
         return {
           reply: `实验室共 ${rows.length} 台设备：\n\n🟢 可用 ${byStatus.available.length} 台：${byStatus.available.map((e) => e.name).join("、") || "无"}\n🔵 使用中 ${byStatus.in_use.length} 台：${byStatus.in_use.map((e) => e.name).join("、") || "无"}\n🟡 维护中 ${byStatus.maintenance.length} 台：${byStatus.maintenance.map((e) => e.name).join("、") || "无"}\n🔴 故障 ${byStatus.fault.length} 台：${byStatus.fault.map((e) => e.name).join("、") || "无"}`,
           actions: [{ label: "设备管理", url: "/equipment" }],
+        };
+      }
+
+      // ── 业务流 DAG ──
+      if (/业务流|工作流|DAG|流程编排/.test(msg)) {
+        const wfs = await db.select().from(workflows);
+        const allWn = await db.select().from(workflowNodes);
+        if (!wfs.length) {
+          return {
+            reply: "还没有业务流。去「业务流 DAG」页新建一个吧——可以从预置模板（CRISPR 菌株编辑 / CAR-T 杀伤评估 / 蛋白表达纯化）一键生成，再用手工、设备、判断、数据处理节点搭建你自己的流程。",
+            actions: [{ label: "业务流 DAG", url: "/workflows" }],
+          };
+        }
+        const lines = wfs.map((w) => {
+          const ns = allWn.filter((n) => n.workflowId === w.id && n.status !== "skipped");
+          const done = ns.filter((n) => n.status === "done").length;
+          const cur = ns.find((n) => n.status === "in_progress");
+          return `• ${w.name}：${done}/${ns.length} 节点完成${cur ? `，当前「${cur.label}」（${cur.owner ?? "未分配"}）` : ""}`;
+        });
+        return {
+          reply: `当前共 ${wfs.length} 条业务流：\n\n${lines.join("\n")}\n\n可以打开业务流编辑器查看 DAG 图、分配节点负责人。`,
+          actions: [{ label: "业务流 DAG", url: "/workflows" }],
         };
       }
 

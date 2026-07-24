@@ -23,6 +23,7 @@ import {
   Menu,
   X,
   Workflow,
+  Network,
   MonitorCog,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -46,6 +47,7 @@ const NAV_GROUPS = [
       { icon: FolderKanban, label: "项目管理", path: "/projects" },
       { icon: NotebookPen, label: "实验记录本", path: "/experiments" },
       { icon: Workflow, label: "合成 Pipeline", path: "/pipelines" },
+      { icon: Network, label: "业务流 DAG", path: "/workflows" },
       { icon: Dna, label: "序列库", path: "/sequences" },
     ],
   },
