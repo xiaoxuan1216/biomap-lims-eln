@@ -362,12 +362,13 @@ export const workflowNodes = mysqlTable(
     id: serial("id").primaryKey(),
     workflowId: bigint("workflowId", { mode: "number", unsigned: true }).notNull(),
     nodeKey: varchar("nodeKey", { length: 64 }).notNull(),
-    type: mysqlEnum("type", ["manual", "equipment", "decision", "data"]).notNull(),
+    type: mysqlEnum("type", ["manual", "equipment", "decision", "data", "timer"]).notNull(),
     templateKey: varchar("templateKey", { length: 64 }),
     label: varchar("label", { length: 255 }).notNull(),
     owner: varchar("owner", { length: 255 }),
     equipmentId: bigint("equipmentId", { mode: "number", unsigned: true }),
     config: text("config"),
+    params: text("params"),
     status: mysqlEnum("status", ["pending", "in_progress", "done", "skipped"])
       .default("pending")
       .notNull(),

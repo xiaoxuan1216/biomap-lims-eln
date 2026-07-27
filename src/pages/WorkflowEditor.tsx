@@ -23,8 +23,11 @@ import {
   FLOW_NODE_TYPES,
   FLOW_NODE_STATUS,
   WORKFLOW_STATUS,
+  EQUIP_PARAM_SCHEMAS,
+  TIMER_UNITS,
   type NodeTemplate,
   type FlowNodeStatus,
+  type NodeParams,
 } from "@contracts/workflow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +43,7 @@ import {
 } from "@/components/ui/select";
 import {
   ArrowLeft,
+  Clock,
   Save,
   Trash2,
   Hand,
@@ -54,7 +58,7 @@ import { toast } from "sonner";
 import { setCopilotContext } from "@/lib/copilotContext";
 
 const nodeTypes = { flowNode: FlowNode };
-const GROUP_ICONS = { manual: Hand, equipment: Cog, decision: GitBranch, data: Database } as const;
+const GROUP_ICONS = { manual: Hand, equipment: Cog, decision: GitBranch, data: Database, timer: Clock } as const;
 const TEAM_SUGGESTIONS = ["演示用户", "张工", "王工", "陈研究员", "赵工"];
 
 /** 在既有边上新增 source→target 是否会成环（从 target 沿边 DFS 能否回到 source） */
@@ -71,6 +75,15 @@ function wouldCycle(edges: Edge[], source: string, target: string): boolean {
     stack.push(...(adj.get(cur) ?? []));
   }
   return false;
+}
+
+function parseParams(raw: string | null): NodeParams | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as NodeParams;
+  } catch {
+    return null;
+  }
 }
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -134,6 +147,7 @@ function EditorInner({ id }: { id: number }) {
           owner: n.owner,
           equipmentId: n.equipmentId,
           config: n.config,
+          params: parseParams(n.params),
           status: n.status,
           dbId: n.id,
         },
@@ -219,6 +233,16 @@ function EditorInner({ id }: { id: number }) {
             equipmentId: null,
             equipmentName: null,
             config: tpl.description ?? null,
+            params:
+              tpl.type === "equipment" && EQUIP_PARAM_SCHEMAS[tpl.key]
+                ? Object.fromEntries(
+                    EQUIP_PARAM_SCHEMAS[tpl.key].filter((f) => f.default != null).map((f) => [f.key, f.default!]),
+                  )
+                : tpl.type === "timer"
+                  ? tpl.key === "t_scheduled"
+                    ? { mode: "scheduled", datetime: "" }
+                    : { mode: "delay", value: 16, unit: "h" }
+                  : null,
             status: "pending" as FlowNodeStatus,
           },
         },
@@ -311,6 +335,10 @@ function EditorInner({ id }: { id: number }) {
           owner: n.data.owner,
           equipmentId: n.data.equipmentId,
           config: n.data.config,
+          params:
+            n.data.params && Object.keys(n.data.params).length
+              ? JSON.stringify(n.data.params)
+              : null,
           posX: n.position.x,
           posY: n.position.y,
         })),
@@ -539,6 +567,70 @@ function EditorInner({ id }: { id: number }) {
   );
 }
 
+/** 时间控制节点参数表单 */
+function TimerParams({ node, onPatch }: { node: RFNode; onPatch: (p: Partial<FlowNodeData>) => void }) {
+  const params = node.data.params ?? {};
+  const mode = (params.mode as string) ?? "delay";
+  return (
+    <div className="space-y-2">
+      <Label>时间模式</Label>
+      <Select value={mode} onValueChange={(v) => onPatch({ params: { ...params, mode: v } })}>
+        <SelectTrigger className="h-8 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="delay">前置完成后延时</SelectItem>
+          <SelectItem value="scheduled">定点开始</SelectItem>
+        </SelectContent>
+      </Select>
+      {mode === "delay" ? (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <div className="mb-1 text-[11px] text-slate-500">等待时长</div>
+            <Input
+              className="h-8 text-xs"
+              type="number"
+              value={String(params.value ?? "")}
+              onChange={(e) => onPatch({ params: { ...params, value: Number(e.target.value) } })}
+            />
+          </div>
+          <div>
+            <div className="mb-1 text-[11px] text-slate-500">单位</div>
+            <Select
+              value={(params.unit as string) ?? "h"}
+              onValueChange={(v) => onPatch({ params: { ...params, unit: v } })}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(TIMER_UNITS).map(([k, l]) => (
+                  <SelectItem key={k} value={k}>
+                    {l}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div className="mb-1 text-[11px] text-slate-500">开始时间</div>
+          <Input
+            className="h-8 text-xs"
+            type="datetime-local"
+            value={(params.datetime as string) ?? ""}
+            onChange={(e) => onPatch({ params: { ...params, datetime: e.target.value } })}
+          />
+        </div>
+      )}
+      <p className="text-[11px] text-muted-foreground">
+        前置节点完成后，按此时间设置推进到下一节点（延时 / 定点）
+      </p>
+    </div>
+  );
+}
+
 /** 节点属性面板 */
 function NodeInspector({
   node,
@@ -614,6 +706,55 @@ function NodeInspector({
           <p className="text-[11px] text-muted-foreground">绑定后可在设备管理中预约该机时</p>
         </div>
       )}
+      {node.data.nodeType === "equipment" &&
+        node.data.templateKey &&
+        EQUIP_PARAM_SCHEMAS[node.data.templateKey] && (
+          <div className="space-y-2">
+            <Label>方法 / 参数</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {EQUIP_PARAM_SCHEMAS[node.data.templateKey].map((f) => (
+                <div key={f.key} className={f.type === "text" ? "col-span-2" : ""}>
+                  <div className="mb-1 text-[11px] text-slate-500">
+                    {f.label}
+                    {f.unit ? `（${f.unit}）` : ""}
+                  </div>
+                  {f.type === "select" ? (
+                    <Select
+                      value={String(node.data.params?.[f.key] ?? f.default ?? "")}
+                      onValueChange={(v) => onPatch({ params: { ...(node.data.params ?? {}), [f.key]: v } })}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {f.options?.map((o) => (
+                          <SelectItem key={o} value={o}>
+                            {o}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      className="h-8 text-xs"
+                      type={f.type === "number" ? "number" : "text"}
+                      value={String(node.data.params?.[f.key] ?? f.default ?? "")}
+                      onChange={(e) =>
+                        onPatch({
+                          params: {
+                            ...(node.data.params ?? {}),
+                            [f.key]: f.type === "number" ? Number(e.target.value) : e.target.value,
+                          },
+                        })
+                      }
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      {node.data.nodeType === "timer" && <TimerParams node={node} onPatch={onPatch} />}
       <div className="space-y-1.5">
         <Label>参数 / 说明</Label>
         <Textarea

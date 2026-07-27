@@ -202,12 +202,13 @@ const DDLS: string[] = [
     id bigint unsigned NOT NULL AUTO_INCREMENT PRIMARY KEY,
     workflowId bigint unsigned NOT NULL,
     nodeKey varchar(64) NOT NULL,
-    type enum('manual','equipment','decision','data') NOT NULL,
+    type enum('manual','equipment','decision','data','timer') NOT NULL,
     templateKey varchar(64),
     label varchar(255) NOT NULL,
     owner varchar(255),
     equipmentId bigint unsigned,
     config text,
+    params text,
     status enum('pending','in_progress','done','skipped') NOT NULL DEFAULT 'pending',
     posX int NOT NULL DEFAULT 0,
     posY int NOT NULL DEFAULT 0,
@@ -241,6 +242,31 @@ async function run(): Promise<void> {
     for (const ddl of DDLS) {
       await db.execute(sql.raw(ddl));
     }
+
+    // ── 存量库的增量列/枚举升级（幂等）──
+    // workflow_nodes.params 列
+    const [pRows] = (await db.execute(
+      sql.raw(
+        "SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='workflow_nodes' AND COLUMN_NAME='params'",
+      ),
+    )) as unknown as [{ n: number }[], unknown];
+    if (Number(pRows[0]?.n ?? 0) === 0) {
+      await db.execute(sql.raw("ALTER TABLE workflow_nodes ADD COLUMN params text"));
+      console.log("[ensure] added workflow_nodes.params");
+    }
+    // workflow_nodes.type 枚举加入 timer
+    const [tRows] = (await db.execute(
+      sql.raw(
+        "SELECT COLUMN_TYPE AS ct FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='workflow_nodes' AND COLUMN_NAME='type'",
+      ),
+    )) as unknown as [{ ct: string }[], unknown];
+    if (tRows[0]?.ct && !tRows[0].ct.includes("timer")) {
+      await db.execute(
+        sql.raw("ALTER TABLE workflow_nodes MODIFY COLUMN type enum('manual','equipment','decision','data','timer') NOT NULL"),
+      );
+      console.log("[ensure] workflow_nodes.type enum extended with timer");
+    }
+
     console.log(`[ensure] schema ok (${DDLS.length} tables verified)`);
 
     // 空库（全新部署）时自动注入演示数据

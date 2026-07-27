@@ -7,7 +7,7 @@ import { workflows, workflowNodes, workflowEdges, projects } from "@db/schema";
 import { logActivity } from "./queries/labHelpers";
 import { WORKFLOW_TEMPLATES } from "@contracts/workflow";
 
-const NODE_TYPES = ["manual", "equipment", "decision", "data"] as const;
+const NODE_TYPES = ["manual", "equipment", "decision", "data", "timer"] as const;
 const NODE_STATUS = ["pending", "in_progress", "done", "skipped"] as const;
 
 const nodeInput = z.object({
@@ -18,6 +18,7 @@ const nodeInput = z.object({
   owner: z.string().max(255).nullish(),
   equipmentId: z.number().nullish(),
   config: z.string().nullish(),
+  params: z.string().nullish(),
   posX: z.number(),
   posY: z.number(),
 });
@@ -67,6 +68,7 @@ async function instantiateTemplate(workflowId: number, templateKey: string) {
         label: n.label,
         owner: n.owner ?? null,
         config: n.config ?? null,
+        params: n.params ? JSON.stringify(n.params) : null,
         posX: n.x,
         posY: n.y,
       })),
@@ -225,6 +227,7 @@ export const workflowRouter = createRouter({
             owner: n.owner || null,
             equipmentId: n.equipmentId ?? null,
             config: n.config ?? null,
+            params: n.params ?? null,
             status: statusByKey.get(n.nodeKey) ?? "pending",
             posX: Math.round(n.posX),
             posY: Math.round(n.posY),

@@ -1,10 +1,12 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import { Hand, Cog, GitBranch, Database, User, MonitorCog } from "lucide-react";
+import { Hand, Cog, GitBranch, Database, User, MonitorCog, Clock } from "lucide-react";
 import {
   FLOW_NODE_TYPES,
   FLOW_NODE_STATUS,
+  nodeParamSummary,
   type FlowNodeType,
   type FlowNodeStatus,
+  type NodeParams,
 } from "@contracts/workflow";
 
 export type FlowNodeData = {
@@ -15,6 +17,7 @@ export type FlowNodeData = {
   equipmentId?: number | null;
   equipmentName?: string | null;
   config?: string | null;
+  params?: NodeParams | null;
   status: FlowNodeStatus;
   dbId?: number;
 };
@@ -26,6 +29,7 @@ const TYPE_ICONS = {
   equipment: Cog,
   decision: GitBranch,
   data: Database,
+  timer: Clock,
 } as const;
 
 export default function FlowNode({ data, selected }: NodeProps<RFNode>) {
@@ -83,6 +87,17 @@ export default function FlowNode({ data, selected }: NodeProps<RFNode>) {
             <span className="truncate">{data.equipmentName}</span>
           </div>
         )}
+        {(() => {
+          const summary = nodeParamSummary(data.nodeType, data.templateKey, data.params);
+          return summary ? (
+            <div
+              className="mt-1.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium"
+              style={{ background: meta.bg, color: meta.color }}
+            >
+              {summary}
+            </div>
+          ) : null;
+        })()}
       </div>
       {/* 输出手柄：判断节点分「是 / 否」两路 */}
       {isDecision ? (

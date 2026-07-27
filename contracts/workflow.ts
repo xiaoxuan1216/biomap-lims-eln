@@ -1,12 +1,18 @@
 // 业务流 DAG 共享契约：节点类型、节点调色板（预存节点组）、预置业务流模板
 // 前后端共用（前端编辑器 / 后端模板实例化与校验）
 
-export type FlowNodeType = "manual" | "equipment" | "decision" | "data";
+export type FlowNodeType = "manual" | "equipment" | "decision" | "data" | "timer";
 
 export const FLOW_NODE_TYPES: Record<
   FlowNodeType,
   { label: string; color: string; bg: string; description: string }
 > = {
+  timer: {
+    label: "时间控制",
+    color: "#0ea5e9",
+    bg: "#f0f9ff",
+    description: "前置完成后延时或定点开始下一步",
+  },
   manual: {
     label: "手工操作",
     color: "#14b8a6",
@@ -124,7 +130,101 @@ export const NODE_PALETTE: NodeGroup[] = [
       { key: "p_archive", type: "data", label: "数据归档", description: "原始数据与报告归档入库" },
     ],
   },
+  {
+    key: "timer",
+    label: "时间控制",
+    type: "timer",
+    items: [
+      { key: "t_delay", type: "timer", label: "延时等待", description: "前置完成后等待指定时长再开始（如 涂板后等待 16 h）" },
+      { key: "t_scheduled", type: "timer", label: "定点开始", description: "在指定日期时间开始下一步（如 明早 09:00 上机）" },
+    ],
+  },
 ];
+
+// ─── 设备节点结构化参数模式（按节点模板 key 注册） ───
+
+export interface ParamField {
+  key: string;
+  label: string;
+  type: "select" | "number" | "text";
+  unit?: string;
+  options?: string[];
+  default?: string | number;
+}
+
+export type NodeParams = Record<string, string | number>;
+
+export const EQUIP_PARAM_SCHEMAS: Record<string, ParamField[]> = {
+  e_qpcr: [
+    { key: "method", label: "检测方法", type: "select", options: ["SYBR Green", "TaqMan 探针", "EvaGreen"], default: "TaqMan 探针" },
+    { key: "cycles", label: "循环数", type: "number", unit: "cycles", default: 40 },
+    { key: "volume", label: "反应体系", type: "number", unit: "μL", default: 20 },
+    { key: "melting", label: "熔解曲线", type: "select", options: ["需要", "不需要"], default: "需要" },
+  ],
+  e_plate_reader: [
+    { key: "mode", label: "检测模式", type: "select", options: ["吸光度", "荧光强度", "化学发光", "时间分辨荧光"], default: "化学发光" },
+    { key: "emWavelength", label: "检测波长", type: "number", unit: "nm", default: 450 },
+    { key: "refWavelength", label: "参考波长", type: "number", unit: "nm", default: 620 },
+    { key: "shakeSec", label: "振荡时间", type: "number", unit: "s", default: 30 },
+  ],
+  e_centrifuge: [
+    { key: "rpm", label: "转速", type: "number", unit: "rpm", default: 12000 },
+    { key: "minutes", label: "离心时间", type: "number", unit: "min", default: 10 },
+    { key: "temp", label: "温度", type: "number", unit: "°C", default: 4 },
+  ],
+  e_flow: [
+    { key: "panel", label: "分析方案", type: "select", options: ["表面染色", "胞内染色", "死活染色", "细胞周期"], default: "表面染色" },
+    { key: "events", label: "采集事件数", type: "number", unit: "events", default: 10000 },
+    { key: "speed", label: "上样速度", type: "select", options: ["低速", "中速", "高速"], default: "中速" },
+  ],
+  e_seq: [
+    { key: "seqType", label: "测序类型", type: "select", options: ["Sanger", "NGS（Illumina）", "三代（PacBio）"], default: "Sanger" },
+    { key: "primer", label: "测序引物", type: "text" },
+    { key: "coverage", label: "读长模式", type: "select", options: ["单端", "双端"], default: "单端" },
+  ],
+  e_incubate: [
+    { key: "temp", label: "温度", type: "number", unit: "°C", default: 37 },
+    { key: "co2", label: "CO₂ 浓度", type: "number", unit: "%", default: 5 },
+    { key: "hours", label: "孵育时长", type: "number", unit: "h", default: 4 },
+  ],
+  e_liquid: [
+    { key: "channel", label: "移液模式", type: "select", options: ["单通道", "8 通道", "96 通道"], default: "96 通道" },
+    { key: "volume", label: "体系体积", type: "number", unit: "μL", default: 50 },
+    { key: "mixTimes", label: "混合次数", type: "number", unit: "次", default: 3 },
+  ],
+  e_purify: [
+    { key: "column", label: "层析柱类型", type: "select", options: ["Ni-NTA 亲和", "离子交换", "分子筛"], default: "Ni-NTA 亲和" },
+    { key: "flowRate", label: "流速", type: "number", unit: "mL/min", default: 1 },
+    { key: "gradient", label: "洗脱梯度", type: "text", default: "20–250 mM 咪唑" },
+  ],
+};
+
+// ─── 时间控制节点参数 ───
+
+export const TIMER_UNITS: Record<string, string> = { min: "分钟", h: "小时", d: "天" };
+
+/** 节点卡片上的参数摘要（设备取前两项，时间节点显示等待/定点信息） */
+export function nodeParamSummary(
+  nodeType: FlowNodeType,
+  templateKey: string | null | undefined,
+  params: NodeParams | null | undefined,
+): string {
+  if (nodeType === "timer") {
+    if (!params) return "";
+    if (params.mode === "scheduled" && params.datetime) return `${params.datetime} 开始`;
+    if (params.value) return `前置完成后等待 ${params.value} ${TIMER_UNITS[String(params.unit)] ?? String(params.unit ?? "h")}`;
+    return "等待前置完成";
+  }
+  if (nodeType === "equipment" && templateKey && params) {
+    const schema = EQUIP_PARAM_SCHEMAS[templateKey] ?? [];
+    return schema
+      .slice(0, 2)
+      .map((f) => (params[f.key] != null && params[f.key] !== "" ? `${f.label} ${params[f.key]}${f.unit ? ` ${f.unit}` : ""}` : null))
+      .filter(Boolean)
+      .join(" · ");
+  }
+  return "";
+}
 
 // ─── 预置业务流模板 ───
 
@@ -135,6 +235,7 @@ export interface WorkflowTemplateNode {
   label: string;
   owner?: string;
   config?: string;
+  params?: NodeParams;
   x: number;
   y: number;
 }
@@ -175,7 +276,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       { key: "n5", type: "manual", templateKey: "m_gibson", label: "Gibson 组装", owner: "陈研究员", x: 1100, y: 180 },
       { key: "n6", type: "manual", templateKey: "m_transform", label: "转化与克隆筛选", owner: "陈研究员", x: 1360, y: 180 },
       { key: "n7", type: "decision", templateKey: "d_clone_pos", label: "克隆是否阳性？", x: 1640, y: 170 },
-      { key: "n8", type: "equipment", templateKey: "e_seq", label: "Sanger 测序验证", owner: "张工", x: 1900, y: 80 },
+      { key: "n8", type: "equipment", templateKey: "e_seq", label: "Sanger 测序验证", owner: "张工", params: { seqType: "Sanger", primer: "CMV-F" }, x: 1900, y: 80 },
       { key: "n9", type: "decision", templateKey: "d_seq_match", label: "测序是否匹配？", x: 2160, y: 70 },
       { key: "n10", type: "manual", templateKey: "m_plasmid_prep", label: "质粒保藏入库", owner: "陈研究员", x: 2420, y: 80 },
       { key: "n11", type: "manual", templateKey: "m_pick_clone", label: "重新挑取克隆鉴定", owner: "陈研究员", x: 1900, y: 300 },
@@ -206,7 +307,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       { key: "n3", type: "manual", templateKey: "m_gibson", label: "IIS 酶切连接组装", owner: "陈研究员", x: 660, y: 180 },
       { key: "n4", type: "manual", templateKey: "m_transform", label: "转化与抗性筛选", owner: "陈研究员", x: 940, y: 180 },
       { key: "n5", type: "decision", templateKey: "d_clone_pos", label: "组装是否正确？（菌落 PCR）", x: 1200, y: 170 },
-      { key: "n6", type: "equipment", templateKey: "e_seq", label: "测序验证", owner: "张工", x: 1460, y: 80 },
+      { key: "n6", type: "equipment", templateKey: "e_seq", label: "测序验证", owner: "张工", params: { seqType: "Sanger" }, x: 1460, y: 80 },
       { key: "n7", type: "manual", templateKey: "m_plasmid_prep", label: "保藏入库", owner: "陈研究员", x: 1700, y: 80 },
       { key: "n8", type: "manual", templateKey: "m_gibson", label: "重做酶切连接", owner: "陈研究员", x: 1460, y: 300 },
     ],
@@ -228,7 +329,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     nodes: [
       { key: "n1", type: "data", templateKey: "p_stats", label: "Design · 设计与建模", owner: "王工", x: 60, y: 180 },
       { key: "n2", type: "manual", templateKey: "m_gibson", label: "Build · 构建", owner: "陈研究员", x: 320, y: 180 },
-      { key: "n3", type: "equipment", templateKey: "e_plate_reader", label: "Test · 高通量检测", owner: "张工", x: 580, y: 180 },
+      { key: "n3", type: "equipment", templateKey: "e_plate_reader", label: "Test · 高通量检测", owner: "张工", params: { mode: "化学发光" }, x: 580, y: 180 },
       { key: "n4", type: "data", templateKey: "p_stats", label: "Learn · 学习与建模", owner: "王工", x: 840, y: 180 },
       { key: "n5", type: "decision", templateKey: "d_activity_ok", label: "进入下一轮迭代？", x: 1100, y: 170 },
       { key: "n6", type: "data", templateKey: "p_stats", label: "第 N+1 轮 Design", owner: "王工", x: 1360, y: 80 },
@@ -253,19 +354,21 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       { key: "n1", type: "manual", templateKey: "m_primer_design", label: "gRNA 设计", owner: "王工", x: 60, y: 180 },
       { key: "n2", type: "manual", templateKey: "m_gibson", label: "编辑质粒构建", owner: "王工", x: 300, y: 180 },
       { key: "n3", type: "manual", templateKey: "m_transform", label: "转化与涂板", owner: "陈研究员", x: 540, y: 180 },
-      { key: "n4", type: "decision", templateKey: "d_clone_pos", label: "克隆是否阳性？", x: 800, y: 170 },
-      { key: "n5", type: "manual", templateKey: "m_pick_clone", label: "扩大培养与保种", owner: "陈研究员", x: 1060, y: 80 },
-      { key: "n6", type: "equipment", templateKey: "e_seq", label: "Sanger 测序", owner: "张工", x: 1300, y: 80 },
-      { key: "n7", type: "decision", templateKey: "d_seq_match", label: "测序是否匹配？", x: 1560, y: 70 },
-      { key: "n8", type: "data", templateKey: "p_activity_calc", label: "编辑效率分析", owner: "王工", x: 1820, y: 80 },
-      { key: "n9", type: "data", templateKey: "p_archive", label: "数据归档", owner: "王工", x: 2060, y: 80 },
-      { key: "n10", type: "manual", templateKey: "m_primer_design", label: "重新设计 gRNA", owner: "王工", x: 1060, y: 300 },
-      { key: "n11", type: "manual", templateKey: "m_transform", label: "优化条件重做转化", owner: "陈研究员", x: 1560, y: 280 },
+      { key: "n3b", type: "timer", templateKey: "t_delay", label: "涂板培养等待", params: { mode: "delay", value: 16, unit: "h" }, x: 720, y: 180 },
+      { key: "n4", type: "decision", templateKey: "d_clone_pos", label: "克隆是否阳性？", x: 940, y: 170 },
+      { key: "n5", type: "manual", templateKey: "m_pick_clone", label: "扩大培养与保种", owner: "陈研究员", x: 1200, y: 80 },
+      { key: "n6", type: "equipment", templateKey: "e_seq", label: "Sanger 测序", owner: "张工", params: { seqType: "Sanger", primer: "pLKO.1 通用引物" }, x: 1440, y: 80 },
+      { key: "n7", type: "decision", templateKey: "d_seq_match", label: "测序是否匹配？", x: 1700, y: 70 },
+      { key: "n8", type: "data", templateKey: "p_activity_calc", label: "编辑效率分析", owner: "王工", x: 1960, y: 80 },
+      { key: "n9", type: "data", templateKey: "p_archive", label: "数据归档", owner: "王工", x: 2200, y: 80 },
+      { key: "n10", type: "manual", templateKey: "m_primer_design", label: "重新设计 gRNA", owner: "王工", x: 1200, y: 300 },
+      { key: "n11", type: "manual", templateKey: "m_transform", label: "优化条件重做转化", owner: "陈研究员", x: 1700, y: 280 },
     ],
     edges: [
       { from: "n1", to: "n2" },
       { from: "n2", to: "n3" },
-      { from: "n3", to: "n4" },
+      { from: "n3", to: "n3b" },
+      { from: "n3b", to: "n4" },
       { from: "n4", to: "n5", sourceHandle: "yes", label: "是" },
       { from: "n4", to: "n10", sourceHandle: "no", label: "否" },
       { from: "n5", to: "n6" },
@@ -283,9 +386,9 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     nodes: [
       { key: "n1", type: "manual", templateKey: "m_cell_prep", label: "效应 T 细胞制备", owner: "赵工", x: 60, y: 180 },
       { key: "n2", type: "equipment", templateKey: "e_liquid", label: "自动化铺板（效靶比梯度）", owner: "赵工", x: 320, y: 180 },
-      { key: "n3", type: "equipment", templateKey: "e_incubate", label: "岛台共孵育", owner: "赵工", x: 600, y: 180 },
+      { key: "n3", type: "equipment", templateKey: "e_incubate", label: "岛台共孵育", owner: "赵工", params: { temp: 37, co2: 5, hours: 4 }, x: 600, y: 180 },
       { key: "n4", type: "manual", templateKey: "m_stain", label: "流式抗体染色", owner: "陈研究员", x: 860, y: 180 },
-      { key: "n5", type: "equipment", templateKey: "e_flow", label: "流式细胞检测", owner: "张工", x: 1120, y: 180 },
+      { key: "n5", type: "equipment", templateKey: "e_flow", label: "流式细胞检测", owner: "张工", params: { panel: "表面染色", events: 10000 }, x: 1120, y: 180 },
       { key: "n6", type: "data", templateKey: "p_activity_calc", label: "杀伤率计算", owner: "王工", x: 1380, y: 180 },
       { key: "n7", type: "decision", templateKey: "d_activity_ok", label: "杀伤率 ≥ 60%？", x: 1640, y: 170 },
       { key: "n8", type: "data", templateKey: "p_stats", label: "统计分析与报告", owner: "王工", x: 1900, y: 80 },
@@ -311,9 +414,9 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     group: "pipeline",
     nodes: [
       { key: "n1", type: "manual", templateKey: "m_transform", label: "表达载体转化 BL21", owner: "陈研究员", x: 60, y: 180 },
-      { key: "n2", type: "equipment", templateKey: "e_incubate", label: "小试诱导表达", owner: "陈研究员", x: 320, y: 180 },
+      { key: "n2", type: "equipment", templateKey: "e_incubate", label: "小试诱导表达", owner: "陈研究员", params: { temp: 37, hours: 16 }, x: 320, y: 180 },
       { key: "n3", type: "decision", templateKey: "d_expr_ok", label: "表达量是否达标？", x: 580, y: 170 },
-      { key: "n4", type: "equipment", templateKey: "e_incubate", label: "放大培养", owner: "陈研究员", x: 840, y: 80 },
+      { key: "n4", type: "equipment", templateKey: "e_incubate", label: "放大培养", owner: "陈研究员", params: { temp: 30, hours: 24 }, x: 840, y: 80 },
       { key: "n5", type: "equipment", templateKey: "e_purify", label: "亲和层析纯化", owner: "王工", x: 1080, y: 80 },
       { key: "n6", type: "equipment", templateKey: "e_plate_reader", label: "浓度与纯度测定", owner: "张工", x: 1320, y: 80 },
       { key: "n7", type: "data", templateKey: "p_curve_fit", label: "活性曲线拟合（IC50）", owner: "王工", x: 1580, y: 80 },

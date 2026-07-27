@@ -96,6 +96,7 @@ export async function seed() {
             ? eqId(EQUIP_BIND[n.templateKey])
             : null,
         config: n.config ?? null,
+        params: n.params ? JSON.stringify(n.params) : null,
         status: sf.statuses[n.key] ?? "pending",
         posX: n.x,
         posY: n.y,
