@@ -35,8 +35,7 @@ const SUGGESTIONS: Record<string, string[]> = {
   sequence: ["帮我分析这条序列", "Gibson 引物怎么设计？", "这条序列有什么酶切位点？"],
   sample: ["哪些样本需要补货？", "哪些样本快过期了？"],
   equipment: ["设备状态怎么样？", "今明两天有哪些预约？"],
-  pipeline: ["推荐一个载体构建流程", "现在有哪些 Pipeline？"],
-  workflow: ["现在有哪些业务流？", "业务流进展如何？"],
+  workflow: ["现在有哪些流程？", "推荐一个载体构建 Pipeline"],
 };
 
 function suggestionsFor(pathname: string, ctxType?: string): string[] {
@@ -44,7 +43,6 @@ function suggestionsFor(pathname: string, ctxType?: string): string[] {
   if (ctxType === "sequence") return SUGGESTIONS.sequence;
   if (pathname.startsWith("/samples")) return SUGGESTIONS.sample;
   if (pathname.startsWith("/equipment")) return SUGGESTIONS.equipment;
-  if (pathname.startsWith("/pipelines")) return SUGGESTIONS.pipeline;
   if (pathname.startsWith("/workflows")) return SUGGESTIONS.workflow;
   if (pathname.startsWith("/sequences")) return SUGGESTIONS.sequence;
   return SUGGESTIONS.default;

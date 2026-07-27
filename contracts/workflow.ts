@@ -150,15 +150,105 @@ export interface WorkflowTemplate {
   key: string;
   name: string;
   description: string;
+  /** pipeline = 合成生物学 Pipeline；flow = 通用业务流 */
+  group: "pipeline" | "flow";
   nodes: WorkflowTemplateNode[];
   edges: WorkflowTemplateEdge[];
 }
 
+export const TEMPLATE_GROUPS: Record<string, string> = {
+  pipeline: "合成生物学 Pipeline",
+  flow: "通用业务流",
+};
+
 export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   {
+    key: "gibson_assembly",
+    name: "载体构建 Pipeline（Gibson 组装）",
+    description: "序列设计到质粒入库的标准载体构建流程，含阳性筛选与测序确认分支",
+    group: "pipeline",
+    nodes: [
+      { key: "n1", type: "data", templateKey: "p_seq_align", label: "序列设计与密码子优化", owner: "王工", x: 60, y: 180 },
+      { key: "n2", type: "manual", templateKey: "m_primer_design", label: "引物设计与合成", owner: "王工", x: 320, y: 180 },
+      { key: "n3", type: "manual", templateKey: "m_pcr", label: "基因片段 PCR 扩增", owner: "王工", x: 580, y: 180 },
+      { key: "n4", type: "manual", templateKey: "m_gel", label: "载体酶切线性化", owner: "陈研究员", x: 840, y: 180 },
+      { key: "n5", type: "manual", templateKey: "m_gibson", label: "Gibson 组装", owner: "陈研究员", x: 1100, y: 180 },
+      { key: "n6", type: "manual", templateKey: "m_transform", label: "转化与克隆筛选", owner: "陈研究员", x: 1360, y: 180 },
+      { key: "n7", type: "decision", templateKey: "d_clone_pos", label: "克隆是否阳性？", x: 1640, y: 170 },
+      { key: "n8", type: "equipment", templateKey: "e_seq", label: "Sanger 测序验证", owner: "张工", x: 1900, y: 80 },
+      { key: "n9", type: "decision", templateKey: "d_seq_match", label: "测序是否匹配？", x: 2160, y: 70 },
+      { key: "n10", type: "manual", templateKey: "m_plasmid_prep", label: "质粒保藏入库", owner: "陈研究员", x: 2420, y: 80 },
+      { key: "n11", type: "manual", templateKey: "m_pick_clone", label: "重新挑取克隆鉴定", owner: "陈研究员", x: 1900, y: 300 },
+      { key: "n12", type: "manual", templateKey: "m_gibson", label: "排查原因重做组装", owner: "王工", x: 2160, y: 280 },
+    ],
+    edges: [
+      { from: "n1", to: "n2" },
+      { from: "n2", to: "n3" },
+      { from: "n3", to: "n4" },
+      { from: "n4", to: "n5" },
+      { from: "n5", to: "n6" },
+      { from: "n6", to: "n7" },
+      { from: "n7", to: "n8", sourceHandle: "yes", label: "是" },
+      { from: "n7", to: "n11", sourceHandle: "no", label: "否" },
+      { from: "n8", to: "n9" },
+      { from: "n9", to: "n10", sourceHandle: "yes", label: "是" },
+      { from: "n9", to: "n12", sourceHandle: "no", label: "否" },
+    ],
+  },
+  {
+    key: "golden_gate",
+    name: "Golden Gate 多片段组装 Pipeline",
+    description: "部件 Domestication 到层级组装验证，IIS 酶切连接标准流程",
+    group: "pipeline",
+    nodes: [
+      { key: "n1", type: "data", templateKey: "p_seq_align", label: "部件 Domestication 设计（去 IIS 位点）", owner: "王工", x: 60, y: 180 },
+      { key: "n2", type: "manual", templateKey: "m_pcr", label: "引物设计与部件扩增", owner: "王工", x: 360, y: 180 },
+      { key: "n3", type: "manual", templateKey: "m_gibson", label: "IIS 酶切连接组装", owner: "陈研究员", x: 660, y: 180 },
+      { key: "n4", type: "manual", templateKey: "m_transform", label: "转化与抗性筛选", owner: "陈研究员", x: 940, y: 180 },
+      { key: "n5", type: "decision", templateKey: "d_clone_pos", label: "组装是否正确？（菌落 PCR）", x: 1200, y: 170 },
+      { key: "n6", type: "equipment", templateKey: "e_seq", label: "测序验证", owner: "张工", x: 1460, y: 80 },
+      { key: "n7", type: "manual", templateKey: "m_plasmid_prep", label: "保藏入库", owner: "陈研究员", x: 1700, y: 80 },
+      { key: "n8", type: "manual", templateKey: "m_gibson", label: "重做酶切连接", owner: "陈研究员", x: 1460, y: 300 },
+    ],
+    edges: [
+      { from: "n1", to: "n2" },
+      { from: "n2", to: "n3" },
+      { from: "n3", to: "n4" },
+      { from: "n4", to: "n5" },
+      { from: "n5", to: "n6", sourceHandle: "yes", label: "是" },
+      { from: "n5", to: "n8", sourceHandle: "no", label: "否" },
+      { from: "n6", to: "n7" },
+    ],
+  },
+  {
+    key: "dbtl_cycle",
+    name: "DBTL 工程循环 Pipeline",
+    description: "设计-构建-测试-学习迭代循环，含迭代决策分支",
+    group: "pipeline",
+    nodes: [
+      { key: "n1", type: "data", templateKey: "p_stats", label: "Design · 设计与建模", owner: "王工", x: 60, y: 180 },
+      { key: "n2", type: "manual", templateKey: "m_gibson", label: "Build · 构建", owner: "陈研究员", x: 320, y: 180 },
+      { key: "n3", type: "equipment", templateKey: "e_plate_reader", label: "Test · 高通量检测", owner: "张工", x: 580, y: 180 },
+      { key: "n4", type: "data", templateKey: "p_stats", label: "Learn · 学习与建模", owner: "王工", x: 840, y: 180 },
+      { key: "n5", type: "decision", templateKey: "d_activity_ok", label: "进入下一轮迭代？", x: 1100, y: 170 },
+      { key: "n6", type: "data", templateKey: "p_stats", label: "第 N+1 轮 Design", owner: "王工", x: 1360, y: 80 },
+      { key: "n7", type: "data", templateKey: "p_archive", label: "数据归档与结题", owner: "王工", x: 1360, y: 300 },
+    ],
+    edges: [
+      { from: "n1", to: "n2" },
+      { from: "n2", to: "n3" },
+      { from: "n3", to: "n4" },
+      { from: "n4", to: "n5" },
+      { from: "n5", to: "n6", sourceHandle: "yes", label: "是" },
+      { from: "n5", to: "n7", sourceHandle: "no", label: "否" },
+    ],
+  },
+
+  {
     key: "crispr_strain",
-    name: "CRISPR 菌株编辑业务流",
+    name: "菌株基因组编辑 Pipeline（CRISPR）",
     description: "从 gRNA 设计到编辑效率分析的标准菌株构建流程，含阳性筛选与测序确认分支",
+    group: "pipeline",
     nodes: [
       { key: "n1", type: "manual", templateKey: "m_primer_design", label: "gRNA 设计", owner: "王工", x: 60, y: 180 },
       { key: "n2", type: "manual", templateKey: "m_gibson", label: "编辑质粒构建", owner: "王工", x: 300, y: 180 },
@@ -189,6 +279,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     key: "cart_killing",
     name: "CAR-T 杀伤评估自动化业务流",
     description: "效应细胞制备到杀伤率计算的自动化评估流程，岛台孵育 + 流式检测 + 阈值判断",
+    group: "flow",
     nodes: [
       { key: "n1", type: "manual", templateKey: "m_cell_prep", label: "效应 T 细胞制备", owner: "赵工", x: 60, y: 180 },
       { key: "n2", type: "equipment", templateKey: "e_liquid", label: "自动化铺板（效靶比梯度）", owner: "赵工", x: 320, y: 180 },
@@ -215,8 +306,9 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   },
   {
     key: "protein_expr",
-    name: "蛋白表达纯化业务流",
+    name: "蛋白表达纯化 Pipeline",
     description: "小试表达到放大纯化，含表达量阈值判断与 IC50 曲线分析",
+    group: "pipeline",
     nodes: [
       { key: "n1", type: "manual", templateKey: "m_transform", label: "表达载体转化 BL21", owner: "陈研究员", x: 60, y: 180 },
       { key: "n2", type: "equipment", templateKey: "e_incubate", label: "小试诱导表达", owner: "陈研究员", x: 320, y: 180 },

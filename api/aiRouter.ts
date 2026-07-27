@@ -6,8 +6,6 @@ import {
   equipment,
   equipmentBookings,
   experiments,
-  pipelines,
-  pipelineStages,
   projects,
   samples,
   sequences,
@@ -235,23 +233,23 @@ export const aiRouter = createRouter({
       });
     }
 
-    const activePipes = await db
+    const activeFlows = await db
       .select()
-      .from(pipelines)
-      .where(eq(pipelines.status, "active"))
+      .from(workflows)
+      .where(eq(workflows.status, "active"))
       .limit(3);
-    for (const p of activePipes) {
-      const stages = await db
+    for (const w of activeFlows) {
+      const nodes = await db
         .select()
-        .from(pipelineStages)
-        .where(eq(pipelineStages.pipelineId, p.id));
-      const current = stages.find((s) => s.status === "in_progress");
-      if (current && !current.linkedExperimentId) {
+        .from(workflowNodes)
+        .where(eq(workflowNodes.workflowId, w.id));
+      const cur = nodes.find((n) => n.status === "in_progress");
+      if (cur && !cur.owner) {
         insights.push({
           icon: "workflow",
           level: "info",
-          text: `Pipeline「${p.name}」当前阶段「${current.name}」尚无关联实验，建议创建实验记录`,
-          url: `/pipelines/${p.id}`,
+          text: `流程「${w.name}」进行中节点「${cur.label}」尚未分配负责人，建议尽快分配`,
+          url: `/workflows/${w.id}`,
         });
       }
     }
@@ -374,14 +372,44 @@ export const aiRouter = createRouter({
         };
       }
 
-      // ── 业务流 DAG ──
-      if (/业务流|工作流|DAG|流程编排/.test(msg)) {
+      // ── SynFlow 流程推荐 ──
+      if (/载体构建|菌株|CRISPR|基因编辑|敲除|敲入|蛋白表达|纯化|DBTL|工程循环|Golden\s*Gate|Gibson|组装/i.test(msg)) {
+        if (/菌株|CRISPR|基因编辑|敲除|敲入/.test(msg)) {
+          return {
+            reply:
+              "针对菌株基因组编辑，推荐使用 SynFlow 合成流的「菌株基因组编辑 Pipeline（CRISPR）」模板：gRNA 设计 → 编辑质粒构建 → 转化 → 「克隆是否阳性？」判断 → Sanger 测序 → 「测序是否匹配？」判断 → 编辑效率分析。\n\n要现在创建吗？",
+            actions: [{ label: "去 SynFlow 创建", url: "/workflows" }],
+          };
+        }
+        if (/DBTL|工程循环|迭代/.test(msg)) {
+          return {
+            reply:
+              "DBTL 工程循环已作为模板内置在 SynFlow 合成流中：Design（数据节点）→ Build（手工节点）→ Test（设备节点）→ Learn（数据节点）→「进入下一轮迭代？」判断节点，自动衔接第 N+1 轮循环。",
+            actions: [{ label: "去 SynFlow 创建", url: "/workflows" }],
+          };
+        }
+        if (/蛋白表达|纯化|表达/.test(msg)) {
+          return {
+            reply:
+              "蛋白表达推荐使用 SynFlow 的「蛋白表达纯化 Pipeline」模板：转化 → 小试诱导 →「表达量是否达标？」判断 → 放大培养 → 亲和层析纯化 → 浓度纯度测定 → IC50 曲线拟合 → 数据归档。",
+            actions: [{ label: "去 SynFlow 创建", url: "/workflows" }],
+          };
+        }
+        return {
+          reply:
+            "载体构建有两条推荐路线：\n\n🧬 **Gibson 组装**：适合 1–3 个片段，同源臂 20–40 bp，通用高效\n🔗 **Golden Gate**：适合 ≥4 个部件的标准化组装（MoClo 体系），无痕、可层级化\n\n两套路线都已作为 Pipeline 模板内置在 SynFlow 合成流中，自带阳性筛选与测序判断分支。",
+          actions: [{ label: "去 SynFlow 创建", url: "/workflows" }],
+        };
+      }
+
+      // ── SynFlow 流程查询 ──
+      if (/业务流|工作流|DAG|流程|pipeline|Pipeline|SynFlow|合成流/.test(msg)) {
         const wfs = await db.select().from(workflows);
         const allWn = await db.select().from(workflowNodes);
         if (!wfs.length) {
           return {
-            reply: "还没有业务流。去「业务流 DAG」页新建一个吧——可以从预置模板（CRISPR 菌株编辑 / CAR-T 杀伤评估 / 蛋白表达纯化）一键生成，再用手工、设备、判断、数据处理节点搭建你自己的流程。",
-            actions: [{ label: "业务流 DAG", url: "/workflows" }],
+            reply: "还没有流程。去 SynFlow 合成流新建一个吧——内置合成生物学 Pipeline 模板（Gibson / Golden Gate / CRISPR / 蛋白表达 / DBTL），也可以用手工、设备、判断、数据处理节点从零搭建。",
+            actions: [{ label: "SynFlow 合成流", url: "/workflows" }],
           };
         }
         const lines = wfs.map((w) => {
@@ -391,8 +419,8 @@ export const aiRouter = createRouter({
           return `• ${w.name}：${done}/${ns.length} 节点完成${cur ? `，当前「${cur.label}」（${cur.owner ?? "未分配"}）` : ""}`;
         });
         return {
-          reply: `当前共 ${wfs.length} 条业务流：\n\n${lines.join("\n")}\n\n可以打开业务流编辑器查看 DAG 图、分配节点负责人。`,
-          actions: [{ label: "业务流 DAG", url: "/workflows" }],
+          reply: `当前共 ${wfs.length} 条流程：\n\n${lines.join("\n")}\n\n打开 SynFlow 合成流可以查看 DAG 图、推进节点、分配负责人。`,
+          actions: [{ label: "SynFlow 合成流", url: "/workflows" }],
         };
       }
 
@@ -402,9 +430,9 @@ export const aiRouter = createRouter({
         const [ec] = await db.select({ n: sql<number>`COUNT(*)` }).from(experiments);
         const [sc] = await db.select({ n: sql<number>`COUNT(*)` }).from(samples);
         const [qc] = await db.select({ n: sql<number>`COUNT(*)` }).from(equipment);
-        const [rc] = await db.select({ n: sql<number>`COUNT(*)` }).from(pipelines).where(eq(pipelines.status, "active"));
+        const [rc] = await db.select({ n: sql<number>`COUNT(*)` }).from(workflows).where(eq(workflows.status, "active"));
         return {
-          reply: `实验室当前概况：\n\n📁 进行中项目 ${Number(pc?.n)} 个\n📓 实验记录 ${Number(ec?.n)} 条\n🧪 在库样本 ${Number(sc?.n)} 份\n🔬 设备 ${Number(qc?.n)} 台\n🔄 进行中 Pipeline ${Number(rc?.n)} 条\n\n需要深入了解哪一部分？`,
+          reply: `实验室当前概况：\n\n📁 进行中项目 ${Number(pc?.n)} 个\n📓 实验记录 ${Number(ec?.n)} 条\n🧪 在库样本 ${Number(sc?.n)} 份\n🔬 设备 ${Number(qc?.n)} 台\n🔄 进行中流程 ${Number(rc?.n)} 条\n\n需要深入了解哪一部分？`,
           actions: [
             { label: "仪表盘", url: "/" },
             { label: "项目管理", url: "/projects" },
@@ -495,42 +523,6 @@ export const aiRouter = createRouter({
         };
       }
 
-      // ── Pipeline 建议 ──
-      if (/pipeline|Pipeline|流程|载体构建|菌株|蛋白表达|DBTL/i.test(msg)) {
-        if (/菌株|CRISPR|基因编辑|敲除|敲入/.test(msg)) {
-          return {
-            reply:
-              "针对菌株基因组编辑，建议使用「菌株基因组编辑（CRISPR）」Pipeline，标准 8 阶段：gRNA 设计 → 供体模板构建 → RNP/质粒制备 → 转化编辑 → 菌落筛选 → 基因型验证 → 表型验证 → 保藏。\n\n要现在创建吗？",
-            actions: [{ label: "创建 Pipeline", url: "/pipelines" }],
-          };
-        }
-        if (/载体|组装|克隆|构建/.test(msg)) {
-          return {
-            reply:
-              "载体构建有两条推荐路线：\n\n🧬 **Gibson 组装**：适合 1–3 个片段，同源臂 20–40 bp，成功率高的通用方案\n🔗 **Golden Gate**：适合 ≥4 个部件的标准化组装（MoClo 体系），无痕、可层级化\n\n片段多且需要标准化库就选 Golden Gate，否则 Gibson 更快。",
-            actions: [{ label: "创建 Pipeline", url: "/pipelines" }],
-          };
-        }
-        const rows = await db.select().from(pipelines).where(eq(pipelines.status, "active")).limit(5);
-        if (rows.length) {
-          const lines = [];
-          for (const p of rows) {
-            const stages = await db.select().from(pipelineStages).where(eq(pipelineStages.pipelineId, p.id));
-            const cur = stages.find((s) => s.status === "in_progress");
-            lines.push(`• ${p.name}（第 ${p.iteration} 轮）— 当前：${cur?.name ?? "已完成"}`);
-          }
-          return {
-            reply: `当前进行中的 Pipeline：\n\n${lines.join("\n")}\n\n需要我帮你推进某个阶段，还是创建新的 Pipeline？`,
-            actions: [{ label: "Pipeline 总览", url: "/pipelines" }],
-          };
-        }
-        return {
-          reply:
-            "目前还没有运行中的 Pipeline。我推荐按项目目标选择：载体构建（Gibson/Golden Gate）、菌株编辑（CRISPR）、蛋白表达纯化，或通用的 DBTL 工程循环。",
-          actions: [{ label: "创建 Pipeline", url: "/pipelines" }],
-        };
-      }
-
       // ── 样本查询 ──
       const sampleHit = await db
         .select()
@@ -552,7 +544,7 @@ export const aiRouter = createRouter({
         reply: `我是 LabNova Copilot，你的合成生物学实验助手 🧬\n\n我目前可以：\n\n📊 **实验室问答** —「哪些样本快过期了」「流式细胞仪今天有预约吗」「实验室现在什么情况」\n🧬 **序列分析** — 在序列页打开我，自动给出 GC%、ORF、酶切位点分析\n📋 **方案生成** — 说出「Gibson 方案」「qPCR 步骤」等，生成标准 Protocol 并插入实验记录\n🔧 **设计建议** — Gibson 引物设计、载体构建路线选择、Pipeline 推荐\n\n试试对我说：「帮我分析这条序列」或「生成 Gibson 组装方案」`,
         actions: [
           { label: "序列库", url: "/sequences" },
-          { label: "Pipeline", url: "/pipelines" },
+          { label: "SynFlow 合成流", url: "/workflows" },
         ],
       };
       } catch (err) {

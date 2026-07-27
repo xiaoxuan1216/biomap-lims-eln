@@ -2,8 +2,6 @@ import { getDb } from "../api/queries/connection";
 import {
   sequenceFeatures,
   sequences,
-  pipelines,
-  pipelineStages,
   equipment,
   equipmentBookings,
   equipmentMaintenance,
@@ -59,84 +57,6 @@ export async function seed() {
     }
     if (feats.length) await db.insert(sequenceFeatures).values(feats);
     console.log(`  features: ${feats.length}`);
-  }
-
-  // ─── 合成生物学 Pipeline ───
-  const [pipeCount] = await db.select({ n: sql<number>`COUNT(*)` }).from(pipelines);
-  if (Number(pipeCount?.n ?? 0) === 0) {
-    const [cart] = await db.select().from(projects).where(sql`name LIKE '%CAR-T%'`).limit(1);
-    const [aav] = await db.select().from(projects).where(sql`name LIKE '%AAV%'`).limit(1);
-
-    // 1. Gibson 载体构建（进行中）
-    const [g1] = await db
-      .insert(pipelines)
-      .values({
-        name: "CD19-CAR-4G 慢病毒载体构建",
-        type: "gibson_assembly",
-        status: "active",
-        projectId: cart?.id ?? null,
-        description: "将第四代 CAR（CD28+4-1BB 双共刺激）组装进 pLenti 骨架，用于慢病毒包装。",
-        createdByName: "演示用户",
-      })
-      .$returningId();
-    await db.insert(pipelineStages).values([
-      { pipelineId: g1.id, name: "序列设计与密码子优化", orderIndex: 1, status: "done", completedAt: ts(-12, 15), notes: "人源化密码子优化完成，GC 52%" },
-      { pipelineId: g1.id, name: "引物设计与合成", orderIndex: 2, status: "done", completedAt: ts(-9, 11), notes: "同源臂 25 bp，IDT 合成" },
-      { pipelineId: g1.id, name: "基因片段 PCR 扩增", orderIndex: 3, status: "done", completedAt: ts(-6, 17), notes: "KOD 高保真酶，3 个片段均出带" },
-      { pipelineId: g1.id, name: "载体酶切线性化", orderIndex: 4, status: "done", completedAt: ts(-5, 14), notes: "BamHI/XhoI 双酶切 pLenti 骨架" },
-      { pipelineId: g1.id, name: "Gibson 组装", orderIndex: 5, status: "in_progress", notes: "50°C 60 min，摩尔比 1:3" },
-      { pipelineId: g1.id, name: "转化与克隆筛选", orderIndex: 6, status: "pending" },
-      { pipelineId: g1.id, name: "Sanger 测序验证", orderIndex: 7, status: "pending" },
-      { pipelineId: g1.id, name: "质粒保藏入库", orderIndex: 8, status: "pending" },
-    ]);
-
-    // 2. CRISPR 菌株编辑
-    const [c1] = await db
-      .insert(pipelines)
-      .values({
-        name: "E. coli BL21  lactose 操纵子敲除",
-        type: "strain_engineering",
-        status: "active",
-        projectId: aav?.id ?? null,
-        description: "CRISPR-Cas9 敲除 lac 操纵子，减少 IPTG 泄露表达，优化蛋白生产宿主。",
-        createdByName: "演示用户",
-      })
-      .$returningId();
-    await db.insert(pipelineStages).values([
-      { pipelineId: c1.id, name: "靶点选择与 gRNA 设计评估", orderIndex: 1, status: "done", completedAt: ts(-8, 10), notes: "3 条候选 gRNA，脱靶评分均 < 0.1" },
-      { pipelineId: c1.id, name: "供体修复模板构建", orderIndex: 2, status: "done", completedAt: ts(-4, 16) },
-      { pipelineId: c1.id, name: "编辑质粒 / RNP 制备", orderIndex: 3, status: "in_progress" },
-      { pipelineId: c1.id, name: "宿主转化与编辑", orderIndex: 4, status: "pending" },
-      { pipelineId: c1.id, name: "阳性克隆筛选（菌落 PCR）", orderIndex: 5, status: "pending" },
-      { pipelineId: c1.id, name: "基因型测序验证", orderIndex: 6, status: "pending" },
-      { pipelineId: c1.id, name: "表型与生长曲线验证", orderIndex: 7, status: "pending" },
-      { pipelineId: c1.id, name: "工程菌株保藏", orderIndex: 8, status: "pending" },
-    ]);
-
-    // 3. DBTL 循环（第二轮迭代中）
-    const [d1] = await db
-      .insert(pipelines)
-      .values({
-        name: "CAR-T 杀伤活性优化 DBTL",
-        type: "dbtl_cycle",
-        status: "active",
-        iteration: 2,
-        projectId: cart?.id ?? null,
-        description: "以杀伤率为指标的工程迭代：第一轮发现 4-1BB 构型更优，第二轮优化启动子强度。",
-        createdByName: "演示用户",
-      })
-      .$returningId();
-    await db.insert(pipelineStages).values([
-      { pipelineId: d1.id, name: "Design · 设计", orderIndex: 1, status: "done", completedAt: ts(-20, 9) },
-      { pipelineId: d1.id, name: "Build · 构建", orderIndex: 2, status: "done", completedAt: ts(-15, 18) },
-      { pipelineId: d1.id, name: "Test · 测试", orderIndex: 3, status: "done", completedAt: ts(-10, 16) },
-      { pipelineId: d1.id, name: "Learn · 学习与建模", orderIndex: 4, status: "done", completedAt: ts(-7, 14), notes: "4-1BB 构型杀伤率提升 23%，进入第二轮" },
-      { pipelineId: d1.id, name: "Design · 设计（迭代 2）", orderIndex: 5, status: "done", completedAt: ts(-5, 11), notes: "EF1α vs PGK 启动子对比设计" },
-      { pipelineId: d1.id, name: "Build · 构建（迭代 2）", orderIndex: 6, status: "in_progress" },
-      { pipelineId: d1.id, name: "Test · 测试（迭代 2）", orderIndex: 7, status: "pending" },
-      { pipelineId: d1.id, name: "Learn · 学习与建模（迭代 2）", orderIndex: 8, status: "pending" },
-    ]);
-    console.log("  pipelines: 3 (with stages)");
   }
 
   // ─── 实验室设备 ───

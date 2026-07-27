@@ -6,7 +6,6 @@ import { sampleRouter } from "./sampleRouter";
 import { storageRouter } from "./storageRouter";
 import { sequenceRouter } from "./sequenceRouter";
 import { dashboardRouter } from "./dashboardRouter";
-import { pipelineRouter } from "./pipelineRouter";
 import { equipmentRouter } from "./equipmentRouter";
 import { aiRouter } from "./aiRouter";
 import { workflowRouter } from "./workflowRouter";
@@ -20,7 +19,6 @@ export const appRouter = createRouter({
   storage: storageRouter,
   sequence: sequenceRouter,
   dashboard: dashboardRouter,
-  pipeline: pipelineRouter,
   equipment: equipmentRouter,
   ai: aiRouter,
   workflow: workflowRouter,

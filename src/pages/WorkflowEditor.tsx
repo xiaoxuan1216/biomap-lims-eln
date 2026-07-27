@@ -253,7 +253,7 @@ function EditorInner({ id }: { id: number }) {
         return;
       }
       if (wouldCycle(edges, conn.source, conn.target)) {
-        toast.error("不允许形成循环依赖 —— 业务流必须是有向无环图（DAG）");
+        toast.error("不允许形成循环依赖 —— 流程图必须是有向无环图（DAG）");
         return;
       }
       const src = nodes.find((n) => n.id === conn.source);
@@ -299,7 +299,7 @@ function EditorInner({ id }: { id: number }) {
   });
 
   const save = () => {
-    updateMut.mutate({ id, name: wfName.trim() || "未命名业务流", description: wfDesc || null, status: wfStatus as "draft" | "active" | "completed" | "archived" });
+    updateMut.mutate({ id, name: wfName.trim() || "未命名流程", description: wfDesc || null, status: wfStatus as "draft" | "active" | "completed" | "archived" });
     saveMut.mutate(
       {
         id,
@@ -324,7 +324,7 @@ function EditorInner({ id }: { id: number }) {
       },
       {
         onSuccess: () => {
-          toast.success("业务流图已保存");
+          toast.success("流程图已保存");
           setDirty(false);
           utils.workflow.byId.invalidate({ id });
           utils.workflow.list.invalidate();
@@ -496,7 +496,7 @@ function EditorInner({ id }: { id: number }) {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="text-sm font-semibold">业务流信息</div>
+              <div className="text-sm font-semibold">流程信息</div>
               <div className="space-y-1.5">
                 <Label>描述</Label>
                 <Textarea

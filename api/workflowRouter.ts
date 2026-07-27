@@ -126,6 +126,7 @@ export const workflowRouter = createRouter({
       key: t.key,
       name: t.name,
       description: t.description,
+      group: t.group,
       nodeCount: t.nodes.length,
     })),
   ),

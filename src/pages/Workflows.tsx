@@ -18,7 +18,9 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -37,7 +39,7 @@ export default function Workflows() {
 
   const createMut = trpc.workflow.create.useMutation({
     onSuccess: (r) => {
-      toast.success("业务流已创建");
+      toast.success("流程已创建");
       setCreateOpen(false);
       utils.workflow.list.invalidate();
       navigate(`/workflows/${r.id}`);
@@ -51,13 +53,13 @@ export default function Workflows() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">业务流 DAG</h1>
+          <h1 className="text-2xl font-bold tracking-tight">SynFlow 合成流</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            以有向无环图编排合成生物学业务流程 · 手工 / 设备 / 判断 / 数据处理节点 · 负责人分配
+            合成生物学流程编排平台 · 手工 / 设备 / 判断 / 数据处理节点 · 负责人分配 · 合成 Pipeline 即开即用
           </p>
         </div>
         <Button className="bg-teal-600 hover:bg-teal-500" onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4 mr-1" /> 新建业务流
+          <Plus className="h-4 w-4 mr-1" /> 新建流程
         </Button>
       </div>
 
@@ -67,7 +69,7 @@ export default function Workflows() {
         <Card>
           <CardContent className="py-16 text-center text-muted-foreground">
             <Network className="h-10 w-10 mx-auto mb-3 opacity-30" />
-            还没有业务流，点击右上角「新建业务流」，可从预置模板一键生成
+            还没有流程，点击右上角「新建流程」，可从预置 Pipeline 模板一键生成
           </CardContent>
         </Card>
       ) : (
@@ -126,7 +128,7 @@ export default function Workflows() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>新建业务流</DialogTitle>
+            <DialogTitle>新建流程</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
@@ -145,11 +147,26 @@ export default function Workflows() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="blank">空白画布</SelectItem>
-                  {templates?.map((t) => (
-                    <SelectItem key={t.key} value={t.key}>
-                      {t.name}（{t.nodeCount} 节点）
-                    </SelectItem>
-                  ))}
+                  <SelectGroup>
+                    <SelectLabel>合成生物学 Pipeline</SelectLabel>
+                    {templates
+                      ?.filter((t) => t.group === "pipeline")
+                      .map((t) => (
+                        <SelectItem key={t.key} value={t.key}>
+                          {t.name}（{t.nodeCount} 节点）
+                        </SelectItem>
+                      ))}
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel>通用业务流</SelectLabel>
+                    {templates
+                      ?.filter((t) => t.group === "flow")
+                      .map((t) => (
+                        <SelectItem key={t.key} value={t.key}>
+                          {t.name}（{t.nodeCount} 节点）
+                        </SelectItem>
+                      ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
               {selectedTpl && (

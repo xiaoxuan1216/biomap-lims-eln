@@ -6,12 +6,12 @@ import {
   equipment,
   projects,
 } from "./schema";
-import { sql, eq } from "drizzle-orm";
-import { WORKFLOW_TEMPLATES } from "../contracts/workflow";
+import { sql } from "drizzle-orm";
+import { WORKFLOW_TEMPLATES, type WorkflowTemplate } from "../contracts/workflow";
 
 export async function seed() {
   const db = getDb();
-  console.log("Seeding v3 data (业务流 DAG)...");
+  console.log("Seeding v3 data (SynFlow 合成流)...");
 
   const [wfCount] = await db.select({ n: sql<number>`COUNT(*)` }).from(workflows);
   if (Number(wfCount?.n ?? 0) > 0) {
@@ -26,7 +26,6 @@ export async function seed() {
   const projList = await db.select().from(projects);
   const projId = (kw: string) => projList.find((p) => p.name.includes(kw))?.id ?? null;
 
-  // 模板实例化 + 设备绑定 + 部分节点状态（演示进行中态）
   const EQUIP_BIND: Record<string, string> = {
     e_flow: "流式细胞仪",
     e_qpcr: "荧光定量 PCR",
@@ -36,25 +35,54 @@ export async function seed() {
     e_purify: "蛋白纯化",
     e_seq: "测序仪",
   };
-  // 每条业务流的节点状态演示（nodeKey → status）
-  const STATUS_DEMO: Record<string, Record<string, "pending" | "in_progress" | "done">> = {
-    crispr_strain: { n1: "done", n2: "done", n3: "done", n4: "in_progress" },
-    cart_killing: { n1: "done", n2: "done", n3: "in_progress" },
-  };
 
-  for (const tpl of WORKFLOW_TEMPLATES.slice(0, 2)) {
+  type NodeStatus = "pending" | "in_progress" | "done";
+  const SEED_FLOWS: {
+    key: string;
+    name?: string;
+    description?: string;
+    projKw?: string;
+    statuses: Record<string, NodeStatus>;
+  }[] = [
+    {
+      key: "gibson_assembly",
+      name: "CD19-CAR-4G 慢病毒载体构建（Gibson）",
+      description: "将第四代 CAR（CD28+4-1BB 双共刺激）组装进 pLenti 骨架，用于慢病毒包装。",
+      projKw: "CAR-T",
+      statuses: { n1: "done", n2: "done", n3: "done", n4: "done", n5: "in_progress" },
+    },
+    {
+      key: "crispr_strain",
+      projKw: "AAV",
+      statuses: { n1: "done", n2: "done", n3: "done", n4: "in_progress" },
+    },
+    {
+      key: "cart_killing",
+      projKw: "CAR-T",
+      statuses: { n1: "done", n2: "done", n3: "in_progress" },
+    },
+    {
+      key: "dbtl_cycle",
+      name: "CAR-T 杀伤活性优化 DBTL（第 2 轮迭代）",
+      description: "以杀伤率为指标的工程迭代：第一轮发现 4-1BB 构型更优（提升 23%），第二轮优化启动子强度。",
+      projKw: "CAR-T",
+      statuses: { n1: "done", n2: "in_progress" },
+    },
+  ];
+
+  for (const sf of SEED_FLOWS) {
+    const tpl = WORKFLOW_TEMPLATES.find((t) => t.key === sf.key) as WorkflowTemplate;
     const [{ id: wfId }] = await db
       .insert(workflows)
       .values({
-        name: tpl.name,
-        description: tpl.description,
+        name: sf.name ?? tpl.name,
+        description: sf.description ?? tpl.description,
         status: "active",
-        projectId: tpl.key === "cart_killing" ? projId("CAR-T") : projId("AAV"),
+        projectId: sf.projKw ? projId(sf.projKw) : null,
         createdByName: "演示用户",
       })
       .$returningId();
 
-    const statuses = STATUS_DEMO[tpl.key] ?? {};
     await db.insert(workflowNodes).values(
       tpl.nodes.map((n) => ({
         workflowId: wfId,
@@ -68,7 +96,7 @@ export async function seed() {
             ? eqId(EQUIP_BIND[n.templateKey])
             : null,
         config: n.config ?? null,
-        status: statuses[n.key] ?? "pending",
+        status: sf.statuses[n.key] ?? "pending",
         posX: n.x,
         posY: n.y,
       })),
@@ -83,11 +111,10 @@ export async function seed() {
         label: e.label ?? null,
       })),
     );
-    console.log(`  workflow: ${tpl.name} (${tpl.nodes.length} nodes, ${tpl.edges.length} edges)`);
+    console.log(`  workflow: ${sf.name ?? tpl.name} (${tpl.nodes.length} nodes, ${tpl.edges.length} edges)`);
   }
 
   console.log("Done. Seed v3 inserted.");
-  return;
 }
 
 // CLI 入口：直接运行该脚本时执行（被 import 时不执行）

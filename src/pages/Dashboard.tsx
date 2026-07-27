@@ -7,6 +7,7 @@ import {
   NotebookPen,
   TestTubes,
   Workflow,
+  Network,
   AlertTriangle,
   Clock,
   ArrowRight,
@@ -35,7 +36,7 @@ export default function Dashboard() {
   const { data: expiring } = trpc.dashboard.expiringSamples.useQuery();
   const { data: lowStock } = trpc.dashboard.lowStockSamples.useQuery();
   const { data: experiments } = trpc.experiment.list.useQuery();
-  const { data: pipelines } = trpc.pipeline.list.useQuery();
+  const { data: workflows } = trpc.workflow.list.useQuery();
   const { data: equipmentList } = trpc.equipment.list.useQuery();
   const { data: insights } = trpc.ai.insights.useQuery();
 
@@ -50,7 +51,7 @@ export default function Dashboard() {
     { label: "进行中项目", value: stats?.activeProjects, icon: FolderKanban, color: "text-teal-600 bg-teal-50", to: "/projects" },
     { label: "进行中实验", value: stats?.inProgressExperiments, icon: NotebookPen, color: "text-blue-600 bg-blue-50", to: "/experiments" },
     { label: "样本总数", value: stats?.totalSamples, icon: TestTubes, color: "text-violet-600 bg-violet-50", to: "/samples" },
-    { label: "进行中 Pipeline", value: pipelines?.filter((p) => p.status === "active").length, icon: Workflow, color: "text-amber-600 bg-amber-50", to: "/pipelines" },
+    { label: "进行中流程", value: workflows?.filter((w) => w.status === "active").length, icon: Network, color: "text-amber-600 bg-amber-50", to: "/workflows" },
     { label: "设备总数", value: equipmentList?.length, icon: MonitorCog, color: "text-indigo-600 bg-indigo-50", to: "/equipment" },
     {
       label: "设备可用",
