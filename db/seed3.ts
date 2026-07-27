@@ -9,14 +9,14 @@ import {
 import { sql, eq } from "drizzle-orm";
 import { WORKFLOW_TEMPLATES } from "../contracts/workflow";
 
-async function seed() {
+export async function seed() {
   const db = getDb();
   console.log("Seeding v3 data (业务流 DAG)...");
 
   const [wfCount] = await db.select({ n: sql<number>`COUNT(*)` }).from(workflows);
   if (Number(wfCount?.n ?? 0) > 0) {
     console.log("Workflows already seeded, skipping.");
-    process.exit(0);
+    return;
   }
 
   // 设备名称 → id（用于设备节点绑定）
@@ -87,10 +87,16 @@ async function seed() {
   }
 
   console.log("Done. Seed v3 inserted.");
-  process.exit(0);
+  return;
 }
 
-seed().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// CLI 入口：直接运行该脚本时执行（被 import 时不执行）
+const isMain = process.argv[1]?.endsWith("seed3.ts") ?? false;
+if (isMain) {
+  seed()
+    .then(() => process.exit(0))
+    .catch((e) => {
+      console.error(e);
+      process.exit(1);
+    });
+}

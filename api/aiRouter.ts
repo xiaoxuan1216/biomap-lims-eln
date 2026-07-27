@@ -281,6 +281,7 @@ export const aiRouter = createRouter({
       }),
     )
     .mutation(async ({ input }) => {
+      try {
       const db = getDb();
       const msg = input.message;
       const actions: { label: string; url?: string; kind?: string; templateKey?: string }[] = [];
@@ -396,7 +397,7 @@ export const aiRouter = createRouter({
       }
 
       // ── 统计概览 ──
-      if (/统计|多少|几个|概况|总结|汇报/.test(msg) && /项目|实验|样本|室/.test(msg)) {
+      if ((/统计|多少|几个|概况|总结|汇报/.test(msg) && /项目|实验|样本|室/.test(msg)) || /实验室.*(什么情况|怎么样|如何)|现在什么情况/.test(msg)) {
         const [pc] = await db.select({ n: sql<number>`COUNT(*)` }).from(projects).where(eq(projects.status, "active"));
         const [ec] = await db.select({ n: sql<number>`COUNT(*)` }).from(experiments);
         const [sc] = await db.select({ n: sql<number>`COUNT(*)` }).from(samples);
@@ -554,6 +555,14 @@ export const aiRouter = createRouter({
           { label: "Pipeline", url: "/pipelines" },
         ],
       };
+      } catch (err) {
+        // 关键：真实错误打到服务端日志，前端得到友好降级回复而不是「出错了」
+        console.error("[ai.chat] 处理消息时出错:", err);
+        return {
+          reply: "抱歉，我在查询数据时遇到了一点问题，请稍后再试。如果问题持续出现，可能是数据库尚未完成初始化——稍等片刻让服务完成启动，或联系管理员查看服务端日志。",
+          actions: [],
+        };
+      }
     }),
 
   /** 生成协议区块（供前端插入 ELN） */

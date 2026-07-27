@@ -24,7 +24,7 @@ function dateStr(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-async function seed() {
+export async function seed() {
   const db = getDb();
   console.log("Seeding v2 data...");
 
@@ -188,10 +188,16 @@ async function seed() {
   }
 
   console.log("Seed v2 done.");
-  process.exit(0);
+  return;
 }
 
-seed().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// CLI 入口：直接运行该脚本时执行（被 import 时不执行）
+const isMain = process.argv[1]?.endsWith("seed2.ts") ?? false;
+if (isMain) {
+  seed()
+    .then(() => process.exit(0))
+    .catch((e) => {
+      console.error(e);
+      process.exit(1);
+    });
+}
