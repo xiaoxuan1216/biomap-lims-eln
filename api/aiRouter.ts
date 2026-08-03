@@ -282,7 +282,7 @@ export const aiRouter = createRouter({
       try {
       const db = getDb();
       const msg = input.message;
-      const actions: { label: string; url?: string; kind?: string; templateKey?: string }[] = [];
+      const actions: { label: string; url?: string; kind?: string; templateKey?: string; name?: string }[] = [];
 
       // ── 效期/过期查询 ──
       if (/过期|临期|效期|到期/.test(msg)) {
@@ -372,33 +372,60 @@ export const aiRouter = createRouter({
         };
       }
 
-      // ── SynFlow 流程推荐 ──
-      if (/载体构建|菌株|CRISPR|基因编辑|敲除|敲入|蛋白表达|纯化|DBTL|工程循环|Golden\s*Gate|Gibson|组装/i.test(msg)) {
+      // ── SynFlow 流程推荐（支持一键创建） ──
+      if (/载体|菌株|CRISPR|基因编辑|敲除|敲入|蛋白表达|蛋白质|纯化|DBTL|工程循环|Golden\s*Gate|Gibson|组装|质粒|分子克隆|克隆构建/i.test(msg)) {
         if (/菌株|CRISPR|基因编辑|敲除|敲入/.test(msg)) {
           return {
             reply:
-              "针对菌株基因组编辑，推荐使用 SynFlow 合成流的「菌株基因组编辑 Pipeline（CRISPR）」模板：gRNA 设计 → 编辑质粒构建 → 转化 → 「克隆是否阳性？」判断 → Sanger 测序 → 「测序是否匹配？」判断 → 编辑效率分析。\n\n要现在创建吗？",
-            actions: [{ label: "去 SynFlow 创建", url: "/workflows" }],
+              "针对菌株基因组编辑，推荐使用 SynFlow 合成流的「菌株基因组编辑 Pipeline（CRISPR）」模板：gRNA 设计 → 编辑质粒构建 → 转化 → 「克隆是否阳性？」判断 → Sanger 测序 → 「测序是否匹配？」判断 → 编辑效率分析。\n\n点击下方按钮即可一键创建整套 DAG 流程：",
+            actions: [
+              { label: "立即创建 CRISPR 流程", kind: "createWorkflow", templateKey: "crispr_strain", name: "菌株基因组编辑 Pipeline（CRISPR）" },
+            ],
           };
         }
         if (/DBTL|工程循环|迭代/.test(msg)) {
           return {
             reply:
-              "DBTL 工程循环已作为模板内置在 SynFlow 合成流中：Design（数据节点）→ Build（手工节点）→ Test（设备节点）→ Learn（数据节点）→「进入下一轮迭代？」判断节点，自动衔接第 N+1 轮循环。",
-            actions: [{ label: "去 SynFlow 创建", url: "/workflows" }],
+              "DBTL 工程循环已作为模板内置在 SynFlow 合成流中：Design（数据节点）→ Build（手工节点）→ Test（设备节点）→ Learn（数据节点）→「进入下一轮迭代？」判断节点，自动衔接第 N+1 轮循环。\n\n点击下方按钮即可一键创建：",
+            actions: [
+              { label: "立即创建 DBTL 循环", kind: "createWorkflow", templateKey: "dbtl_cycle", name: "DBTL 工程循环" },
+            ],
           };
         }
         if (/蛋白表达|纯化|表达/.test(msg)) {
           return {
             reply:
-              "蛋白表达推荐使用 SynFlow 的「蛋白表达纯化 Pipeline」模板：转化 → 小试诱导 →「表达量是否达标？」判断 → 放大培养 → 亲和层析纯化 → 浓度纯度测定 → IC50 曲线拟合 → 数据归档。",
-            actions: [{ label: "去 SynFlow 创建", url: "/workflows" }],
+              "蛋白表达推荐使用 SynFlow 的「蛋白表达纯化 Pipeline」模板：转化 → 小试诱导 →「表达量是否达标？」判断 → 放大培养 → 亲和层析纯化 → 浓度纯度测定 → IC50 曲线拟合 → 数据归档。\n\n点击下方按钮即可一键创建：",
+            actions: [
+              { label: "立即创建蛋白表达流程", kind: "createWorkflow", templateKey: "protein_expr", name: "蛋白表达纯化 Pipeline" },
+            ],
+          };
+        }
+        if (/Golden\s*Gate/i.test(msg)) {
+          return {
+            reply:
+              "Golden Gate 组装适合 ≥4 个部件的标准化组装（MoClo 体系），无痕、可层级化，模板自带酶切连接、转化筛选与测序判断分支。\n\n点击下方按钮即可一键创建：",
+            actions: [
+              { label: "立即创建 Golden Gate 流程", kind: "createWorkflow", templateKey: "golden_gate", name: "Golden Gate 组装 Pipeline" },
+            ],
+          };
+        }
+        if (/Gibson/i.test(msg)) {
+          return {
+            reply:
+              "Gibson 组装适合 1–3 个片段，同源臂 20–40 bp，通用高效，模板自带阳性筛选与测序判断分支。\n\n点击下方按钮即可一键创建：",
+            actions: [
+              { label: "立即创建 Gibson 流程", kind: "createWorkflow", templateKey: "gibson_assembly", name: "Gibson 组装 Pipeline" },
+            ],
           };
         }
         return {
           reply:
-            "载体构建有两条推荐路线：\n\n🧬 **Gibson 组装**：适合 1–3 个片段，同源臂 20–40 bp，通用高效\n🔗 **Golden Gate**：适合 ≥4 个部件的标准化组装（MoClo 体系），无痕、可层级化\n\n两套路线都已作为 Pipeline 模板内置在 SynFlow 合成流中，自带阳性筛选与测序判断分支。",
-          actions: [{ label: "去 SynFlow 创建", url: "/workflows" }],
+            "载体构建有两条推荐路线：\n\n🧬 **Gibson 组装**：适合 1–3 个片段，同源臂 20–40 bp，通用高效\n🔗 **Golden Gate**：适合 ≥4 个部件的标准化组装（MoClo 体系），无痕、可层级化\n\n两套路线都已作为 Pipeline 模板内置在 SynFlow 合成流中，自带阳性筛选与测序判断分支。点击下方按钮即可一键创建：",
+          actions: [
+            { label: "创建 Gibson 流程", kind: "createWorkflow", templateKey: "gibson_assembly", name: "Gibson 组装 Pipeline" },
+            { label: "创建 Golden Gate 流程", kind: "createWorkflow", templateKey: "golden_gate", name: "Golden Gate 组装 Pipeline" },
+          ],
         };
       }
 
@@ -541,7 +568,7 @@ export const aiRouter = createRouter({
 
       // ── 兜底：能力清单 ──
       return {
-        reply: `我是 LabNova Copilot，你的合成生物学实验助手 🧬\n\n我目前可以：\n\n📊 **实验室问答** —「哪些样本快过期了」「流式细胞仪今天有预约吗」「实验室现在什么情况」\n🧬 **序列分析** — 在序列页打开我，自动给出 GC%、ORF、酶切位点分析\n📋 **方案生成** — 说出「Gibson 方案」「qPCR 步骤」等，生成标准 Protocol 并插入实验记录\n🔧 **设计建议** — Gibson 引物设计、载体构建路线选择、Pipeline 推荐\n\n试试对我说：「帮我分析这条序列」或「生成 Gibson 组装方案」`,
+        reply: `我是 LabNova Copilot，你的合成生物学实验助手 🧬\n\n我目前可以：\n\n📊 **实验室问答** —「哪些样本快过期了」「流式细胞仪今天有预约吗」「实验室现在什么情况」\n🧬 **序列分析** — 在序列页打开我，自动给出 GC%、ORF、酶切位点分析\n📋 **方案生成** — 说出「Gibson 方案」「qPCR 步骤」等，生成标准 Protocol 并插入实验记录\n🔧 **设计建议** — Gibson 引物设计、载体构建路线选择、Pipeline 推荐并可一键创建整套 DAG 流程\n\n试试对我说：「帮我分析这条序列」或「生成 Gibson 组装方案」`,
         actions: [
           { label: "序列库", url: "/sequences" },
           { label: "SynFlow 合成流", url: "/workflows" },

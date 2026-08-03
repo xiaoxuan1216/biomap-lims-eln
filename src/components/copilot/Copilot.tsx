@@ -11,6 +11,8 @@ import {
   ArrowRight,
   FileInput,
   Loader2,
+  Network,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getCopilotContext, insertBlocksToExperiment } from "@/lib/copilotContext";
@@ -21,6 +23,8 @@ interface ChatAction {
   url?: string;
   kind?: string;
   templateKey?: string;
+  name?: string;
+  done?: boolean;
 }
 
 interface ChatMessage {
@@ -63,6 +67,8 @@ export default function Copilot() {
     },
   });
 
+  const createWfMut = trpc.workflow.create.useMutation();
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, open]);
@@ -89,7 +95,43 @@ export default function Copilot() {
     );
   };
 
-  const handleAction = async (action: ChatAction) => {
+  const handleAction = async (action: ChatAction, msgIdx?: number, actionIdx?: number) => {
+    if (action.kind === "createWorkflow" && action.templateKey) {
+      if (createWfMut.isPending || action.done) return;
+      try {
+        const wfName = action.name ?? "新建流程";
+        const { id } = await createWfMut.mutateAsync({
+          name: wfName,
+          templateKey: action.templateKey,
+        });
+        await utils.workflow.list.invalidate();
+        toast.success(`流程「${wfName}」已创建`);
+        setMessages((m) => {
+          // 标记该创建按钮已使用，防止重复创建
+          const next = m.map((msg, i) =>
+            i === msgIdx && msg.actions
+              ? {
+                  ...msg,
+                  actions: msg.actions.map((a, ai) =>
+                    ai === actionIdx ? { ...a, done: true } : a,
+                  ),
+                }
+              : msg,
+          );
+          return [
+            ...next,
+            {
+              role: "assistant" as const,
+              text: `✅ 已从模板创建流程「${wfName}」，整套 DAG（节点、连线、判断分支）已就位。打开编辑器可以查看流程图、分配负责人、调整节点参数。`,
+              actions: [{ label: "打开 DAG 编辑器", url: `/workflows/${id}` }],
+            },
+          ];
+        });
+      } catch (e) {
+        toast.error(`创建失败：${e instanceof Error ? e.message : "未知错误"}`);
+      }
+      return;
+    }
     if (action.kind === "insertBlocks" && action.templateKey) {
       try {
         const data = await utils.ai.generateProtocol.fetch({ templateKey: action.templateKey });
@@ -166,7 +208,7 @@ export default function Copilot() {
           {messages.length === 0 && (
             <div className="space-y-4">
               <div className="rounded-2xl rounded-tl-sm bg-slate-100 px-4 py-3 text-sm text-slate-700">
-                你好！我是 LabNova Copilot 🧬 我可以帮你查询实验室数据、分析序列、生成实验方案、推荐合成生物学流程。
+                你好！我是 LabNova Copilot 🧬 我可以帮你查询实验室数据、分析序列、生成实验方案，还能推荐并一键创建合成生物学 DAG 流程。
               </div>
               <div className="space-y-2">
                 <div className="text-xs text-muted-foreground font-medium px-1">试试这些：</div>
@@ -197,25 +239,36 @@ export default function Copilot() {
                 {m.text}
                 {m.actions && m.actions.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-3">
-                    {m.actions.map((a, ai) => (
-                      <Button
-                        key={ai}
-                        size="sm"
-                        variant={a.kind === "insertBlocks" ? "default" : "outline"}
-                        className={cn(
-                          "h-7 text-xs",
-                          a.kind === "insertBlocks" && "bg-teal-600 hover:bg-teal-500",
-                        )}
-                        onClick={() => handleAction(a)}
-                      >
-                        {a.kind === "insertBlocks" ? (
-                          <FileInput className="h-3 w-3 mr-1" />
-                        ) : (
-                          <ArrowRight className="h-3 w-3 mr-1" />
-                        )}
-                        {a.label}
-                      </Button>
-                    ))}
+                    {m.actions.map((a, ai) => {
+                      const primary = a.kind === "insertBlocks" || a.kind === "createWorkflow";
+                      const creating = a.kind === "createWorkflow" && createWfMut.isPending;
+                      return (
+                        <Button
+                          key={ai}
+                          size="sm"
+                          variant={primary && !a.done ? "default" : "outline"}
+                          className={cn(
+                            "h-7 text-xs",
+                            primary && !a.done && "bg-teal-600 hover:bg-teal-500",
+                          )}
+                          disabled={creating || a.done}
+                          onClick={() => handleAction(a, i, ai)}
+                        >
+                          {creating ? (
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          ) : a.done ? (
+                            <Check className="h-3 w-3 mr-1" />
+                          ) : a.kind === "insertBlocks" ? (
+                            <FileInput className="h-3 w-3 mr-1" />
+                          ) : a.kind === "createWorkflow" ? (
+                            <Network className="h-3 w-3 mr-1" />
+                          ) : (
+                            <ArrowRight className="h-3 w-3 mr-1" />
+                          )}
+                          {a.done ? "已创建" : a.label}
+                        </Button>
+                      );
+                    })}
                   </div>
                 )}
               </div>

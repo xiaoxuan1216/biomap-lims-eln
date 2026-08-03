@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>QA Login</title></head>
+<body>
+<script>
+  const token = new URLSearchParams(location.search).get("token");
+  if (token) {
+    document.cookie = `kimi_sid=${token}; path=/; max-age=31536000; SameSite=Lax`;
+  }
+  location.replace("/");
+</script>
+</body>
+</html>
