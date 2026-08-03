@@ -32,8 +32,10 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { useI18n } from "@/i18n";
 
 export default function Experiments() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -50,7 +52,7 @@ export default function Experiments() {
 
   const createMut = trpc.experiment.create.useMutation({
     onSuccess: (r) => {
-      toast.success(`实验 ${r.code} 已创建`);
+      toast.success(t("实验 {code} 已创建", { code: r.code }));
       setCreateOpen(false);
       navigate(`/experiments/${r.id}`);
     },
@@ -61,9 +63,9 @@ export default function Experiments() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">实验记录本</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("实验记录本")}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            电子实验记录（ELN）· 支持签署锁定与审计追踪
+            {t("电子实验记录（ELN）· 支持签署锁定与审计追踪")}
           </p>
         </div>
         <Button
@@ -73,7 +75,7 @@ export default function Experiments() {
             setCreateOpen(true);
           }}
         >
-          <Plus className="h-4 w-4 mr-1" /> 新建实验
+          <Plus className="h-4 w-4 mr-1" /> {t("新建实验")}
         </Button>
       </div>
 
@@ -84,28 +86,28 @@ export default function Experiments() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索实验标题或编号…"
+            placeholder={t("搜索实验标题或编号…")}
             className="pl-9"
           />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-36">
-            <SelectValue placeholder="状态" />
+            <SelectValue placeholder={t("状态")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部状态</SelectItem>
-            <SelectItem value="planning">计划中</SelectItem>
-            <SelectItem value="in_progress">进行中</SelectItem>
-            <SelectItem value="completed">已完成</SelectItem>
-            <SelectItem value="signed">已签署</SelectItem>
+            <SelectItem value="all">{t("全部状态")}</SelectItem>
+            <SelectItem value="planning">{t("计划中")}</SelectItem>
+            <SelectItem value="in_progress">{t("进行中")}</SelectItem>
+            <SelectItem value="completed">{t("已完成")}</SelectItem>
+            <SelectItem value="signed">{t("已签署")}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={projectFilter} onValueChange={setProjectFilter}>
           <SelectTrigger className="w-48">
-            <SelectValue placeholder="所属项目" />
+            <SelectValue placeholder={t("所属项目")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部项目</SelectItem>
+            <SelectItem value="all">{t("全部项目")}</SelectItem>
             {projects?.map((p) => (
               <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
             ))}
@@ -118,12 +120,12 @@ export default function Experiments() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-28">编号</TableHead>
-                <TableHead>标题</TableHead>
-                <TableHead className="w-44">所属项目</TableHead>
-                <TableHead className="w-28">状态</TableHead>
-                <TableHead className="w-32">创建人</TableHead>
-                <TableHead className="w-36">更新时间</TableHead>
+                <TableHead className="w-28">{t("编号")}</TableHead>
+                <TableHead>{t("标题")}</TableHead>
+                <TableHead className="w-44">{t("所属项目")}</TableHead>
+                <TableHead className="w-28">{t("状态")}</TableHead>
+                <TableHead className="w-32">{t("创建人")}</TableHead>
+                <TableHead className="w-36">{t("更新时间")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -149,7 +151,7 @@ export default function Experiments() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={st.cls}>{st.label}</Badge>
+                      <Badge variant="outline" className={st.cls}>{t(st.label)}</Badge>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{e.createdByName ?? "—"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{fmtDateTime(e.updatedAt)}</TableCell>
@@ -160,14 +162,14 @@ export default function Experiments() {
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-16 text-muted-foreground">
                     <NotebookPen className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                    没有匹配的实验记录
+                    {t("没有匹配的实验记录")}
                   </TableCell>
                 </TableRow>
               )}
               {isLoading && (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-16 text-muted-foreground">
-                    加载中…
+                    {t("加载中…")}
                   </TableCell>
                 </TableRow>
               )}
@@ -180,14 +182,14 @@ export default function Experiments() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>新建实验</DialogTitle>
+            <DialogTitle>{t("新建实验")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>所属项目</Label>
+              <Label>{t("所属项目")}</Label>
               <Select value={form.projectId} onValueChange={(v) => setForm({ ...form, projectId: v })}>
                 <SelectTrigger>
-                  <SelectValue placeholder="选择项目" />
+                  <SelectValue placeholder={t("选择项目")} />
                 </SelectTrigger>
                 <SelectContent>
                   {projects?.map((p) => (
@@ -197,15 +199,15 @@ export default function Experiments() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>实验标题</Label>
+              <Label>{t("实验标题")}</Label>
               <Input
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
-                placeholder="例如：CAR-T 体外杀伤实验"
+                placeholder={t("例如：CAR-T 体外杀伤实验")}
               />
             </div>
             <div className="space-y-2">
-              <Label>实验目标（可选）</Label>
+              <Label>{t("实验目标（可选）")}</Label>
               <Textarea
                 value={form.objective}
                 onChange={(e) => setForm({ ...form, objective: e.target.value })}
@@ -214,7 +216,7 @@ export default function Experiments() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>{t("取消")}</Button>
             <Button
               className="bg-teal-600 hover:bg-teal-500"
               disabled={createMut.isPending || !form.title.trim() || !form.projectId}
@@ -226,7 +228,7 @@ export default function Experiments() {
                 })
               }
             >
-              创建并打开
+              {t("创建并打开")}
             </Button>
           </DialogFooter>
         </DialogContent>

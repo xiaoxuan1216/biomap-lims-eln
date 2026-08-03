@@ -62,8 +62,10 @@ import {
   sampleAlert,
 } from "@/lib/labels";
 import { toast } from "sonner";
+import { useI18n } from "@/i18n";
 
 export default function SampleDetail() {
+  const { t } = useI18n();
   const { id } = useParams<{ id: string }>();
   const sampleId = Number(id);
   const navigate = useNavigate();
@@ -84,7 +86,7 @@ export default function SampleDetail() {
 
   const txMut = trpc.sample.transact.useMutation({
     onSuccess: (r) => {
-      toast.success(`操作成功，当前余量 ${r.newQuantity} ${sample?.unit}`);
+      toast.success(t("操作成功，当前余量 {n} {unit}", { n: r.newQuantity, unit: sample?.unit ?? "" }));
       setTxOpen(false);
       setTxForm({ reason: "restock", amount: "", note: "" });
       refresh();
@@ -93,7 +95,7 @@ export default function SampleDetail() {
   });
   const updateMut = trpc.sample.update.useMutation({
     onSuccess: () => {
-      toast.success("样本信息已更新");
+      toast.success(t("样本信息已更新"));
       setEditOpen(false);
       refresh();
     },
@@ -101,7 +103,7 @@ export default function SampleDetail() {
   });
   const deleteMut = trpc.sample.delete.useMutation({
     onSuccess: () => {
-      toast.success("样本已删除");
+      toast.success(t("样本已删除"));
       navigate("/samples");
     },
     onError: (e) => toast.error(e.message),
@@ -126,17 +128,17 @@ export default function SampleDetail() {
           onClick={() => navigate("/samples")}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-3"
         >
-          <ArrowLeft className="h-4 w-4" /> 返回样本列表
+          <ArrowLeft className="h-4 w-4" /> {t("返回样本列表")}
         </button>
         <div className="flex flex-wrap items-center gap-3">
           <span className="font-mono text-sm text-teal-700 bg-teal-50 border border-teal-200 rounded px-2 py-1">
             {sample.sku}
           </span>
           <h1 className="text-2xl font-bold tracking-tight">{sample.name}</h1>
-          <Badge variant="outline" className={typeInfo?.cls}>{typeInfo?.label ?? sample.type}</Badge>
+          <Badge variant="outline" className={typeInfo?.cls}>{t(typeInfo?.label ?? sample.type)}</Badge>
           {alert && (
             <Badge variant="outline" className={ALERT_LABELS[alert].cls}>
-              {ALERT_LABELS[alert].label}
+              {t(ALERT_LABELS[alert].label)}
             </Badge>
           )}
         </div>
@@ -146,19 +148,19 @@ export default function SampleDetail() {
         {/* 左：信息 */}
         <Card className="lg:col-span-1">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">样本信息</CardTitle>
+            <CardTitle className="text-base">{t("样本信息")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="flex justify-between items-center rounded-lg bg-teal-50 border border-teal-100 px-3 py-2.5">
-              <span className="text-teal-700 text-xs font-medium">当前余量</span>
+              <span className="text-teal-700 text-xs font-medium">{t("当前余量")}</span>
               <span className="text-lg font-bold text-teal-800">
                 {sample.quantity} <span className="text-xs font-normal">{sample.unit}</span>
               </span>
             </div>
-            <InfoRow label="低库存阈值" value={sample.alertThreshold != null ? `${sample.alertThreshold} ${sample.unit}` : "未设置"} />
-            <InfoRow label="有效期" value={fmtDate(sample.expiryDate)} highlight={alert === "expired" || alert === "expiring"} />
+            <InfoRow label={t("低库存阈值")} value={sample.alertThreshold != null ? `${sample.alertThreshold} ${sample.unit}` : t("未设置")} />
+            <InfoRow label={t("有效期")} value={fmtDate(sample.expiryDate)} highlight={alert === "expired" || alert === "expiring"} />
             <InfoRow
-              label="存储位置"
+              label={t("存储位置")}
               value={
                 sample.location ? (
                   <span className="flex items-center gap-1 justify-end">
@@ -171,7 +173,7 @@ export default function SampleDetail() {
                     )}
                   </span>
                 ) : (
-                  "未指定"
+                  t("未指定")
                 )
               }
             />
@@ -181,27 +183,27 @@ export default function SampleDetail() {
                   to={`/storage/box/${sample.location.id}`}
                   className="text-xs text-teal-600 hover:underline"
                 >
-                  查看冻存盒布局 →
+                  {t("查看冻存盒布局")} →
                 </Link>
               </div>
             )}
             <InfoRow
-              label="所属项目"
+              label={t("所属项目")}
               value={
                 sample.project ? (
                   <Link to={`/projects/${sample.project.id}`} className="text-teal-600 hover:underline">
                     {sample.project.name}
                   </Link>
                 ) : (
-                  "未关联"
+                  t("未关联")
                 )
               }
             />
-            <InfoRow label="登记人" value={sample.createdByName ?? "—"} />
-            <InfoRow label="登记时间" value={fmtDateTime(sample.createdAt)} />
+            <InfoRow label={t("登记人")} value={sample.createdByName ?? "—"} />
+            <InfoRow label={t("登记时间")} value={fmtDateTime(sample.createdAt)} />
             {sample.notes && (
               <div className="pt-2 border-t">
-                <div className="text-xs text-muted-foreground mb-1">备注</div>
+                <div className="text-xs text-muted-foreground mb-1">{t("备注")}</div>
                 <p className="text-slate-700 whitespace-pre-wrap">{sample.notes}</p>
               </div>
             )}
@@ -214,7 +216,7 @@ export default function SampleDetail() {
                   setTxOpen(true);
                 }}
               >
-                <Plus className="h-4 w-4 mr-1" /> 入库
+                <Plus className="h-4 w-4 mr-1" /> {t("入库")}
               </Button>
               <Button
                 variant="outline"
@@ -223,7 +225,7 @@ export default function SampleDetail() {
                   setTxOpen(true);
                 }}
               >
-                <Minus className="h-4 w-4 mr-1" /> 出库
+                <Minus className="h-4 w-4 mr-1" /> {t("出库")}
               </Button>
               <Button variant="outline" onClick={() => {
                 setEditForm({
@@ -234,14 +236,14 @@ export default function SampleDetail() {
                 });
                 setEditOpen(true);
               }}>
-                <Pencil className="h-4 w-4 mr-1" /> 编辑
+                <Pencil className="h-4 w-4 mr-1" /> {t("编辑")}
               </Button>
               <Button
                 variant="ghost"
                 className="text-red-600 hover:text-red-600 hover:bg-red-50"
                 onClick={() => setDeleteOpen(true)}
               >
-                <Trash2 className="h-4 w-4 mr-1" /> 删除
+                <Trash2 className="h-4 w-4 mr-1" /> {t("删除")}
               </Button>
             </div>
           </CardContent>
@@ -253,10 +255,10 @@ export default function SampleDetail() {
             <CardHeader className="pb-0">
               <TabsList>
                 <TabsTrigger value="tx" className="gap-1.5">
-                  <History className="h-3.5 w-3.5" /> 库存流水 ({sample.transactions.length})
+                  <History className="h-3.5 w-3.5" /> {t("库存流水")} ({sample.transactions.length})
                 </TabsTrigger>
                 <TabsTrigger value="usage" className="gap-1.5">
-                  <NotebookPen className="h-3.5 w-3.5" /> 实验使用 ({sample.experimentUsage.length})
+                  <NotebookPen className="h-3.5 w-3.5" /> {t("实验使用")} ({sample.experimentUsage.length})
                 </TabsTrigger>
               </TabsList>
             </CardHeader>
@@ -265,33 +267,33 @@ export default function SampleDetail() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-32">时间</TableHead>
-                      <TableHead className="w-20">类型</TableHead>
-                      <TableHead className="w-28">变动</TableHead>
-                      <TableHead>备注</TableHead>
-                      <TableHead className="w-28">操作人</TableHead>
+                      <TableHead className="w-32">{t("时间")}</TableHead>
+                      <TableHead className="w-20">{t("类型")}</TableHead>
+                      <TableHead className="w-28">{t("变动")}</TableHead>
+                      <TableHead>{t("备注")}</TableHead>
+                      <TableHead className="w-28">{t("操作人")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sample.transactions.map((t) => (
-                      <TableRow key={t.id}>
-                        <TableCell className="text-sm text-muted-foreground">{fmtDateTime(t.createdAt)}</TableCell>
+                    {sample.transactions.map((tx) => (
+                      <TableRow key={tx.id}>
+                        <TableCell className="text-sm text-muted-foreground">{fmtDateTime(tx.createdAt)}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={t.delta > 0 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-600 border-slate-200"}>
-                            {TX_REASONS[t.reason]}
+                          <Badge variant="outline" className={tx.delta > 0 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-600 border-slate-200"}>
+                            {t(TX_REASONS[tx.reason] ?? tx.reason)}
                           </Badge>
                         </TableCell>
-                        <TableCell className={`font-mono font-medium ${t.delta > 0 ? "text-emerald-600" : "text-red-500"}`}>
-                          {t.delta > 0 ? "+" : ""}{t.delta}
+                        <TableCell className={`font-mono font-medium ${tx.delta > 0 ? "text-emerald-600" : "text-red-500"}`}>
+                          {tx.delta > 0 ? "+" : ""}{tx.delta}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{t.note || "—"}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{t.userName ?? "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{tx.note || "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{tx.userName ?? "—"}</TableCell>
                       </TableRow>
                     ))}
                     {!sample.transactions.length && (
                       <TableRow>
                         <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
-                          暂无流水记录
+                          {t("暂无流水记录")}
                         </TableCell>
                       </TableRow>
                     )}
@@ -302,10 +304,10 @@ export default function SampleDetail() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-32">时间</TableHead>
-                      <TableHead className="w-24">用量</TableHead>
-                      <TableHead>备注</TableHead>
-                      <TableHead className="w-28">登记人</TableHead>
+                      <TableHead className="w-32">{t("时间")}</TableHead>
+                      <TableHead className="w-24">{t("用量")}</TableHead>
+                      <TableHead>{t("备注")}</TableHead>
+                      <TableHead className="w-28">{t("登记人")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -319,7 +321,7 @@ export default function SampleDetail() {
                         <TableCell className="font-mono text-red-500 font-medium">-{u.amountUsed}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {u.note || "—"}
-                          <span className="text-teal-600 text-xs ml-2">查看实验 →</span>
+                          <span className="text-teal-600 text-xs ml-2">{t("查看实验")} →</span>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">{u.createdByName ?? "—"}</TableCell>
                       </TableRow>
@@ -328,7 +330,7 @@ export default function SampleDetail() {
                       <TableRow>
                         <TableCell colSpan={4} className="text-center py-10 text-muted-foreground">
                           <PackageX className="h-6 w-6 mx-auto mb-2 opacity-40" />
-                          尚未在任何实验中使用
+                          {t("尚未在任何实验中使用")}
                         </TableCell>
                       </TableRow>
                     )}
@@ -344,25 +346,25 @@ export default function SampleDetail() {
       <Dialog open={txOpen} onOpenChange={setTxOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>库存操作 · {sample.name}</DialogTitle>
+            <DialogTitle>{t("库存操作")} · {sample.name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>操作类型</Label>
+              <Label>{t("操作类型")}</Label>
               <Select value={txForm.reason} onValueChange={(v) => setTxForm({ ...txForm, reason: v })}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="restock">入库（补货）</SelectItem>
-                  <SelectItem value="consume">出库（领用）</SelectItem>
-                  <SelectItem value="adjust">入库（校正调整）</SelectItem>
-                  <SelectItem value="dispose">出库（废弃）</SelectItem>
+                  <SelectItem value="restock">{t("入库（补货）")}</SelectItem>
+                  <SelectItem value="consume">{t("出库（领用）")}</SelectItem>
+                  <SelectItem value="adjust">{t("入库（校正调整）")}</SelectItem>
+                  <SelectItem value="dispose">{t("出库（废弃）")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>数量（当前余量 {sample.quantity} {sample.unit}）</Label>
+              <Label>{t("数量（当前余量 {n} {unit}）", { n: sample.quantity, unit: sample.unit })}</Label>
               <Input
                 type="number"
                 min="0"
@@ -372,16 +374,16 @@ export default function SampleDetail() {
               />
             </div>
             <div className="space-y-2">
-              <Label>备注</Label>
+              <Label>{t("备注")}</Label>
               <Input
                 value={txForm.note}
                 onChange={(e) => setTxForm({ ...txForm, note: e.target.value })}
-                placeholder="批号、用途等…"
+                placeholder={t("批号、用途等…")}
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setTxOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setTxOpen(false)}>{t("取消")}</Button>
             <Button
               className="bg-teal-600 hover:bg-teal-500"
               disabled={txMut.isPending || !Number(txForm.amount)}
@@ -394,7 +396,7 @@ export default function SampleDetail() {
                 })
               }
             >
-              确认
+              {t("确认")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -404,16 +406,16 @@ export default function SampleDetail() {
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>编辑样本信息</DialogTitle>
+            <DialogTitle>{t("编辑样本信息")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>名称</Label>
+              <Label>{t("名称")}</Label>
               <Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>低库存阈值</Label>
+                <Label>{t("低库存阈值")}</Label>
                 <Input
                   type="number"
                   min="0"
@@ -423,7 +425,7 @@ export default function SampleDetail() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>有效期</Label>
+                <Label>{t("有效期")}</Label>
                 <Input
                   type="date"
                   value={editForm.expiryDate}
@@ -432,12 +434,12 @@ export default function SampleDetail() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>备注</Label>
+              <Label>{t("备注")}</Label>
               <Input value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>{t("取消")}</Button>
             <Button
               className="bg-teal-600 hover:bg-teal-500"
               disabled={updateMut.isPending}
@@ -451,7 +453,7 @@ export default function SampleDetail() {
                 })
               }
             >
-              保存
+              {t("保存")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -461,18 +463,18 @@ export default function SampleDetail() {
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除样本 {sample.sku}？</AlertDialogTitle>
+            <AlertDialogTitle>{t("删除样本 {sku}？", { sku: sample.sku })}</AlertDialogTitle>
             <AlertDialogDescription>
-              样本及其库存流水、实验使用记录将被一并删除，且不可恢复。
+              {t("样本及其库存流水、实验使用记录将被一并删除，且不可恢复。")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive hover:bg-destructive/90"
               onClick={() => deleteMut.mutate({ id: sampleId })}
             >
-              确认删除
+              {t("确认删除")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

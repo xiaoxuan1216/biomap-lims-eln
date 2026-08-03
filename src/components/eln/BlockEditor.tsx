@@ -2,6 +2,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Heading2, Type, ListChecks, Plus, Trash2, ArrowUp, ArrowDown, X } from "lucide-react";
 import { uid, type ElnBlock } from "@/lib/labels";
+import { useI18n } from "@/i18n";
 
 interface Props {
   blocks: ElnBlock[];
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function BlockEditor({ blocks, onChange, readOnly }: Props) {
+  const { t } = useI18n();
   const update = (id: string, patch: Partial<ElnBlock>) => {
     onChange(blocks.map((b) => (b.id === id ? ({ ...b, ...patch } as ElnBlock) : b)));
   };
@@ -38,13 +40,13 @@ export default function BlockEditor({ blocks, onChange, readOnly }: Props) {
       {!readOnly && (
         <div className="flex gap-2 mb-3">
           <Button variant="outline" size="sm" onClick={() => addBlock("heading")}>
-            <Heading2 className="h-3.5 w-3.5 mr-1" /> 标题
+            <Heading2 className="h-3.5 w-3.5 mr-1" /> {t("标题")}
           </Button>
           <Button variant="outline" size="sm" onClick={() => addBlock("text")}>
-            <Type className="h-3.5 w-3.5 mr-1" /> 文本
+            <Type className="h-3.5 w-3.5 mr-1" /> {t("文本")}
           </Button>
           <Button variant="outline" size="sm" onClick={() => addBlock("checklist")}>
-            <ListChecks className="h-3.5 w-3.5 mr-1" /> 清单
+            <ListChecks className="h-3.5 w-3.5 mr-1" /> {t("清单")}
           </Button>
         </div>
       )}
@@ -88,7 +90,7 @@ export default function BlockEditor({ blocks, onChange, readOnly }: Props) {
                 <input
                   className="w-full bg-transparent outline-none text-base font-semibold text-slate-800 placeholder:text-slate-300"
                   value={block.text}
-                  placeholder="小节标题"
+                  placeholder={t("小节标题")}
                   onChange={(e) => update(block.id, { text: e.target.value })}
                 />
               ))}
@@ -96,14 +98,14 @@ export default function BlockEditor({ blocks, onChange, readOnly }: Props) {
             {block.type === "text" &&
               (readOnly ? (
                 <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-                  {block.text || <span className="text-slate-300">（空）</span>}
+                  {block.text || <span className="text-slate-300">{t("（空）")}</span>}
                 </p>
               ) : (
                 <textarea
                   className="text-sm text-slate-700 leading-relaxed placeholder:text-slate-300"
                   rows={Math.max(2, block.text.split("\n").length)}
                   value={block.text}
-                  placeholder="记录实验内容、观察结果、数据…"
+                  placeholder={t("记录实验内容、观察结果、数据…")}
                   onChange={(e) => update(block.id, { text: e.target.value })}
                 />
               ))}
@@ -138,7 +140,7 @@ export default function BlockEditor({ blocks, onChange, readOnly }: Props) {
                             item.done ? "line-through text-slate-400" : "text-slate-700"
                           }`}
                           value={item.text}
-                          placeholder="步骤 / 材料…"
+                          placeholder={t("步骤 / 材料…")}
                           onChange={(e) =>
                             update(block.id, {
                               items: block.items.map((it) =>
@@ -170,7 +172,7 @@ export default function BlockEditor({ blocks, onChange, readOnly }: Props) {
                       })
                     }
                   >
-                    <Plus className="h-3 w-3" /> 添加一项
+                    <Plus className="h-3 w-3" /> {t("添加一项")}
                   </button>
                 )}
               </div>
@@ -179,7 +181,7 @@ export default function BlockEditor({ blocks, onChange, readOnly }: Props) {
         ))}
         {blocks.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-8">
-            {readOnly ? "本实验暂无内容" : "使用上方按钮添加标题、文本或清单，开始记录实验"}
+            {readOnly ? t("本实验暂无内容") : t("使用上方按钮添加标题、文本或清单，开始记录实验")}
           </p>
         )}
       </div>

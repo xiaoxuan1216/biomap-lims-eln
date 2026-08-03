@@ -11,8 +11,10 @@ import {
   SearchX,
 } from "lucide-react";
 import { EXP_STATUS, LOCATION_TYPES, SAMPLE_TYPES, SEQ_TYPES } from "@/lib/labels";
+import { useI18n } from "@/i18n";
 
 export default function SearchResults() {
+  const { t } = useI18n();
   const [params] = useSearchParams();
   const q = params.get("q") ?? "";
   const { data, isLoading } = trpc.dashboard.search.useQuery(
@@ -30,9 +32,9 @@ export default function SearchResults() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">搜索「{q}」</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t("搜索「{q}」", { q })}</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {isLoading ? "搜索中…" : `共找到 ${total} 条结果`}
+          {isLoading ? t("搜索中…") : t("共找到 {n} 条结果", { n: total })}
         </p>
       </div>
 
@@ -40,20 +42,20 @@ export default function SearchResults() {
         <Card className="py-16">
           <div className="flex flex-col items-center gap-3 text-muted-foreground">
             <SearchX className="h-10 w-10 opacity-40" />
-            <p>没有找到匹配的内容，换个关键词试试</p>
+            <p>{t("没有找到匹配的内容，换个关键词试试")}</p>
           </div>
         </Card>
       )}
 
       <div className="grid lg:grid-cols-2 gap-6 items-start">
         {!!data?.experiments.length && (
-          <ResultCard icon={NotebookPen} title={`实验记录（${data.experiments.length}）`}>
+          <ResultCard icon={NotebookPen} title={t("实验记录（{n}）", { n: data.experiments.length })}>
             {data.experiments.map((e) => (
               <ResultLink key={e.id} to={`/experiments/${e.id}`}
                 main={`${e.code} ${e.title}`}
                 right={
                   <Badge variant="outline" className={EXP_STATUS[e.status]?.cls}>
-                    {EXP_STATUS[e.status]?.label}
+                    {t(EXP_STATUS[e.status]?.label ?? e.status)}
                   </Badge>
                 }
               />
@@ -62,18 +64,18 @@ export default function SearchResults() {
         )}
 
         {!!data?.samples.length && (
-          <ResultCard icon={TestTubes} title={`样本（${data.samples.length}）`}>
+          <ResultCard icon={TestTubes} title={t("样本（{n}）", { n: data.samples.length })}>
             {data.samples.map((s) => (
               <ResultLink key={s.id} to={`/samples/${s.id}`}
                 main={`${s.sku} ${s.name}`}
-                sub={`${SAMPLE_TYPES[s.type]?.label ?? s.type} · 余量 ${s.quantity} ${s.unit}`}
+                sub={`${t(SAMPLE_TYPES[s.type]?.label ?? s.type)} · ${t("余量")} ${s.quantity} ${s.unit}`}
               />
             ))}
           </ResultCard>
         )}
 
         {!!data?.projects.length && (
-          <ResultCard icon={FolderKanban} title={`项目（${data.projects.length}）`}>
+          <ResultCard icon={FolderKanban} title={t("项目（{n}）", { n: data.projects.length })}>
             {data.projects.map((p) => (
               <ResultLink key={p.id} to={`/projects/${p.id}`} main={p.name} />
             ))}
@@ -81,24 +83,24 @@ export default function SearchResults() {
         )}
 
         {!!data?.sequences.length && (
-          <ResultCard icon={Dna} title={`序列（${data.sequences.length}）`}>
+          <ResultCard icon={Dna} title={t("序列（{n}）", { n: data.sequences.length })}>
             {data.sequences.map((s) => (
               <ResultLink key={s.id} to="/sequences"
                 main={s.name}
-                right={<Badge variant="outline">{SEQ_TYPES[s.type]}</Badge>}
+                right={<Badge variant="outline">{t(SEQ_TYPES[s.type] ?? s.type)}</Badge>}
               />
             ))}
           </ResultCard>
         )}
 
         {!!data?.locations.length && (
-          <ResultCard icon={Snowflake} title={`存储位置（${data.locations.length}）`}>
+          <ResultCard icon={Snowflake} title={t("存储位置（{n}）", { n: data.locations.length })}>
             {data.locations.map((l) => (
               <ResultLink
                 key={l.id}
                 to={l.type === "box" ? `/storage/box/${l.id}` : "/storage"}
                 main={l.name}
-                right={<Badge variant="outline">{LOCATION_TYPES[l.type]}</Badge>}
+                right={<Badge variant="outline">{t(LOCATION_TYPES[l.type] ?? l.type)}</Badge>}
               />
             ))}
           </ResultCard>

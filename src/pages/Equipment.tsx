@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { EQUIP_CATEGORIES, EQUIP_STATUS, fmtDate } from "@/lib/labels";
 import { toast } from "sonner";
+import { useI18n } from "@/i18n";
 
 const CATEGORY_ICONS: Record<string, typeof Microscope> = {
   analytical: Microscope,
@@ -55,6 +56,7 @@ const EMPTY_FORM = {
 };
 
 export default function Equipment() {
+  const { t, lang } = useI18n();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const [category, setCategory] = useState("all");
@@ -68,7 +70,7 @@ export default function Equipment() {
 
   const createMut = trpc.equipment.create.useMutation({
     onSuccess: () => {
-      toast.success("设备已登记");
+      toast.success(t("设备已登记"));
       setCreateOpen(false);
       setForm(EMPTY_FORM);
       utils.equipment.list.invalidate();
@@ -88,13 +90,13 @@ export default function Equipment() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">设备管理</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("设备管理")}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            分析设备 · 执行设备 · 自动化岛台的台账、预约与维护
+            {t("分析设备 · 执行设备 · 自动化岛台的台账、预约与维护")}
           </p>
         </div>
         <Button className="bg-teal-600 hover:bg-teal-500" onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4 mr-1" /> 登记设备
+          <Plus className="h-4 w-4 mr-1" /> {t("登记设备")}
         </Button>
       </div>
 
@@ -108,7 +110,7 @@ export default function Equipment() {
                 <span className={`h-3 w-3 rounded-full ${st.dot}`} />
                 <div>
                   <div className="text-xl font-bold leading-none">{counts[k]}</div>
-                  <div className="text-xs text-muted-foreground mt-1">{st.label}</div>
+                  <div className="text-xs text-muted-foreground mt-1">{t(st.label)}</div>
                 </div>
               </CardContent>
             </Card>
@@ -121,9 +123,9 @@ export default function Equipment() {
         <div className="lg:col-span-2 space-y-4">
           <Tabs value={category} onValueChange={setCategory}>
             <TabsList>
-              <TabsTrigger value="all">全部</TabsTrigger>
+              <TabsTrigger value="all">{t("全部")}</TabsTrigger>
               {Object.entries(EQUIP_CATEGORIES).map(([k, v]) => (
-                <TabsTrigger key={k} value={k}>{v.label}</TabsTrigger>
+                <TabsTrigger key={k} value={k}>{t(v.label)}</TabsTrigger>
               ))}
             </TabsList>
           </Tabs>
@@ -158,7 +160,7 @@ export default function Equipment() {
                             <h3 className="font-semibold text-sm truncate">{e.name}</h3>
                             <Badge variant="outline" className={`${st.cls} shrink-0`}>
                               <span className={`h-1.5 w-1.5 rounded-full ${st.dot} mr-1`} />
-                              {st.label}
+                              {t(st.label)}
                             </Badge>
                           </div>
                           <p className="text-xs text-muted-foreground mt-0.5 truncate">
@@ -172,14 +174,14 @@ export default function Equipment() {
                             )}
                             {e.todayBookingCount > 0 && (
                               <span className="flex items-center gap-1 text-blue-600">
-                                <CalendarClock className="h-3 w-3" /> 今日 {e.todayBookingCount} 个预约
+                                <CalendarClock className="h-3 w-3" /> {t("今日 {n} 个预约", { n: e.todayBookingCount })}
                               </span>
                             )}
                           </div>
                           {calDue && (
                             <div className="flex items-center gap-1 mt-2 text-xs text-amber-600">
                               <AlertTriangle className="h-3 w-3" />
-                              校准到期：{fmtDate(e.nextCalibrationDate)}
+                              {t("校准到期：")}{fmtDate(e.nextCalibrationDate)}
                             </div>
                           )}
                         </div>
@@ -193,7 +195,7 @@ export default function Equipment() {
             <Card className="py-16">
               <div className="flex flex-col items-center gap-3 text-muted-foreground">
                 <MonitorCog className="h-10 w-10 opacity-40" />
-                <p>暂无设备，点击「登记设备」建立设备台账</p>
+                <p>{t("暂无设备，点击「登记设备」建立设备台账")}</p>
               </div>
             </Card>
           )}
@@ -204,7 +206,7 @@ export default function Equipment() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <CalendarClock className="h-4 w-4 text-teal-600" />
-              今明两天机时
+              {t("今明两天机时")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -214,14 +216,14 @@ export default function Equipment() {
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium truncate">{b.equipmentName}</span>
                     <Badge variant="outline" className={EQUIP_CATEGORIES[b.category ?? "support"]?.cls}>
-                      {EQUIP_CATEGORIES[b.category ?? "support"]?.label}
+                      {t(EQUIP_CATEGORIES[b.category ?? "support"]?.label ?? "")}
                     </Badge>
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">
-                    {b.startTime.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    {b.startTime.toLocaleString(lang === "en" ? "en-US" : "zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     {" — "}
-                    {b.endTime.toLocaleString("zh-CN", { hour: "2-digit", minute: "2-digit" })}
-                    {b.startTime.toISOString().slice(0, 10) === today ? "（今天）" : "（明天）"}
+                    {b.endTime.toLocaleString(lang === "en" ? "en-US" : "zh-CN", { hour: "2-digit", minute: "2-digit" })}
+                    {b.startTime.toISOString().slice(0, 10) === today ? t("（今天）") : t("（明天）")}
                   </div>
                   <div className="text-xs text-slate-600 mt-1">
                     {b.userName}
@@ -230,7 +232,7 @@ export default function Equipment() {
                 </div>
               ))
             ) : (
-              <p className="text-sm text-muted-foreground text-center py-8">今明两天没有预约</p>
+              <p className="text-sm text-muted-foreground text-center py-8">{t("今明两天没有预约")}</p>
             )}
           </CardContent>
         </Card>
@@ -240,51 +242,51 @@ export default function Equipment() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>登记新设备</DialogTitle>
+            <DialogTitle>{t("登记新设备")}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>设备名称 *</Label>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如：流式细胞仪" />
+              <Label>{t("设备名称")} *</Label>
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t("例如：流式细胞仪")} />
             </div>
             <div className="space-y-2">
-              <Label>类别</Label>
+              <Label>{t("类别")}</Label>
               <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {Object.entries(EQUIP_CATEGORIES).map(([k, v]) => (
-                    <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                    <SelectItem key={k} value={k}>{t(v.label)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>型号</Label>
-              <Input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="例如：BD FACSCanto II" />
+              <Label>{t("型号")}</Label>
+              <Input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder={t("例如：BD FACSCanto II")} />
             </div>
             <div className="space-y-2">
-              <Label>序列号（SN）</Label>
+              <Label>{t("序列号（SN）")}</Label>
               <Input value={form.serialNo} onChange={(e) => setForm({ ...form, serialNo: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <Label>所在位置</Label>
-              <Input value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} placeholder="例如：B2-204" />
+              <Label>{t("所在位置")}</Label>
+              <Input value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} placeholder={t("例如：B2-204")} />
             </div>
             <div className="space-y-2">
-              <Label>负责人</Label>
+              <Label>{t("负责人")}</Label>
               <Input value={form.responsibleName} onChange={(e) => setForm({ ...form, responsibleName: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <Label>下次校准日期</Label>
+              <Label>{t("下次校准日期")}</Label>
               <Input type="date" value={form.nextCalibrationDate} onChange={(e) => setForm({ ...form, nextCalibrationDate: e.target.value })} />
             </div>
             <div className="space-y-2 col-span-2">
-              <Label>技术规格</Label>
-              <Textarea value={form.specs} onChange={(e) => setForm({ ...form, specs: e.target.value })} rows={2} placeholder="激光配置、通量、精度等关键参数…" />
+              <Label>{t("技术规格")}</Label>
+              <Textarea value={form.specs} onChange={(e) => setForm({ ...form, specs: e.target.value })} rows={2} placeholder={t("激光配置、通量、精度等关键参数…")} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>{t("取消")}</Button>
             <Button
               className="bg-teal-600 hover:bg-teal-500"
               disabled={createMut.isPending || !form.name.trim()}
@@ -301,7 +303,7 @@ export default function Equipment() {
                 })
               }
             >
-              登记
+              {t("登记")}
             </Button>
           </DialogFooter>
         </DialogContent>

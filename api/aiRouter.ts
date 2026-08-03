@@ -179,7 +179,11 @@ function dateStr(days: number): string {
 
 export const aiRouter = createRouter({
   /** 仪表盘 AI 洞察 */
-  insights: authedQuery.query(async () => {
+  insights: authedQuery
+    .input(z.object({ lang: z.enum(["zh", "en"]).optional() }).optional())
+    .query(async ({ input }) => {
+    const en = input?.lang === "en";
+    const R = (zh: string, enText: string) => (en ? enText : zh);
     const db = getDb();
     const insights: { icon: string; text: string; level: "warn" | "info" | "ok"; url?: string }[] = [];
 
@@ -197,8 +201,10 @@ export const aiRouter = createRouter({
         icon: "flask",
         level: expired ? "warn" : "info",
         text: expired
-          ? `样本「${s.name}」（${s.sku}）已过期，建议尽快处置或复检`
-          : `「${s.name}」将于 ${s.expiryDate} 到期，建议在后续实验中优先消耗`,
+          ? R(`样本「${s.name}」（${s.sku}）已过期，建议尽快处置或复检`,
+              `Sample "${s.name}" (${s.sku}) has expired — dispose or retest soon`)
+          : R(`「${s.name}」将于 ${s.expiryDate} 到期，建议在后续实验中优先消耗`,
+              `"${s.name}" expires on ${s.expiryDate} — prioritize using it in upcoming experiments`),
         url: `/samples/${s.id}`,
       });
     }
@@ -214,7 +220,8 @@ export const aiRouter = createRouter({
       insights.push({
         icon: "alert",
         level: "warn",
-        text: `「${s.name}」库存仅剩 ${s.quantity} ${s.unit}，低于预警阈值，建议补货`,
+        text: R(`「${s.name}」库存仅剩 ${s.quantity} ${s.unit}，低于预警阈值，建议补货`,
+            `"${s.name}" is down to ${s.quantity} ${s.unit}, below the alert threshold — restock recommended`),
         url: `/samples/${s.id}`,
       });
     }
@@ -228,7 +235,8 @@ export const aiRouter = createRouter({
       insights.push({
         icon: "gauge",
         level: e.nextCalibrationDate! <= today ? "warn" : "info",
-        text: `设备「${e.name}」校准到期日 ${e.nextCalibrationDate}，请安排计量校准`,
+        text: R(`设备「${e.name}」校准到期日 ${e.nextCalibrationDate}，请安排计量校准`,
+            `Equipment "${e.name}" calibration is due ${e.nextCalibrationDate} — schedule a calibration`),
         url: "/equipment",
       });
     }
@@ -248,7 +256,8 @@ export const aiRouter = createRouter({
         insights.push({
           icon: "workflow",
           level: "info",
-          text: `流程「${w.name}」进行中节点「${cur.label}」尚未分配负责人，建议尽快分配`,
+          text: R(`流程「${w.name}」进行中节点「${cur.label}」尚未分配负责人，建议尽快分配`,
+              `In workflow "${w.name}", the active node "${cur.label}" has no owner assigned yet`),
           url: `/workflows/${w.id}`,
         });
       }
@@ -258,17 +267,19 @@ export const aiRouter = createRouter({
       insights.push({
         icon: "sparkles",
         level: "ok",
-        text: "实验室运行状态良好，无待处理预警。可以开始规划下一轮 DBTL 迭代。",
+        text: R("实验室运行状态良好，无待处理预警。可以开始规划下一轮 DBTL 迭代。",
+            "All systems nominal — no pending alerts. A good time to plan the next DBTL iteration."),
       });
     }
     return insights.slice(0, 6);
-  }),
+    }),
 
   /** Copilot 对话（领域意图引擎） */
   chat: authedQuery
     .input(
       z.object({
         message: z.string().min(1).max(2000),
+        lang: z.enum(["zh", "en"]).optional(),
         context: z
           .object({
             page: z.string().optional(),
@@ -280,12 +291,15 @@ export const aiRouter = createRouter({
     )
     .mutation(async ({ input }) => {
       try {
+      const en = input.lang === "en";
+      const R = (zh: string, enText: string) => (en ? enText : zh);
+      const dateLocale = en ? "en-US" : "zh-CN";
       const db = getDb();
       const msg = input.message;
       const actions: { label: string; url?: string; kind?: string; templateKey?: string; name?: string }[] = [];
 
       // ── 效期/过期查询 ──
-      if (/过期|临期|效期|到期/.test(msg)) {
+      if (/过期|临期|效期|到期|expir|due soon/i.test(msg)) {
         const rows = await db
           .select()
           .from(samples)
@@ -293,20 +307,23 @@ export const aiRouter = createRouter({
           .orderBy(samples.expiryDate)
           .limit(8);
         if (!rows.length) {
-          return { reply: "好消息：未来 30 天内没有样本到期，效期管理状态良好 ✅", actions };
+          return { reply: R("好消息：未来 30 天内没有样本到期，效期管理状态良好 ✅",
+            "Good news: no samples expire within the next 30 days ✅"), actions };
         }
         const lines = rows.map((s) => {
           const expired = s.expiryDate! <= dateStr(0);
-          return `• ${expired ? "🔴" : "🟡"} ${s.sku} ${s.name} — ${expired ? "已过期" : `${s.expiryDate} 到期`}（余 ${s.quantity} ${s.unit}）`;
+          return `• ${expired ? "🔴" : "🟡"} ${s.sku} ${s.name} — ${expired ? R("已过期", "expired") : R(`${s.expiryDate} 到期`, `expires ${s.expiryDate}`)}（${R("余", "left")} ${s.quantity} ${s.unit}）`;
         });
         return {
-          reply: `我查到 ${rows.length} 个需要关注的效期样本：\n\n${lines.join("\n")}\n\n建议：临期样本优先安排消耗，过期样本走复检或废弃流程。`,
-          actions: [{ label: "查看全部样本", url: "/samples" }],
+          reply: R(
+            `我查到 ${rows.length} 个需要关注的效期样本：\n\n${lines.join("\n")}\n\n建议：临期样本优先安排消耗，过期样本走复检或废弃流程。`,
+            `I found ${rows.length} samples needing attention:\n\n${lines.join("\n")}\n\nTip: consume soon-to-expire samples first; route expired ones to retesting or disposal.`),
+          actions: [{ label: R("查看全部样本", "View all samples"), url: "/samples" }],
         };
       }
 
       // ── 低库存 ──
-      if (/低库存|补货|库存不足|不够/.test(msg)) {
+      if (/低库存|补货|库存不足|不够|low.?stock|restock|reorder/i.test(msg)) {
         const rows = await db
           .select()
           .from(samples)
@@ -314,19 +331,22 @@ export const aiRouter = createRouter({
             and(isNotNull(samples.alertThreshold), sql`${samples.quantity} <= ${samples.alertThreshold}`),
           )
           .limit(8);
-        if (!rows.length) return { reply: "所有样本库存均在预警阈值之上，无需补货 ✅", actions };
+        if (!rows.length) return { reply: R("所有样本库存均在预警阈值之上，无需补货 ✅",
+          "All samples are above their alert thresholds — no restocking needed ✅"), actions };
         const lines = rows.map(
-          (s) => `• ${s.sku} ${s.name} — 仅剩 ${s.quantity} ${s.unit}（阈值 ${s.alertThreshold}）`,
+          (s) => `• ${s.sku} ${s.name} — ${R(`仅剩 ${s.quantity} ${s.unit}（阈值 ${s.alertThreshold}）`, `only ${s.quantity} ${s.unit} left (threshold ${s.alertThreshold})`)}`,
         );
         return {
-          reply: `以下 ${rows.length} 个样本需要补货：\n\n${lines.join("\n")}\n\n建议按采购周期提前下单，关键试剂（如 psPAX2）建议保持双倍安全库存。`,
-          actions: [{ label: "去处理库存", url: "/samples" }],
+          reply: R(
+            `以下 ${rows.length} 个样本需要补货：\n\n${lines.join("\n")}\n\n建议按采购周期提前下单，关键试剂（如 psPAX2）建议保持双倍安全库存。`,
+            `${rows.length} sample(s) need restocking:\n\n${lines.join("\n")}\n\nOrder ahead of your procurement cycle; keep double safety stock for critical reagents (e.g. psPAX2).`),
+          actions: [{ label: R("去处理库存", "Manage inventory"), url: "/samples" }],
         };
       }
 
       // ── 设备状态/预约 ──
-      if (/设备|仪器|预约|机时/.test(msg)) {
-        if (/预约|机时/.test(msg)) {
+      if (/设备|仪器|预约|机时|equipment|instrument|booking/i.test(msg)) {
+        if (/预约|机时|booking|reservation/i.test(msg)) {
           const start = new Date();
           start.setHours(0, 0, 0, 0);
           const end = new Date(start);
@@ -346,17 +366,19 @@ export const aiRouter = createRouter({
             .limit(10);
           if (!rows.length) {
             return {
-              reply: "今明两天没有设备预约，所有空闲设备均可直接上机。要预约设备吗？去设备管理页操作即可。",
-              actions: [{ label: "设备管理", url: "/equipment" }],
+              reply: R("今明两天没有设备预约，所有空闲设备均可直接上机。要预约设备吗？去设备管理页操作即可。",
+                "No equipment bookings today or tomorrow — all idle equipment is walk-up available. You can book on the Equipment page."),
+              actions: [{ label: R("设备管理", "Equipment"), url: "/equipment" }],
             };
           }
           const lines = rows.map(
             (r) =>
-              `• ${r.name}：${r.b.startTime.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} — ${r.b.endTime.toLocaleString("zh-CN", { hour: "2-digit", minute: "2-digit" })}（${r.b.userName}${r.b.purpose ? ` · ${r.b.purpose}` : ""}）`,
+              `• ${r.name}：${r.b.startTime.toLocaleString(dateLocale, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} — ${r.b.endTime.toLocaleString(dateLocale, { hour: "2-digit", minute: "2-digit" })}（${r.b.userName}${r.b.purpose ? ` · ${r.b.purpose}` : ""}）`,
           );
           return {
-            reply: `今明两天共有 ${rows.length} 个设备预约：\n\n${lines.join("\n")}`,
-            actions: [{ label: "设备管理", url: "/equipment" }],
+            reply: R(`今明两天共有 ${rows.length} 个设备预约：\n\n${lines.join("\n")}`,
+              `There are ${rows.length} equipment bookings today and tomorrow:\n\n${lines.join("\n")}`),
+            actions: [{ label: R("设备管理", "Equipment"), url: "/equipment" }],
           };
         }
         const rows = await db.select().from(equipment);
@@ -366,109 +388,124 @@ export const aiRouter = createRouter({
           maintenance: rows.filter((e) => e.status === "maintenance"),
           fault: rows.filter((e) => e.status === "fault"),
         };
+        const fmtGroup = (arr: typeof rows) => arr.map((e) => e.name).join(en ? ", " : "、") || R("无", "none");
         return {
-          reply: `实验室共 ${rows.length} 台设备：\n\n🟢 可用 ${byStatus.available.length} 台：${byStatus.available.map((e) => e.name).join("、") || "无"}\n🔵 使用中 ${byStatus.in_use.length} 台：${byStatus.in_use.map((e) => e.name).join("、") || "无"}\n🟡 维护中 ${byStatus.maintenance.length} 台：${byStatus.maintenance.map((e) => e.name).join("、") || "无"}\n🔴 故障 ${byStatus.fault.length} 台：${byStatus.fault.map((e) => e.name).join("、") || "无"}`,
-          actions: [{ label: "设备管理", url: "/equipment" }],
+          reply: R(
+            `实验室共 ${rows.length} 台设备：\n\n🟢 可用 ${byStatus.available.length} 台：${fmtGroup(byStatus.available)}\n🔵 使用中 ${byStatus.in_use.length} 台：${fmtGroup(byStatus.in_use)}\n🟡 维护中 ${byStatus.maintenance.length} 台：${fmtGroup(byStatus.maintenance)}\n🔴 故障 ${byStatus.fault.length} 台：${fmtGroup(byStatus.fault)}`,
+            `The lab has ${rows.length} instruments:\n\n🟢 Available ${byStatus.available.length}: ${fmtGroup(byStatus.available)}\n🔵 In use ${byStatus.in_use.length}: ${fmtGroup(byStatus.in_use)}\n🟡 Maintenance ${byStatus.maintenance.length}: ${fmtGroup(byStatus.maintenance)}\n🔴 Fault ${byStatus.fault.length}: ${fmtGroup(byStatus.fault)}`),
+          actions: [{ label: R("设备管理", "Equipment"), url: "/equipment" }],
         };
       }
 
       // ── SynFlow 流程推荐（支持一键创建） ──
-      if (/载体|菌株|CRISPR|基因编辑|敲除|敲入|蛋白表达|蛋白质|纯化|DBTL|工程循环|Golden\s*Gate|Gibson|组装|质粒|分子克隆|克隆构建/i.test(msg)) {
-        if (/菌株|CRISPR|基因编辑|敲除|敲入/.test(msg)) {
+      if (/载体|菌株|CRISPR|基因编辑|敲除|敲入|蛋白表达|蛋白质|纯化|DBTL|工程循环|Golden\s*Gate|Gibson|组装|质粒|分子克隆|克隆构建|vector|strain|genome edit|knockout|knock-?in|protein expression|purif|assembly|plasmid|clon/i.test(msg)) {
+        if (/菌株|CRISPR|基因编辑|敲除|敲入|strain|genome edit|knockout|knock-?in/i.test(msg)) {
           return {
-            reply:
+            reply: R(
               "针对菌株基因组编辑，推荐使用 SynFlow 合成流的「菌株基因组编辑 Pipeline（CRISPR）」模板：gRNA 设计 → 编辑质粒构建 → 转化 → 「克隆是否阳性？」判断 → Sanger 测序 → 「测序是否匹配？」判断 → 编辑效率分析。\n\n点击下方按钮即可一键创建整套 DAG 流程：",
+              "For strain genome editing, I recommend the SynFlow \"Strain Genome Editing Pipeline (CRISPR)\" template: gRNA design → editing plasmid construction → transformation → \"Clone positive?\" decision → Sanger sequencing → \"Sequence match?\" decision → editing-efficiency analysis.\n\nClick the button below to create the full DAG in one step:"),
             actions: [
-              { label: "立即创建 CRISPR 流程", kind: "createWorkflow", templateKey: "crispr_strain", name: "菌株基因组编辑 Pipeline（CRISPR）" },
+              { label: R("立即创建 CRISPR 流程", "Create CRISPR workflow"), kind: "createWorkflow", templateKey: "crispr_strain", name: R("菌株基因组编辑 Pipeline（CRISPR）", "Strain Genome Editing Pipeline (CRISPR)") },
             ],
           };
         }
-        if (/DBTL|工程循环|迭代/.test(msg)) {
+        if (/DBTL|工程循环|迭代|design.?build.?test|iteration/i.test(msg)) {
           return {
-            reply:
+            reply: R(
               "DBTL 工程循环已作为模板内置在 SynFlow 合成流中：Design（数据节点）→ Build（手工节点）→ Test（设备节点）→ Learn（数据节点）→「进入下一轮迭代？」判断节点，自动衔接第 N+1 轮循环。\n\n点击下方按钮即可一键创建：",
+              "The DBTL engineering cycle is built into SynFlow as a template: Design (data node) → Build (manual node) → Test (equipment node) → Learn (data node) → \"Next iteration?\" decision, flowing into round N+1.\n\nClick the button below to create it in one step:"),
             actions: [
-              { label: "立即创建 DBTL 循环", kind: "createWorkflow", templateKey: "dbtl_cycle", name: "DBTL 工程循环" },
+              { label: R("立即创建 DBTL 循环", "Create DBTL cycle"), kind: "createWorkflow", templateKey: "dbtl_cycle", name: R("DBTL 工程循环", "DBTL Engineering Cycle") },
             ],
           };
         }
-        if (/蛋白表达|纯化|表达/.test(msg)) {
+        if (/蛋白表达|纯化|表达|protein expression|purif/i.test(msg)) {
           return {
-            reply:
+            reply: R(
               "蛋白表达推荐使用 SynFlow 的「蛋白表达纯化 Pipeline」模板：转化 → 小试诱导 →「表达量是否达标？」判断 → 放大培养 → 亲和层析纯化 → 浓度纯度测定 → IC50 曲线拟合 → 数据归档。\n\n点击下方按钮即可一键创建：",
+              "For protein expression, I recommend the SynFlow \"Protein Expression & Purification Pipeline\" template: transformation → small-scale induction → \"Expression on target?\" decision → scale-up culture → affinity purification → concentration/purity measurement → IC50 curve fitting → archiving.\n\nClick the button below to create it in one step:"),
             actions: [
-              { label: "立即创建蛋白表达流程", kind: "createWorkflow", templateKey: "protein_expr", name: "蛋白表达纯化 Pipeline" },
+              { label: R("立即创建蛋白表达流程", "Create protein expression workflow"), kind: "createWorkflow", templateKey: "protein_expr", name: R("蛋白表达纯化 Pipeline", "Protein Expression & Purification Pipeline") },
             ],
           };
         }
         if (/Golden\s*Gate/i.test(msg)) {
           return {
-            reply:
+            reply: R(
               "Golden Gate 组装适合 ≥4 个部件的标准化组装（MoClo 体系），无痕、可层级化，模板自带酶切连接、转化筛选与测序判断分支。\n\n点击下方按钮即可一键创建：",
+              "Golden Gate assembly suits standardized assembly of ≥4 parts (MoClo) — scarless and hierarchical. The template includes digest-ligation, transformation screening, and sequencing decision branches.\n\nClick the button below to create it in one step:"),
             actions: [
-              { label: "立即创建 Golden Gate 流程", kind: "createWorkflow", templateKey: "golden_gate", name: "Golden Gate 组装 Pipeline" },
+              { label: R("立即创建 Golden Gate 流程", "Create Golden Gate workflow"), kind: "createWorkflow", templateKey: "golden_gate", name: R("Golden Gate 组装 Pipeline", "Golden Gate Assembly Pipeline") },
             ],
           };
         }
         if (/Gibson/i.test(msg)) {
           return {
-            reply:
+            reply: R(
               "Gibson 组装适合 1–3 个片段，同源臂 20–40 bp，通用高效，模板自带阳性筛选与测序判断分支。\n\n点击下方按钮即可一键创建：",
+              "Gibson assembly suits 1–3 fragments with 20–40 bp homology arms — versatile and efficient. The template includes positive-screen and sequencing decision branches.\n\nClick the button below to create it in one step:"),
             actions: [
-              { label: "立即创建 Gibson 流程", kind: "createWorkflow", templateKey: "gibson_assembly", name: "Gibson 组装 Pipeline" },
+              { label: R("立即创建 Gibson 流程", "Create Gibson workflow"), kind: "createWorkflow", templateKey: "gibson_assembly", name: R("Gibson 组装 Pipeline", "Gibson Assembly Pipeline") },
             ],
           };
         }
         return {
-          reply:
+          reply: R(
             "载体构建有两条推荐路线：\n\n🧬 **Gibson 组装**：适合 1–3 个片段，同源臂 20–40 bp，通用高效\n🔗 **Golden Gate**：适合 ≥4 个部件的标准化组装（MoClo 体系），无痕、可层级化\n\n两套路线都已作为 Pipeline 模板内置在 SynFlow 合成流中，自带阳性筛选与测序判断分支。点击下方按钮即可一键创建：",
+            "Two recommended routes for vector construction:\n\n🧬 **Gibson Assembly**: 1–3 fragments, 20–40 bp homology arms, versatile and efficient\n🔗 **Golden Gate**: standardized assembly of ≥4 parts (MoClo), scarless and hierarchical\n\nBoth are built into SynFlow as pipeline templates with positive-screen and sequencing decision branches. Click a button below to create one in a single step:"),
           actions: [
-            { label: "创建 Gibson 流程", kind: "createWorkflow", templateKey: "gibson_assembly", name: "Gibson 组装 Pipeline" },
-            { label: "创建 Golden Gate 流程", kind: "createWorkflow", templateKey: "golden_gate", name: "Golden Gate 组装 Pipeline" },
+            { label: R("创建 Gibson 流程", "Create Gibson workflow"), kind: "createWorkflow", templateKey: "gibson_assembly", name: R("Gibson 组装 Pipeline", "Gibson Assembly Pipeline") },
+            { label: R("创建 Golden Gate 流程", "Create Golden Gate workflow"), kind: "createWorkflow", templateKey: "golden_gate", name: R("Golden Gate 组装 Pipeline", "Golden Gate Assembly Pipeline") },
           ],
         };
       }
 
       // ── SynFlow 流程查询 ──
-      if (/业务流|工作流|DAG|流程|pipeline|Pipeline|SynFlow|合成流/.test(msg)) {
+      if (/业务流|工作流|DAG|流程|pipeline|Pipeline|SynFlow|合成流|workflow/i.test(msg)) {
         const wfs = await db.select().from(workflows);
         const allWn = await db.select().from(workflowNodes);
         if (!wfs.length) {
           return {
-            reply: "还没有流程。去 SynFlow 合成流新建一个吧——内置合成生物学 Pipeline 模板（Gibson / Golden Gate / CRISPR / 蛋白表达 / DBTL），也可以用手工、设备、判断、数据处理节点从零搭建。",
-            actions: [{ label: "SynFlow 合成流", url: "/workflows" }],
+            reply: R("还没有流程。去 SynFlow 合成流新建一个吧——内置合成生物学 Pipeline 模板（Gibson / Golden Gate / CRISPR / 蛋白表达 / DBTL），也可以用手工、设备、判断、数据处理节点从零搭建。",
+              "No workflows yet. Create one in SynFlow — built-in synthetic-biology pipeline templates (Gibson / Golden Gate / CRISPR / protein expression / DBTL), or build from scratch with manual, equipment, decision, and data nodes."),
+            actions: [{ label: R("SynFlow 合成流", "SynFlow"), url: "/workflows" }],
           };
         }
         const lines = wfs.map((w) => {
           const ns = allWn.filter((n) => n.workflowId === w.id && n.status !== "skipped");
           const done = ns.filter((n) => n.status === "done").length;
           const cur = ns.find((n) => n.status === "in_progress");
-          return `• ${w.name}：${done}/${ns.length} 节点完成${cur ? `，当前「${cur.label}」（${cur.owner ?? "未分配"}）` : ""}`;
+          return R(
+            `• ${w.name}：${done}/${ns.length} 节点完成${cur ? `，当前「${cur.label}」（${cur.owner ?? "未分配"}）` : ""}`,
+            `• ${w.name}: ${done}/${ns.length} nodes done${cur ? `, currently "${cur.label}" (${cur.owner ?? "unassigned"})` : ""}`);
         });
         return {
-          reply: `当前共 ${wfs.length} 条流程：\n\n${lines.join("\n")}\n\n打开 SynFlow 合成流可以查看 DAG 图、推进节点、分配负责人。`,
-          actions: [{ label: "SynFlow 合成流", url: "/workflows" }],
+          reply: R(`当前共 ${wfs.length} 条流程：\n\n${lines.join("\n")}\n\n打开 SynFlow 合成流可以查看 DAG 图、推进节点、分配负责人。`,
+            `${wfs.length} workflow(s):\n\n${lines.join("\n")}\n\nOpen SynFlow to view the DAG, advance nodes, and assign owners.`),
+          actions: [{ label: R("SynFlow 合成流", "SynFlow"), url: "/workflows" }],
         };
       }
 
       // ── 统计概览 ──
-      if ((/统计|多少|几个|概况|总结|汇报/.test(msg) && /项目|实验|样本|室/.test(msg)) || /实验室.*(什么情况|怎么样|如何)|现在什么情况/.test(msg)) {
+      if ((/统计|多少|几个|概况|总结|汇报/.test(msg) && /项目|实验|样本|室/.test(msg)) || /实验室.*(什么情况|怎么样|如何)|现在什么情况|lab.*(status|overview|summary)|overview|summary of the lab/i.test(msg)) {
         const [pc] = await db.select({ n: sql<number>`COUNT(*)` }).from(projects).where(eq(projects.status, "active"));
         const [ec] = await db.select({ n: sql<number>`COUNT(*)` }).from(experiments);
         const [sc] = await db.select({ n: sql<number>`COUNT(*)` }).from(samples);
         const [qc] = await db.select({ n: sql<number>`COUNT(*)` }).from(equipment);
         const [rc] = await db.select({ n: sql<number>`COUNT(*)` }).from(workflows).where(eq(workflows.status, "active"));
         return {
-          reply: `实验室当前概况：\n\n📁 进行中项目 ${Number(pc?.n)} 个\n📓 实验记录 ${Number(ec?.n)} 条\n🧪 在库样本 ${Number(sc?.n)} 份\n🔬 设备 ${Number(qc?.n)} 台\n🔄 进行中流程 ${Number(rc?.n)} 条\n\n需要深入了解哪一部分？`,
+          reply: R(
+            `实验室当前概况：\n\n📁 进行中项目 ${Number(pc?.n)} 个\n📓 实验记录 ${Number(ec?.n)} 条\n🧪 在库样本 ${Number(sc?.n)} 份\n🔬 设备 ${Number(qc?.n)} 台\n🔄 进行中流程 ${Number(rc?.n)} 条\n\n需要深入了解哪一部分？`,
+            `Lab overview:\n\n📁 Active projects: ${Number(pc?.n)}\n📓 Experiment records: ${Number(ec?.n)}\n🧪 Samples in stock: ${Number(sc?.n)}\n🔬 Equipment: ${Number(qc?.n)}\n🔄 Active workflows: ${Number(rc?.n)}\n\nWhich part would you like to dig into?`),
           actions: [
-            { label: "仪表盘", url: "/" },
-            { label: "项目管理", url: "/projects" },
+            { label: R("仪表盘", "Dashboard"), url: "/" },
+            { label: R("项目管理", "Projects"), url: "/projects" },
           ],
         };
       }
 
       // ── 序列分析 ──
-      if (/分析|GC|酶切|ORF|开放阅读框/.test(msg) && /序列|基因|质粒/.test(msg)) {
+      if (/分析|GC|酶切|ORF|开放阅读框|analy[sz]e|restriction/i.test(msg) && /序列|基因|质粒|sequence|gene|plasmid/i.test(msg)) {
         let seqId = input.context?.entityType === "sequence" ? input.context.entityId : undefined;
         if (!seqId) {
           const all = await db.select().from(sequences).limit(50);
@@ -477,42 +514,53 @@ export const aiRouter = createRouter({
         }
         if (!seqId) {
           return {
-            reply: "请告诉我要分析哪条序列（说出序列名称），或在序列详情页打开 Copilot，我会自动分析当前序列。",
-            actions: [{ label: "序列库", url: "/sequences" }],
+            reply: R("请告诉我要分析哪条序列（说出序列名称），或在序列详情页打开 Copilot，我会自动分析当前序列。",
+              "Tell me which sequence to analyze (give its name), or open Copilot from a sequence detail page and I'll analyze it automatically."),
+            actions: [{ label: R("序列库", "Sequence Library"), url: "/sequences" }],
           };
         }
         const seq = await db.query.sequences.findFirst({ where: eq(sequences.id, seqId) });
-        if (!seq) return { reply: "没有找到这条序列。", actions };
+        if (!seq) return { reply: R("没有找到这条序列。", "Sequence not found."), actions };
         const gc = gcContent(seq.sequence);
         const orfs = findOrfs(seq.sequence, 30).slice(0, 3);
         const sites = findRestrictionSites(seq.sequence);
         const uniq = uniqueCutters(seq.sequence);
+        const gcNote = gc > 65
+          ? R("（偏高，PCR 可能需要加 DMSO 或甜菜碱）", "(high — PCR may need DMSO or betaine)")
+          : gc < 35
+            ? R("（偏低，注意退火温度优化）", "(low — optimize annealing temperature)")
+            : R("（正常范围）", "(normal range)");
         const lines = [
-          `「${seq.name}」分析结果：`,
-          `• 长度 ${seq.sequence.length} ${seq.type === "protein" ? "aa" : "bp"}，GC 含量 ${gc}%${gc > 65 ? "（偏高，PCR 可能需要加 DMSO 或甜菜碱）" : gc < 35 ? "（偏低，注意退火温度优化）" : "（正常范围）"}`,
+          R(`「${seq.name}」分析结果：`, `Analysis of "${seq.name}":`),
+          R(`• 长度 ${seq.sequence.length} ${seq.type === "protein" ? "aa" : "bp"}，GC 含量 ${gc}%${gcNote}`,
+            `• Length ${seq.sequence.length} ${seq.type === "protein" ? "aa" : "bp"}, GC ${gc}% ${gcNote}`),
         ];
         if (orfs.length) {
           lines.push(
-            `• 发现 ${orfs.length} 个主要 ORF，最长 ${orfs[0].lengthAa} aa（读框 ${orfs[0].frame > 0 ? "+" : ""}${orfs[0].frame}，${orfs[0].start}–${orfs[0].end}），蛋白预览：${orfs[0].proteinPreview}…`,
+            R(`• 发现 ${orfs.length} 个主要 ORF，最长 ${orfs[0].lengthAa} aa（读框 ${orfs[0].frame > 0 ? "+" : ""}${orfs[0].frame}，${orfs[0].start}–${orfs[0].end}），蛋白预览：${orfs[0].proteinPreview}…`,
+              `• ${orfs.length} major ORF(s), longest ${orfs[0].lengthAa} aa (frame ${orfs[0].frame > 0 ? "+" : ""}${orfs[0].frame}, ${orfs[0].start}–${orfs[0].end}), protein preview: ${orfs[0].proteinPreview}…`),
           );
         } else {
-          lines.push("• 未发现 ≥30 aa 的完整 ORF（若为部件片段属正常）");
+          lines.push(R("• 未发现 ≥30 aa 的完整 ORF（若为部件片段属正常）",
+            "• No complete ORF ≥30 aa found (normal for part fragments)"));
         }
         lines.push(
-          `• 常用酶切位点 ${sites.length} 个；唯一切点酶（载体构建可用）：${uniq.slice(0, 8).join("、") || "无"}`,
+          R(`• 常用酶切位点 ${sites.length} 个；唯一切点酶（载体构建可用）：${uniq.slice(0, 8).join("、") || "无"}`,
+            `• ${sites.length} common restriction sites; unique cutters (cloning-ready): ${uniq.slice(0, 8).join(", ") || "none"}`),
         );
         return {
           reply: lines.join("\n"),
-          actions: [{ label: "打开序列图谱", url: `/sequences?focus=${seqId}` }],
+          actions: [{ label: R("打开序列图谱", "Open sequence map"), url: `/sequences?focus=${seqId}` }],
         };
       }
 
       // ── Gibson 引物设计 ──
-      if (/引物/.test(msg) && /Gibson|gibson|组装/.test(msg)) {
+      if (/引物|primer/i.test(msg) && /Gibson|gibson|组装|assembly/i.test(msg)) {
         return {
-          reply:
+          reply: R(
             "Gibson 引物设计要点：\n\n1️⃣ 同源臂 20–40 bp（与载体末端完全同源），重叠区 Tm ≥ 48°C\n2️⃣ 退火区 18–25 bp，Tm 建议 58–62°C，引物间 ΔTm < 3°C\n3️⃣ 5' 端 = 同源臂 + 3' 端 = 模板退火区\n\n你可以在序列详情页使用「Gibson 引物设计」工具，输入载体末端序列即可自动计算。",
-          actions: [{ label: "打开序列库", url: "/sequences" }],
+            "Gibson primer design essentials:\n\n1️⃣ Homology arm 20–40 bp (fully homologous to vector ends), overlap Tm ≥ 48°C\n2️⃣ Annealing region 18–25 bp, Tm 58–62°C, ΔTm between primers < 3°C\n3️⃣ 5' end = homology arm + 3' end = template annealing region\n\nUse the \"Gibson Primer Design\" tool on a sequence detail page — enter the vector end sequences and it computes the primers automatically."),
+          actions: [{ label: R("打开序列库", "Open Sequence Library"), url: "/sequences" }],
         };
       }
 
@@ -521,23 +569,25 @@ export const aiRouter = createRouter({
         const keywords: Record<string, RegExp> = {
           gibson: /Gibson|gibson|吉布森/,
           golden_gate: /Golden|golden|金门/,
-          transformation: /转化|感受态/,
-          colony_pcr: /菌落|筛选.*PCR|PCR.*筛选/,
+          transformation: /转化|感受态|transformation|competent/i,
+          colony_pcr: /菌落|筛选.*PCR|PCR.*筛选|colony/i,
           qpcr: /qPCR|荧光定量|定量PCR/i,
-          flow: /流式|flow/i,
+          flow: /流式|flow|cytometry/i,
         };
         return keywords[key]?.test(msg);
       });
-      if (/方案|protocol|Protocol|步骤|怎么做|如何做/.test(msg) || protocolMatch) {
+      if (/方案|protocol|Protocol|步骤|怎么做|如何做|steps|how (to|do)/i.test(msg) || protocolMatch) {
         if (protocolMatch) {
           const [key, tpl] = protocolMatch;
           const blocks = tpl.build();
           const inExperiment = input.context?.entityType === "experiment";
           return {
-            reply: `已为你生成「${tpl.label}」标准方案，包含反应体系、操作步骤与质控要点${inExperiment ? "，点击下方按钮可直接插入当前实验记录" : "。打开某个实验后我可以直接帮你插入"}。`,
+            reply: R(
+              `已为你生成「${tpl.label}」标准方案，包含反应体系、操作步骤与质控要点${inExperiment ? "，点击下方按钮可直接插入当前实验记录" : "。打开某个实验后我可以直接帮你插入"}。`,
+              `I've generated the standard "${tpl.label}" protocol with reaction setup, steps, and QC notes${inExperiment ? " — click the button below to insert it into the current experiment record" : ". Open an experiment and I can insert it directly"}.`),
             actions: inExperiment
-              ? [{ label: "插入到当前实验", kind: "insertBlocks", templateKey: key }]
-              : [{ label: "去实验记录本", url: "/experiments" }],
+              ? [{ label: R("插入到当前实验", "Insert into current experiment"), kind: "insertBlocks", templateKey: key }]
+              : [{ label: R("去实验记录本", "Go to ELN"), url: "/experiments" }],
             blocks,
           };
         }
@@ -545,7 +595,8 @@ export const aiRouter = createRouter({
           .map(([, t]) => `• ${t.label}`)
           .join("\n");
         return {
-          reply: `我可以生成以下合成生物学标准方案（说出名称即可）：\n\n${list}\n\n在实验详情页打开我，生成的方案可直接插入实验记录。`,
+          reply: R(`我可以生成以下合成生物学标准方案（说出名称即可）：\n\n${list}\n\n在实验详情页打开我，生成的方案可直接插入实验记录。`,
+            `I can generate these standard synthetic-biology protocols (just name one):\n\n${list}\n\nOpen me from an experiment detail page and the protocol can be inserted directly into the record.`),
           actions,
         };
       }
@@ -558,27 +609,30 @@ export const aiRouter = createRouter({
         .limit(3);
       if (sampleHit.length && msg.length >= 2) {
         const lines = sampleHit.map(
-          (s) => `• ${s.sku} ${s.name} — 余量 ${s.quantity} ${s.unit}${s.expiryDate ? `，效期 ${s.expiryDate}` : ""}`,
+          (s) => `• ${s.sku} ${s.name} — ${R(`余量 ${s.quantity} ${s.unit}`, `${s.quantity} ${s.unit} left`)}${s.expiryDate ? R(`，效期 ${s.expiryDate}`, `, expires ${s.expiryDate}`) : ""}`,
         );
         return {
-          reply: `找到相关样本：\n\n${lines.join("\n")}`,
-          actions: sampleHit.map((s) => ({ label: `查看 ${s.sku}`, url: `/samples/${s.id}` })),
+          reply: R(`找到相关样本：\n\n${lines.join("\n")}`, `Matching samples:\n\n${lines.join("\n")}`),
+          actions: sampleHit.map((s) => ({ label: R(`查看 ${s.sku}`, `View ${s.sku}`), url: `/samples/${s.id}` })),
         };
       }
 
       // ── 兜底：能力清单 ──
       return {
-        reply: `我是 LabNova Copilot，你的合成生物学实验助手 🧬\n\n我目前可以：\n\n📊 **实验室问答** —「哪些样本快过期了」「流式细胞仪今天有预约吗」「实验室现在什么情况」\n🧬 **序列分析** — 在序列页打开我，自动给出 GC%、ORF、酶切位点分析\n📋 **方案生成** — 说出「Gibson 方案」「qPCR 步骤」等，生成标准 Protocol 并插入实验记录\n🔧 **设计建议** — Gibson 引物设计、载体构建路线选择、Pipeline 推荐并可一键创建整套 DAG 流程\n\n试试对我说：「帮我分析这条序列」或「生成 Gibson 组装方案」`,
+        reply: R(
+          `我是 BioMap OS Copilot，你的合成生物学实验助手 🧬\n\n我目前可以：\n\n📊 **实验室问答** —「哪些样本快过期了」「流式细胞仪今天有预约吗」「实验室现在什么情况」\n🧬 **序列分析** — 在序列页打开我，自动给出 GC%、ORF、酶切位点分析\n📋 **方案生成** — 说出「Gibson 方案」「qPCR 步骤」等，生成标准 Protocol 并插入实验记录\n🔧 **设计建议** — Gibson 引物设计、载体构建路线选择、Pipeline 推荐并可一键创建整套 DAG 流程\n\n试试对我说：「帮我分析这条序列」或「生成 Gibson 组装方案」`,
+          `I'm BioMap OS Copilot, your synthetic-biology lab assistant 🧬\n\nI can:\n\n📊 **Answer lab questions** — "which samples expire soon", "any bookings on the flow cytometer today", "how is the lab doing"\n🧬 **Analyze sequences** — open me on a sequence page for GC%, ORF, and restriction-site analysis\n📋 **Generate protocols** — say "Gibson protocol" or "qPCR steps" to get a standard protocol inserted into your experiment record\n🔧 **Design advice** — Gibson primer design, vector-construction route selection, and pipeline recommendations with one-click DAG creation\n\nTry: "analyze this sequence" or "generate a Gibson protocol"`),
         actions: [
-          { label: "序列库", url: "/sequences" },
-          { label: "SynFlow 合成流", url: "/workflows" },
+          { label: R("序列库", "Sequence Library"), url: "/sequences" },
+          { label: R("SynFlow 合成流", "SynFlow"), url: "/workflows" },
         ],
       };
       } catch (err) {
         // 关键：真实错误打到服务端日志，前端得到友好降级回复而不是「出错了」
         console.error("[ai.chat] 处理消息时出错:", err);
         return {
-          reply: "抱歉，我在查询数据时遇到了一点问题，请稍后再试。如果问题持续出现，可能是数据库尚未完成初始化——稍等片刻让服务完成启动，或联系管理员查看服务端日志。",
+          reply: R("抱歉，我在查询数据时遇到了一点问题，请稍后再试。如果问题持续出现，可能是数据库尚未完成初始化——稍等片刻让服务完成启动，或联系管理员查看服务端日志。",
+            "Sorry, I hit a problem while querying the data — please try again shortly. If it persists, the database may still be initializing; wait for the service to finish starting, or ask an admin to check the server logs."),
           actions: [],
         };
       }

@@ -27,6 +27,7 @@ import {
 import { ArrowLeft, ChevronRight, PackageOpen, AlertTriangle } from "lucide-react";
 import { SAMPLE_TYPES, ALERT_LABELS, fmtDate, rowLabel, colLabel, sampleAlert } from "@/lib/labels";
 import { toast } from "sonner";
+import { useI18n } from "@/i18n";
 
 const TYPE_CELL: Record<string, string> = {
   cell_line: "bg-pink-100 border-pink-300 text-pink-700 hover:bg-pink-200",
@@ -42,6 +43,7 @@ const TYPE_CELL: Record<string, string> = {
 };
 
 export default function BoxDetail() {
+  const { t } = useI18n();
   const { id } = useParams<{ id: string }>();
   const boxId = Number(id);
   const navigate = useNavigate();
@@ -54,7 +56,7 @@ export default function BoxDetail() {
 
   const placeMut = trpc.storage.placeSample.useMutation({
     onSuccess: () => {
-      toast.success("样本已放入指定格子");
+      toast.success(t("样本已放入指定格子"));
       setPlaceCell(null);
       setPlaceSampleId("");
       refresh();
@@ -63,7 +65,7 @@ export default function BoxDetail() {
   });
   const removeMut = trpc.storage.removePlacement.useMutation({
     onSuccess: () => {
-      toast.success("样本已移出冻存盒");
+      toast.success(t("样本已移出冻存盒"));
       refresh();
     },
     onError: (e) => toast.error(e.message),
@@ -105,7 +107,7 @@ export default function BoxDetail() {
           onClick={() => navigate("/storage")}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-3"
         >
-          <ArrowLeft className="h-4 w-4" /> 返回存储管理
+          <ArrowLeft className="h-4 w-4" /> {t("返回存储管理")}
         </button>
         {/* 面包屑 */}
         <div className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground mb-2">
@@ -119,7 +121,7 @@ export default function BoxDetail() {
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold tracking-tight">{box.name}</h1>
           <Badge variant="outline" className="bg-teal-50 text-teal-700 border-teal-200">
-            {occupied} / {rows * cols} 格已用
+            {t("{used} / {total} 格已用", { used: occupied, total: rows * cols })}
           </Badge>
         </div>
       </div>
@@ -128,7 +130,7 @@ export default function BoxDetail() {
         {/* 盒子网格 */}
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">盒内布局（点击空格放入样本，点击占用格查看详情）</CardTitle>
+            <CardTitle className="text-base">{t("盒内布局（点击空格放入样本，点击占用格查看详情）")}</CardTitle>
           </CardHeader>
           <CardContent className="overflow-x-auto">
             <div className="inline-block">
@@ -183,21 +185,21 @@ export default function BoxDetail() {
                                 <div className="text-xs text-muted-foreground font-mono">{sample.sku}</div>
                               </div>
                               <Badge variant="outline" className={SAMPLE_TYPES[sample.type]?.cls}>
-                                {SAMPLE_TYPES[sample.type]?.label}
+                                {t(SAMPLE_TYPES[sample.type]?.label ?? sample.type)}
                               </Badge>
                             </div>
                             <div className="text-xs text-muted-foreground space-y-1">
-                              <div>位置：{rowLabel(r)}{colLabel(c)} · 余量 {sample.quantity} {sample.unit}</div>
-                              {sample.expiryDate && <div>效期：{fmtDate(sample.expiryDate)}</div>}
+                              <div>{t("位置")}：{rowLabel(r)}{colLabel(c)} · {t("余量")} {sample.quantity} {sample.unit}</div>
+                              {sample.expiryDate && <div>{t("效期")}：{fmtDate(sample.expiryDate)}</div>}
                             </div>
                             {alert && (
                               <Badge variant="outline" className={ALERT_LABELS[alert].cls}>
-                                {ALERT_LABELS[alert].label}
+                                {t(ALERT_LABELS[alert].label)}
                               </Badge>
                             )}
                             <div className="flex gap-2 pt-1">
                               <Button size="sm" className="h-7 bg-teal-600 hover:bg-teal-500" asChild>
-                                <Link to={`/samples/${sample.id}`}>查看样本</Link>
+                                <Link to={`/samples/${sample.id}`}>{t("查看样本")}</Link>
                               </Button>
                               <Button
                                 size="sm"
@@ -206,7 +208,7 @@ export default function BoxDetail() {
                                 disabled={removeMut.isPending}
                                 onClick={() => removeMut.mutate({ sampleId: sample.id })}
                               >
-                                <PackageOpen className="h-3.5 w-3.5 mr-1" /> 移出
+                                <PackageOpen className="h-3.5 w-3.5 mr-1" /> {t("移出")}
                               </Button>
                             </div>
                           </div>
@@ -224,7 +226,7 @@ export default function BoxDetail() {
         <div className="space-y-5">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">盒内样本（{box.placements.length}）</CardTitle>
+              <CardTitle className="text-base">{t("盒内样本")}（{box.placements.length}）</CardTitle>
             </CardHeader>
             <CardContent className="space-y-1.5">
               {box.placements.length ? (
@@ -244,21 +246,21 @@ export default function BoxDetail() {
                   </Link>
                 ))
               ) : (
-                <p className="text-sm text-muted-foreground text-center py-6">空盒子</p>
+                <p className="text-sm text-muted-foreground text-center py-6">{t("空盒子")}</p>
               )}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">类型图例</CardTitle>
+              <CardTitle className="text-base">{t("类型图例")}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-2">
                 {Object.entries(SAMPLE_TYPES).map(([k, v]) => (
                   <div key={k} className="flex items-center gap-2 text-xs">
                     <span className={`w-4 h-4 rounded border ${TYPE_CELL[k].split(" ").slice(0, 2).join(" ")}`} />
-                    {v.label}
+                    {t(v.label)}
                   </div>
                 ))}
               </div>
@@ -272,13 +274,13 @@ export default function BoxDetail() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              放入样本到 {placeCell && `${rowLabel(placeCell.row - 1)}${colLabel(placeCell.col - 1)}`} 格
+              {t("放入样本到 {cell} 格", { cell: placeCell ? `${rowLabel(placeCell.row - 1)}${colLabel(placeCell.col - 1)}` : "" })}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
             <Select value={placeSampleId} onValueChange={setPlaceSampleId}>
               <SelectTrigger>
-                <SelectValue placeholder="选择样本" />
+                <SelectValue placeholder={t("选择样本")} />
               </SelectTrigger>
               <SelectContent>
                 {candidates?.map((s) => (
@@ -290,7 +292,7 @@ export default function BoxDetail() {
             </Select>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPlaceCell(null)}>取消</Button>
+            <Button variant="outline" onClick={() => setPlaceCell(null)}>{t("取消")}</Button>
             <Button
               className="bg-teal-600 hover:bg-teal-500"
               disabled={placeMut.isPending || !placeSampleId || !placeCell}
@@ -304,7 +306,7 @@ export default function BoxDetail() {
                 })
               }
             >
-              确认放入
+              {t("确认放入")}
             </Button>
           </DialogFooter>
         </DialogContent>

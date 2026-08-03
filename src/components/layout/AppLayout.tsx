@@ -31,6 +31,8 @@ import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthLayoutSkeleton } from "../AuthLayoutSkeleton";
 import Copilot from "../copilot/Copilot";
+import { useI18n } from "@/i18n";
+import { LanguageSwitcher } from "@/i18n/LanguageSwitcher";
 
 const NAV_GROUPS = [
   {
@@ -68,6 +70,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const { user, isLoading, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [searchQ, setSearchQ] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -76,25 +79,28 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   if (!user) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-950">
+        <div className="absolute top-4 right-4">
+          <LanguageSwitcher className="border-white/15 text-slate-300 hover:text-white hover:bg-white/10" />
+        </div>
         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
           <div className="flex items-center gap-3">
             <div className="h-12 w-12 rounded-xl bg-teal-500 flex items-center justify-center">
               <FlaskConical className="h-7 w-7 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white tracking-tight">LabNova</h1>
-              <p className="text-xs text-slate-400">LIMS · ELN 实验室信息平台</p>
+              <h1 className="text-2xl font-bold text-white tracking-tight">BioMap OS</h1>
+              <p className="text-xs text-slate-400">{t("LIMS · ELN 实验室信息平台")}</p>
             </div>
           </div>
           <p className="text-sm text-slate-400 text-center max-w-sm">
-            登录以访问实验室项目、电子实验记录、样本库存与存储管理系统。
+            {t("登录以访问实验室项目、电子实验记录、样本库存与存储管理系统。")}
           </p>
           <Button
             onClick={() => (window.location.href = LOGIN_PATH)}
             size="lg"
             className="w-full bg-teal-600 hover:bg-teal-500"
           >
-            登录继续
+            {t("登录继续")}
           </Button>
         </div>
       </div>
@@ -109,7 +115,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <FlaskConical className="h-5 w-5 text-white" />
         </div>
         <div className="min-w-0">
-          <div className="font-bold text-white tracking-tight leading-none">LabNova</div>
+          <div className="font-bold text-white tracking-tight leading-none">BioMap OS</div>
           <div className="text-[10px] text-slate-500 mt-1 tracking-wider">LIMS · ELN SUITE</div>
         </div>
       </div>
@@ -118,7 +124,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         {NAV_GROUPS.map((group) => (
           <div key={group.label}>
             <div className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-              {group.label}
+              {t(group.label)}
             </div>
             <div className="space-y-0.5">
               {group.items.map((item) => {
@@ -138,7 +144,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                     )}
                   >
                     <item.icon className={cn("h-4 w-4 shrink-0", active && "text-teal-400")} />
-                    {item.label}
+                    {t(item.label)}
                   </button>
                 );
               })}
@@ -158,7 +164,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               </Avatar>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-slate-200 truncate leading-none">
-                  {user?.name || "用户"}
+                  {user?.name || t("用户")}
                 </p>
                 <p className="text-[11px] text-slate-500 truncate mt-1">{user?.email || ""}</p>
               </div>
@@ -167,7 +173,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive">
               <LogOut className="mr-2 h-4 w-4" />
-              退出登录
+              {t("退出登录")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -216,14 +222,15 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <Input
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
-              placeholder="全局搜索：实验 / 样本 / 项目 / 序列…"
+              placeholder={t("全局搜索：实验 / 样本 / 项目 / 序列…")}
               className="pl-9 bg-slate-50 border-slate-200 focus-visible:ring-teal-500"
             />
           </form>
           <div className="ml-auto flex items-center gap-3">
+            <LanguageSwitcher />
             <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500">
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              实验室运行中
+              {t("实验室运行中")}
             </div>
             <Avatar className="h-8 w-8 border">
               <AvatarFallback className="bg-teal-600 text-white text-xs">

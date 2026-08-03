@@ -40,10 +40,12 @@ import {
 import { Link } from "react-router";
 import { PROJECT_COLORS, PROJECT_STATUS, fmtDate } from "@/lib/labels";
 import { toast } from "sonner";
+import { useI18n } from "@/i18n";
 
 const COLOR_OPTIONS = ["teal", "indigo", "amber", "rose", "cyan", "violet"];
 
 export default function Projects() {
+  const { t } = useI18n();
   const utils = trpc.useUtils();
   const { data: projects, isLoading } = trpc.project.list.useQuery();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -54,7 +56,7 @@ export default function Projects() {
   const refresh = () => utils.project.list.invalidate();
   const createMut = trpc.project.create.useMutation({
     onSuccess: () => {
-      toast.success("项目已创建");
+      toast.success(t("项目已创建"));
       setDialogOpen(false);
       refresh();
     },
@@ -62,7 +64,7 @@ export default function Projects() {
   });
   const updateMut = trpc.project.update.useMutation({
     onSuccess: () => {
-      toast.success("项目已更新");
+      toast.success(t("项目已更新"));
       setDialogOpen(false);
       refresh();
       utils.project.byId.invalidate();
@@ -71,7 +73,7 @@ export default function Projects() {
   });
   const deleteMut = trpc.project.delete.useMutation({
     onSuccess: () => {
-      toast.success("项目已删除");
+      toast.success(t("项目已删除"));
       setDeleting(null);
       refresh();
     },
@@ -100,7 +102,7 @@ export default function Projects() {
 
   const submit = () => {
     if (!form.name.trim()) {
-      toast.error("请输入项目名称");
+      toast.error(t("请输入项目名称"));
       return;
     }
     if (editing) {
@@ -114,11 +116,11 @@ export default function Projects() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">项目管理</h1>
-          <p className="text-sm text-muted-foreground mt-1">组织实验与样本的研究项目</p>
+          <h1 className="text-2xl font-bold tracking-tight">{t("项目管理")}</h1>
+          <p className="text-sm text-muted-foreground mt-1">{t("组织实验与样本的研究项目")}</p>
         </div>
         <Button onClick={openCreate} className="bg-teal-600 hover:bg-teal-500">
-          <Plus className="h-4 w-4 mr-1" /> 新建项目
+          <Plus className="h-4 w-4 mr-1" /> {t("新建项目")}
         </Button>
       </div>
 
@@ -144,7 +146,7 @@ export default function Projects() {
                       </h3>
                     </Link>
                     <div className="flex items-center gap-1 shrink-0">
-                      <Badge variant="outline" className={status.cls}>{status.label}</Badge>
+                      <Badge variant="outline" className={status.cls}>{t(status.label)}</Badge>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <button className="p-1 rounded hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -153,28 +155,28 @@ export default function Projects() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => openEdit(p)}>
-                            <Pencil className="h-3.5 w-3.5 mr-2" /> 编辑
+                            <Pencil className="h-3.5 w-3.5 mr-2" /> {t("编辑")}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
                             onClick={() => setDeleting(p.id)}
                           >
-                            <Trash2 className="h-3.5 w-3.5 mr-2" /> 删除
+                            <Trash2 className="h-3.5 w-3.5 mr-2" /> {t("删除")}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
                   </div>
                   <p className="text-sm text-muted-foreground mt-2 line-clamp-2 min-h-10">
-                    {p.description || "暂无描述"}
+                    {p.description || t("暂无描述")}
                   </p>
                   <div className="flex items-center gap-4 mt-4 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
-                      <NotebookPen className="h-3.5 w-3.5" /> {p.experimentCount} 实验
-                      {p.activeExperimentCount > 0 && `（${p.activeExperimentCount} 进行中）`}
+                      <NotebookPen className="h-3.5 w-3.5" /> {t("{n} 实验", { n: p.experimentCount })}
+                      {p.activeExperimentCount > 0 && t("（{n} 进行中）", { n: p.activeExperimentCount })}
                     </span>
                     <span className="flex items-center gap-1">
-                      <TestTubes className="h-3.5 w-3.5" /> {p.sampleCount} 样本
+                      <TestTubes className="h-3.5 w-3.5" /> {t("{n} 样本", { n: p.sampleCount })}
                     </span>
                     <span className="ml-auto">{fmtDate(p.updatedAt)}</span>
                   </div>
@@ -187,7 +189,7 @@ export default function Projects() {
         <Card className="py-16">
           <div className="flex flex-col items-center gap-3 text-muted-foreground">
             <FolderKanban className="h-10 w-10" />
-            <p>还没有项目，点击「新建项目」开始你的第一个研究项目</p>
+            <p>{t("还没有项目，点击「新建项目」开始你的第一个研究项目")}</p>
           </div>
         </Card>
       )}
@@ -196,29 +198,29 @@ export default function Projects() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing ? "编辑项目" : "新建项目"}</DialogTitle>
+            <DialogTitle>{editing ? t("编辑项目") : t("新建项目")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>项目名称</Label>
+              <Label>{t("项目名称")}</Label>
               <Input
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="例如：CAR-T 细胞疗法开发"
+                placeholder={t("例如：CAR-T 细胞疗法开发")}
               />
             </div>
             <div className="space-y-2">
-              <Label>项目描述</Label>
+              <Label>{t("项目描述")}</Label>
               <Textarea
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
-                placeholder="研究目标、范围与预期成果…"
+                placeholder={t("研究目标、范围与预期成果…")}
                 rows={3}
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>标识颜色</Label>
+                <Label>{t("标识颜色")}</Label>
                 <div className="flex gap-2 pt-1">
                   {COLOR_OPTIONS.map((c) => (
                     <button
@@ -232,28 +234,28 @@ export default function Projects() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>状态</Label>
+                <Label>{t("状态")}</Label>
                 <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="active">进行中</SelectItem>
-                    <SelectItem value="on_hold">已暂停</SelectItem>
-                    <SelectItem value="completed">已完成</SelectItem>
+                    <SelectItem value="active">{t("进行中")}</SelectItem>
+                    <SelectItem value="on_hold">{t("已暂停")}</SelectItem>
+                    <SelectItem value="completed">{t("已完成")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>{t("取消")}</Button>
             <Button
               onClick={submit}
               disabled={createMut.isPending || updateMut.isPending}
               className="bg-teal-600 hover:bg-teal-500"
             >
-              {editing ? "保存" : "创建"}
+              {editing ? t("保存") : t("创建")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -263,18 +265,18 @@ export default function Projects() {
       <AlertDialog open={deleting !== null} onOpenChange={() => setDeleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除项目？</AlertDialogTitle>
+            <AlertDialogTitle>{t("删除项目？")}</AlertDialogTitle>
             <AlertDialogDescription>
-              项目删除后不可恢复。项目下若仍有实验记录将无法删除。
+              {t("项目删除后不可恢复。项目下若仍有实验记录将无法删除。")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive hover:bg-destructive/90"
               onClick={() => deleting && deleteMut.mutate({ id: deleting })}
             >
-              确认删除
+              {t("确认删除")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

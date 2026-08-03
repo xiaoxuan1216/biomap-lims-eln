@@ -63,6 +63,7 @@ import {
 import { CircularMap, LinearMap } from "@/components/seqmap/PlasmidMap";
 import { setCopilotContext } from "@/lib/copilotContext";
 import { toast } from "sonner";
+import { useI18n } from "@/i18n";
 
 function ColoredSeq({ seq }: { seq: string }) {
   const groups: string[] = [];
@@ -92,6 +93,7 @@ function ColoredSeq({ seq }: { seq: string }) {
 }
 
 export default function Sequences() {
+  const { t } = useI18n();
   const utils = trpc.useUtils();
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState("");
@@ -152,7 +154,7 @@ export default function Sequences() {
 
   const createMut = trpc.sequence.create.useMutation({
     onSuccess: (r) => {
-      toast.success("序列已添加");
+      toast.success(t("序列已添加"));
       setCreateOpen(false);
       setForm({ name: "", type: "dna", sequence: "", description: "" });
       setSelectedId(r.id);
@@ -162,7 +164,7 @@ export default function Sequences() {
   });
   const deleteMut = trpc.sequence.delete.useMutation({
     onSuccess: () => {
-      toast.success("序列已删除");
+      toast.success(t("序列已删除"));
       setDeleteOpen(false);
       setSelectedId(null);
       utils.sequence.list.invalidate();
@@ -171,14 +173,14 @@ export default function Sequences() {
   });
   const annotateMut = trpc.sequence.autoAnnotate.useMutation({
     onSuccess: (r) => {
-      toast.success(`自动注释完成：新增 ${r.added} 个特性（共 ${r.total} 个）`);
+      toast.success(t("自动注释完成：新增 {added} 个特性（共 {total} 个）", { added: r.added, total: r.total }));
       refreshDetail();
     },
     onError: (e) => toast.error(e.message),
   });
   const addFeatMut = trpc.sequence.addFeature.useMutation({
     onSuccess: () => {
-      toast.success("特性已添加");
+      toast.success(t("特性已添加"));
       setFeatOpen(false);
       refreshDetail();
     },
@@ -198,7 +200,7 @@ export default function Sequences() {
   );
 
   const copy = (text: string, label: string) => {
-    navigator.clipboard.writeText(text).then(() => toast.success(`${label}已复制`));
+    navigator.clipboard.writeText(text).then(() => toast.success(t("{label}已复制", { label })));
   };
 
   const siteCounts = useMemo(() => {
@@ -212,13 +214,13 @@ export default function Sequences() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">序列库</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("序列库")}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            SnapGene 风格图谱 · 自动注释 · ORF 与酶切分析
+            {t("SnapGene 风格图谱 · 自动注释 · ORF 与酶切分析")}
           </p>
         </div>
         <Button className="bg-teal-600 hover:bg-teal-500" onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4 mr-1" /> 添加序列
+          <Plus className="h-4 w-4 mr-1" /> {t("添加序列")}
         </Button>
       </div>
 
@@ -228,12 +230,12 @@ export default function Sequences() {
           <CardHeader className="pb-2">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索序列…" className="pl-9" />
+              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("搜索序列…")} className="pl-9" />
             </div>
           </CardHeader>
           <CardContent className="space-y-1.5">
             {isLoading ? (
-              <p className="text-sm text-muted-foreground text-center py-8">加载中…</p>
+              <p className="text-sm text-muted-foreground text-center py-8">{t("加载中…")}</p>
             ) : sequences?.length ? (
               sequences.map((s) => (
                 <button
@@ -252,11 +254,11 @@ export default function Sequences() {
                       {s.sequence.length} {s.type === "protein" ? "aa" : "bp"} · {fmtDate(s.createdAt)}
                     </div>
                   </div>
-                  <Badge variant="outline" className="bg-slate-50 shrink-0">{SEQ_TYPES[s.type]}</Badge>
+                  <Badge variant="outline" className="bg-slate-50 shrink-0">{t(SEQ_TYPES[s.type] ?? s.type)}</Badge>
                 </button>
               ))
             ) : (
-              <p className="text-sm text-muted-foreground text-center py-8">暂无序列</p>
+              <p className="text-sm text-muted-foreground text-center py-8">{t("暂无序列")}</p>
             )}
           </CardContent>
         </Card>
@@ -269,7 +271,7 @@ export default function Sequences() {
                 <div className="flex items-center gap-3 flex-wrap">
                   <CardTitle className="text-lg">{selected.name}</CardTitle>
                   <Badge variant="outline" className="bg-teal-50 text-teal-700 border-teal-200">
-                    {SEQ_TYPES[selected.type]}
+                    {t(SEQ_TYPES[selected.type] ?? selected.type)}
                   </Badge>
                   <span className="text-xs text-muted-foreground">
                     {selected.sequence.length} {selected.type === "protein" ? "aa" : "bp"}
@@ -285,7 +287,7 @@ export default function Sequences() {
                           onClick={() => annotateMut.mutate({ sequenceId: selected.id })}
                         >
                           <Wand2 className="h-3.5 w-3.5 mr-1" />
-                          {annotateMut.isPending ? "注释中…" : "自动注释"}
+                          {annotateMut.isPending ? t("注释中…") : t("自动注释")}
                         </Button>
                         <Button
                           size="sm"
@@ -293,12 +295,12 @@ export default function Sequences() {
                           className="text-teal-600 border-teal-200 hover:bg-teal-50"
                           onClick={() => setGibsonOpen(true)}
                         >
-                          <Scissors className="h-3.5 w-3.5 mr-1" /> Gibson 引物
+                          <Scissors className="h-3.5 w-3.5 mr-1" /> {t("Gibson 引物")}
                         </Button>
                       </>
                     )}
-                    <Button size="sm" variant="outline" onClick={() => copy(selected.sequence, "序列")}>
-                      <Copy className="h-3.5 w-3.5 mr-1" /> 复制
+                    <Button size="sm" variant="outline" onClick={() => copy(selected.sequence, t("序列"))}>
+                      <Copy className="h-3.5 w-3.5 mr-1" /> {t("复制")}
                     </Button>
                     <Button
                       size="sm"
@@ -317,11 +319,11 @@ export default function Sequences() {
               <CardContent>
                 <Tabs defaultValue="map">
                   <TabsList>
-                    <TabsTrigger value="map">图谱</TabsTrigger>
-                    <TabsTrigger value="features">特性（{selected.features.length}）</TabsTrigger>
-                    <TabsTrigger value="seq">序列</TabsTrigger>
+                    <TabsTrigger value="map">{t("图谱")}</TabsTrigger>
+                    <TabsTrigger value="features">{t("特性")}（{selected.features.length}）</TabsTrigger>
+                    <TabsTrigger value="seq">{t("序列")}</TabsTrigger>
                     <TabsTrigger value="analysis" className="gap-1">
-                      <Sparkles className="h-3 w-3" /> 分析
+                      <Sparkles className="h-3 w-3" /> {t("分析")}
                     </TabsTrigger>
                   </TabsList>
 
@@ -330,16 +332,16 @@ export default function Sequences() {
                     {selected.features.length === 0 && (
                       <div className="rounded-lg border border-dashed border-teal-300 bg-teal-50/50 px-4 py-3 text-sm text-teal-800 flex items-center gap-2">
                         <Wand2 className="h-4 w-4 shrink-0" />
-                        还没有特性注释。点击「自动注释」扫描启动子、标签、酶切位点等常见元件，或手动添加。
+                        {t("还没有特性注释。点击「自动注释」扫描启动子、标签、酶切位点等常见元件，或手动添加。")}
                       </div>
                     )}
                     <Tabs defaultValue="circular">
                       <TabsList className="h-8">
                         <TabsTrigger value="circular" className="text-xs gap-1">
-                          <CircleDot className="h-3 w-3" /> 环形
+                          <CircleDot className="h-3 w-3" /> {t("环形")}
                         </TabsTrigger>
                         <TabsTrigger value="linear" className="text-xs gap-1">
-                          <MinusIcon className="h-3 w-3" /> 线性
+                          <MinusIcon className="h-3 w-3" /> {t("线性")}
                         </TabsTrigger>
                       </TabsList>
                       <TabsContent value="circular">
@@ -375,17 +377,17 @@ export default function Sequences() {
                           setFeatOpen(true);
                         }}
                       >
-                        <Plus className="h-3.5 w-3.5 mr-1" /> 添加特性
+                        <Plus className="h-3.5 w-3.5 mr-1" /> {t("添加特性")}
                       </Button>
                     </div>
                     {selected.features.length ? (
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>名称</TableHead>
-                            <TableHead className="w-28">类型</TableHead>
-                            <TableHead className="w-32">位置</TableHead>
-                            <TableHead className="w-16">链</TableHead>
+                            <TableHead>{t("名称")}</TableHead>
+                            <TableHead className="w-28">{t("类型")}</TableHead>
+                            <TableHead className="w-32">{t("位置")}</TableHead>
+                            <TableHead className="w-16">{t("链")}</TableHead>
                             <TableHead className="w-12"></TableHead>
                           </TableRow>
                         </TableHeader>
@@ -408,7 +410,7 @@ export default function Sequences() {
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline" className="bg-slate-50">
-                                  {FEATURE_TYPES[f.type] ?? f.type}
+                                  {t(FEATURE_TYPES[f.type] ?? f.type)}
                                 </Badge>
                               </TableCell>
                               <TableCell className="font-mono text-xs">
@@ -431,7 +433,7 @@ export default function Sequences() {
                       </Table>
                     ) : (
                       <p className="text-sm text-muted-foreground text-center py-10">
-                        暂无特性，试试「自动注释」
+                        {t("暂无特性，试试「自动注释」")}
                       </p>
                     )}
                   </TabsContent>
@@ -442,11 +444,11 @@ export default function Sequences() {
                     {revComp && (
                       <details className="group">
                         <summary className="text-sm text-teal-600 cursor-pointer hover:underline">
-                          查看反向互补序列
+                          {t("查看反向互补序列")}
                         </summary>
                         <div className="mt-2">
-                          <Button size="sm" variant="outline" className="mb-2" onClick={() => copy(revComp, "反向互补序列")}>
-                            <Copy className="h-3.5 w-3.5 mr-1" /> 复制
+                          <Button size="sm" variant="outline" className="mb-2" onClick={() => copy(revComp, t("反向互补序列"))}>
+                            <Copy className="h-3.5 w-3.5 mr-1" /> {t("复制")}
                           </Button>
                           <ColoredSeq seq={revComp} />
                         </div>
@@ -459,18 +461,18 @@ export default function Sequences() {
                     {analysis ? (
                       <>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                          <StatBox label="长度" value={`${analysis.length} ${selected.type === "protein" ? "aa" : "bp"}`} />
-                          {analysis.gc !== null && <StatBox label="GC 含量" value={`${analysis.gc}%`} />}
-                          <StatBox label="主要 ORF" value={`${analysis.orfs.length} 个`} />
+                          <StatBox label={t("长度")} value={`${analysis.length} ${selected.type === "protein" ? "aa" : "bp"}`} />
+                          {analysis.gc !== null && <StatBox label={t("GC 含量")} value={`${analysis.gc}%`} />}
+                          <StatBox label={t("主要 ORF")} value={t("{n} 个", { n: analysis.orfs.length })} />
                           <StatBox
-                            label="唯一切点酶"
-                            value={analysis.uniqueCutters.length ? `${analysis.uniqueCutters.length} 种` : "无"}
+                            label={t("唯一切点酶")}
+                            value={analysis.uniqueCutters.length ? t("{n} 种", { n: analysis.uniqueCutters.length }) : t("无")}
                           />
                         </div>
 
                         {/* 组成 */}
                         <div>
-                          <h4 className="text-sm font-semibold mb-2">碱基/氨基酸组成</h4>
+                          <h4 className="text-sm font-semibold mb-2">{t("碱基/氨基酸组成")}</h4>
                           <div className="flex flex-wrap gap-2">
                             {Object.entries(analysis.composition)
                               .sort((a, b) => b[1] - a[1])
@@ -486,14 +488,14 @@ export default function Sequences() {
                         {/* ORF */}
                         {analysis.orfs.length > 0 && (
                           <div>
-                            <h4 className="text-sm font-semibold mb-2">开放阅读框（六读框扫描，≥30 aa）</h4>
+                            <h4 className="text-sm font-semibold mb-2">{t("开放阅读框（六读框扫描，≥30 aa）")}</h4>
                             <Table>
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead className="w-20">读框</TableHead>
-                                  <TableHead className="w-36">位置</TableHead>
-                                  <TableHead className="w-24">长度</TableHead>
-                                  <TableHead>蛋白预览</TableHead>
+                                  <TableHead className="w-20">{t("读框")}</TableHead>
+                                  <TableHead className="w-36">{t("位置")}</TableHead>
+                                  <TableHead className="w-24">{t("长度")}</TableHead>
+                                  <TableHead>{t("蛋白预览")}</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -518,7 +520,7 @@ export default function Sequences() {
                         {analysis.restrictionSites.length > 0 && (
                           <div>
                             <h4 className="text-sm font-semibold mb-2">
-                              限制性酶切位点（{analysis.restrictionSites.length} 个）
+                              {t("限制性酶切位点")}（{analysis.restrictionSites.length}）
                             </h4>
                             <div className="flex flex-wrap gap-1.5">
                               {siteCounts.map(([enzyme, n]) => (
@@ -538,14 +540,14 @@ export default function Sequences() {
                             {analysis.uniqueCutters.length > 0 && (
                               <p className="text-xs text-muted-foreground mt-2">
                                 <Sparkles className="h-3 w-3 inline mr-1 text-teal-500" />
-                                唯一切点（克隆可用）：{analysis.uniqueCutters.join("、")}
+                                {t("唯一切点（克隆可用）")}：{analysis.uniqueCutters.join("、")}
                               </p>
                             )}
                           </div>
                         )}
                       </>
                     ) : (
-                      <p className="text-sm text-muted-foreground py-8 text-center">分析中…</p>
+                      <p className="text-sm text-muted-foreground py-8 text-center">{t("分析中…")}</p>
                     )}
                   </TabsContent>
                 </Tabs>
@@ -554,7 +556,7 @@ export default function Sequences() {
           ) : (
             <div className="flex flex-col items-center justify-center h-96 text-muted-foreground gap-3">
               <Dna className="h-10 w-10 opacity-30" />
-              <p className="text-sm">从左侧选择一条序列查看图谱与分析</p>
+              <p className="text-sm">{t("从左侧选择一条序列查看图谱与分析")}</p>
             </div>
           )}
         </Card>
@@ -564,28 +566,28 @@ export default function Sequences() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>添加序列</DialogTitle>
+            <DialogTitle>{t("添加序列")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>名称 *</Label>
-                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如：CD19-scFv (FMC63)" />
+                <Label>{t("名称")} *</Label>
+                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t("例如：CD19-scFv (FMC63)")} />
               </div>
               <div className="space-y-2">
-                <Label>类型</Label>
+                <Label>{t("类型")}</Label>
                 <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="dna">DNA</SelectItem>
                     <SelectItem value="rna">RNA</SelectItem>
-                    <SelectItem value="protein">蛋白质</SelectItem>
+                    <SelectItem value="protein">{t("蛋白质")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="space-y-2">
-              <Label>序列 *（自动去除非字母并转为大写）</Label>
+              <Label>{t("序列")} *（{t("自动去除非字母并转为大写")}）</Label>
               <Textarea
                 value={form.sequence}
                 onChange={(e) => setForm({ ...form, sequence: e.target.value })}
@@ -595,12 +597,12 @@ export default function Sequences() {
               />
             </div>
             <div className="space-y-2">
-              <Label>描述</Label>
-              <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="来源、用途等…" />
+              <Label>{t("描述")}</Label>
+              <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder={t("来源、用途等…")} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>{t("取消")}</Button>
             <Button
               className="bg-teal-600 hover:bg-teal-500"
               disabled={createMut.isPending || !form.name.trim() || !form.sequence.trim()}
@@ -613,7 +615,7 @@ export default function Sequences() {
                 })
               }
             >
-              添加
+              {t("添加")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -623,48 +625,48 @@ export default function Sequences() {
       <Dialog open={featOpen} onOpenChange={setFeatOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>添加特性注释</DialogTitle>
+            <DialogTitle>{t("添加特性注释")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>特性名称 *</Label>
-              <Input value={featForm.name} onChange={(e) => setFeatForm({ ...featForm, name: e.target.value })} placeholder="例如：T7 启动子" />
+              <Label>{t("特性名称")} *</Label>
+              <Input value={featForm.name} onChange={(e) => setFeatForm({ ...featForm, name: e.target.value })} placeholder={t("例如：T7 启动子")} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>类型</Label>
+                <Label>{t("类型")}</Label>
                 <Select value={featForm.type} onValueChange={(v) => setFeatForm({ ...featForm, type: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {Object.entries(FEATURE_TYPES).map(([k, v]) => (
-                      <SelectItem key={k} value={k}>{v}</SelectItem>
+                      <SelectItem key={k} value={k}>{t(v)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>链方向</Label>
+                <Label>{t("链方向")}</Label>
                 <Select value={featForm.strand} onValueChange={(v) => setFeatForm({ ...featForm, strand: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="1">正向（+）</SelectItem>
-                    <SelectItem value="-1">反向（−）</SelectItem>
+                    <SelectItem value="1">{t("正向（+）")}</SelectItem>
+                    <SelectItem value="-1">{t("反向（−）")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>起始位置</Label>
+                <Label>{t("起始位置")}</Label>
                 <Input type="number" min="1" value={featForm.start} onChange={(e) => setFeatForm({ ...featForm, start: e.target.value })} />
               </div>
               <div className="space-y-2">
-                <Label>结束位置（序列长 {selected?.sequence.length}）</Label>
+                <Label>{t("结束位置（序列长 {n}）", { n: selected?.sequence.length ?? 0 })}</Label>
                 <Input type="number" min="1" value={featForm.end} onChange={(e) => setFeatForm({ ...featForm, end: e.target.value })} />
               </div>
             </div>
             <div className="space-y-2">
-              <Label>颜色</Label>
+              <Label>{t("颜色")}</Label>
               <div className="flex gap-2 pt-1">
                 {Object.entries(FEATURE_COLORS).map(([k, v]) => (
                   <button
@@ -677,12 +679,12 @@ export default function Sequences() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>备注</Label>
+              <Label>{t("备注")}</Label>
               <Input value={featForm.note} onChange={(e) => setFeatForm({ ...featForm, note: e.target.value })} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setFeatOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setFeatOpen(false)}>{t("取消")}</Button>
             <Button
               className="bg-teal-600 hover:bg-teal-500"
               disabled={addFeatMut.isPending || !featForm.name.trim() || !selectedId}
@@ -700,7 +702,7 @@ export default function Sequences() {
                 })
               }
             >
-              添加
+              {t("添加")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -710,15 +712,15 @@ export default function Sequences() {
       <Dialog open={gibsonOpen} onOpenChange={setGibsonOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Gibson 引物设计 · {selected?.name}</DialogTitle>
+            <DialogTitle>{t("Gibson 引物设计")} · {selected?.name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              输入载体线性化末端序列（各 ≥10 bp），自动计算带同源臂的扩增引物（同源臂 25 bp + 退火区 20 bp）。
+              {t("输入载体线性化末端序列（各 ≥10 bp），自动计算带同源臂的扩增引物（同源臂 25 bp + 退火区 20 bp）。")}
             </p>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>载体左臂（插入位点上游末端 25 bp）</Label>
+                <Label>{t("载体左臂（插入位点上游末端 25 bp）")}</Label>
                 <Textarea
                   value={gibsonForm.leftArm}
                   onChange={(e) => setGibsonForm({ ...gibsonForm, leftArm: e.target.value })}
@@ -728,7 +730,7 @@ export default function Sequences() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>载体右臂（插入位点下游起始 25 bp）</Label>
+                <Label>{t("载体右臂（插入位点下游起始 25 bp）")}</Label>
                 <Textarea
                   value={gibsonForm.rightArm}
                   onChange={(e) => setGibsonForm({ ...gibsonForm, rightArm: e.target.value })}
@@ -750,20 +752,20 @@ export default function Sequences() {
                 })
               }
             >
-              {gibsonMut.isPending ? "计算中…" : "设计引物"}
+              {gibsonMut.isPending ? t("计算中…") : t("设计引物")}
             </Button>
 
             {gibsonMut.data && "forward" in gibsonMut.data && (
               <div className="space-y-3 pt-2 border-t">
                 {[
-                  { label: "上游引物", p: gibsonMut.data.forward },
-                  { label: "下游引物", p: gibsonMut.data.reverse },
+                  { label: t("上游引物"), p: gibsonMut.data.forward },
+                  { label: t("下游引物"), p: gibsonMut.data.reverse },
                 ].map(({ label, p }) => (
                   <div key={label} className="rounded-lg border p-3 space-y-1.5">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-semibold">{label}（{p.name}）</span>
                       <span className="text-xs text-muted-foreground">
-                        退火区 Tm {p.tm}°C · 全长 {p.sequence.length} nt
+                        {t("退火区 Tm {tm}°C · 全长 {len} nt", { tm: p.tm, len: p.sequence.length })}
                       </span>
                     </div>
                     <div className="font-mono text-xs bg-slate-50 rounded p-2 break-all">
@@ -772,13 +774,13 @@ export default function Sequences() {
                     </div>
                     <div className="flex gap-3 text-[11px] text-muted-foreground">
                       <span className="flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-sm bg-violet-500" /> 同源臂（25 bp）
+                        <span className="h-2 w-2 rounded-sm bg-violet-500" /> {t("同源臂（25 bp）")}
                       </span>
                       <span className="flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-sm bg-teal-600" /> 模板退火区（20 bp）
+                        <span className="h-2 w-2 rounded-sm bg-teal-600" /> {t("模板退火区（20 bp）")}
                       </span>
-                      <button className="ml-auto text-teal-600 hover:underline" onClick={() => copy(p.sequence, "引物序列")}>
-                        复制引物 <ArrowRight className="h-3 w-3 inline" />
+                      <button className="ml-auto text-teal-600 hover:underline" onClick={() => copy(p.sequence, t("引物序列"))}>
+                        {t("复制引物")} <ArrowRight className="h-3 w-3 inline" />
                       </button>
                     </div>
                   </div>
@@ -794,16 +796,16 @@ export default function Sequences() {
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除序列「{selected?.name}」？</AlertDialogTitle>
-            <AlertDialogDescription>序列及其特性注释将被删除，不可恢复。</AlertDialogDescription>
+            <AlertDialogTitle>{t("删除序列「{name}」？", { name: selected?.name ?? "" })}</AlertDialogTitle>
+            <AlertDialogDescription>{t("序列及其特性注释将被删除，不可恢复。")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive hover:bg-destructive/90"
               onClick={() => selected && deleteMut.mutate({ id: selected.id })}
             >
-              确认删除
+              {t("确认删除")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

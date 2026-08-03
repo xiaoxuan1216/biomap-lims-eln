@@ -1,5 +1,12 @@
 // ─── 全局标签与样式映射 ─────────────────────────────────────────────────
 
+// 模块级语言（由 I18nProvider 同步），用于 fmtDate / timeAgo 等非组件函数
+let CURRENT_LANG: "zh" | "en" = "zh";
+export function setLabelsLang(l: "zh" | "en") {
+  CURRENT_LANG = l;
+}
+const dateLocale = () => (CURRENT_LANG === "en" ? "en-US" : "zh-CN");
+
 export const PROJECT_STATUS: Record<string, { label: string; cls: string }> = {
   active: { label: "进行中", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   on_hold: { label: "已暂停", cls: "bg-amber-50 text-amber-700 border-amber-200" },
@@ -186,14 +193,14 @@ export function fmtDate(d: string | Date | null | undefined): string {
   if (!d) return "—";
   const date = typeof d === "string" ? new Date(d) : d;
   if (isNaN(date.getTime())) return String(d);
-  return date.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
+  return date.toLocaleDateString(dateLocale(), { year: "numeric", month: "2-digit", day: "2-digit" });
 }
 
 export function fmtDateTime(d: string | Date | null | undefined): string {
   if (!d) return "—";
   const date = typeof d === "string" ? new Date(d) : d;
   if (isNaN(date.getTime())) return String(d);
-  return date.toLocaleString("zh-CN", {
+  return date.toLocaleString(dateLocale(), {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -206,6 +213,15 @@ export function timeAgo(d: string | Date | null | undefined): string {
   const date = typeof d === "string" ? new Date(d) : d;
   const diff = Date.now() - date.getTime();
   const m = Math.floor(diff / 60000);
+  if (CURRENT_LANG === "en") {
+    if (m < 1) return "just now";
+    if (m < 60) return `${m} min ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h} hr ago`;
+    const days = Math.floor(h / 24);
+    if (days < 30) return `${days} d ago`;
+    return fmtDate(date);
+  }
   if (m < 1) return "刚刚";
   if (m < 60) return `${m} 分钟前`;
   const h = Math.floor(m / 60);

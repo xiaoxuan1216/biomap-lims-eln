@@ -1,5 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/i18n";
+import { LanguageSwitcher } from "@/i18n/LanguageSwitcher";
 
 function getOAuthUrl() {
   const kimiAuthUrl = import.meta.env.VITE_KIMI_AUTH_URL;
@@ -18,11 +20,15 @@ function getOAuthUrl() {
 }
 
 export default function Login() {
+  const { t } = useI18n();
   return (
     <div className="min-h-screen flex items-center justify-center">
+      <div className="absolute top-4 right-4">
+        <LanguageSwitcher />
+      </div>
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle>Welcome</CardTitle>
+          <CardTitle>{t("欢迎")}</CardTitle>
         </CardHeader>
         <CardContent>
           <Button
@@ -32,7 +38,7 @@ export default function Login() {
               window.location.href = getOAuthUrl();
             }}
           >
-            Sign in with Kimi
+            {t("使用 Kimi 账号登录")}
           </Button>
         </CardContent>
       </Card>

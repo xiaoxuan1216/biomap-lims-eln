@@ -27,8 +27,10 @@ import {
 import { Plus, Network, Users, GitBranch } from "lucide-react";
 import { WORKFLOW_STATUS } from "@contracts/workflow";
 import { toast } from "sonner";
+import { useI18n } from "@/i18n";
 
 export default function Workflows() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const { data: wfs, isLoading } = trpc.workflow.list.useQuery();
@@ -39,7 +41,7 @@ export default function Workflows() {
 
   const createMut = trpc.workflow.create.useMutation({
     onSuccess: (r) => {
-      toast.success("流程已创建");
+      toast.success(t("流程已创建"));
       setCreateOpen(false);
       utils.workflow.list.invalidate();
       navigate(`/workflows/${r.id}`);
@@ -47,29 +49,29 @@ export default function Workflows() {
     onError: (e) => toast.error(e.message),
   });
 
-  const selectedTpl = form.templateKey !== "blank" ? templates?.find((t) => t.key === form.templateKey) : null;
+  const selectedTpl = form.templateKey !== "blank" ? templates?.find((tpl) => tpl.key === form.templateKey) : null;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">SynFlow 合成流</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("SynFlow 合成流")}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            合成生物学流程编排平台 · 手工 / 设备 / 判断 / 数据处理节点 · 负责人分配 · 合成 Pipeline 即开即用
+            {t("合成生物学流程编排平台 · 手工 / 设备 / 判断 / 数据处理节点 · 负责人分配 · 合成 Pipeline 即开即用")}
           </p>
         </div>
         <Button className="bg-teal-600 hover:bg-teal-500" onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4 mr-1" /> 新建流程
+          <Plus className="h-4 w-4 mr-1" /> {t("新建流程")}
         </Button>
       </div>
 
       {isLoading ? (
-        <div className="text-sm text-muted-foreground">加载中…</div>
+        <div className="text-sm text-muted-foreground">{t("加载中…")}</div>
       ) : !wfs?.length ? (
         <Card>
           <CardContent className="py-16 text-center text-muted-foreground">
             <Network className="h-10 w-10 mx-auto mb-3 opacity-30" />
-            还没有流程，点击右上角「新建流程」，可从预置 Pipeline 模板一键生成
+            {t("还没有流程，点击右上角「新建流程」，可从预置 Pipeline 模板一键生成")}
           </CardContent>
         </Card>
       ) : (
@@ -90,7 +92,7 @@ export default function Workflows() {
                       variant="outline"
                       style={{ color: st.color, borderColor: st.color + "55", background: st.color + "11" }}
                     >
-                      {st.label}
+                      {t(st.label)}
                     </Badge>
                   </div>
                   {w.description && (
@@ -99,20 +101,20 @@ export default function Workflows() {
                   <div className="flex items-center gap-2">
                     <Badge variant="secondary" className="text-[11px]">
                       <GitBranch className="h-3 w-3 mr-1" />
-                      {w.nodeCount} 节点
+                      {t("{n} 节点", { n: w.nodeCount })}
                     </Badge>
-                    <Badge variant="secondary" className="text-[11px]">合成生物学</Badge>
+                    <Badge variant="secondary" className="text-[11px]">{t("合成生物学")}</Badge>
                     {w.owners.length > 0 && (
                       <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                         <Users className="h-3 w-3" />
                         {w.owners.slice(0, 3).join("、")}
-                        {w.owners.length > 3 ? ` 等 ${w.owners.length} 人` : ""}
+                        {w.owners.length > 3 ? t(" 等 {n} 人", { n: w.owners.length }) : ""}
                       </span>
                     )}
                   </div>
                   <div>
                     <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
-                      <span>{w.doneCount}/{w.activeCount} 节点完成</span>
+                      <span>{t("{done}/{total} 节点完成", { done: w.doneCount, total: w.activeCount })}</span>
                       <span>{pct}%</span>
                     </div>
                     <Progress value={pct} className="h-1.5" />
@@ -128,59 +130,59 @@ export default function Workflows() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>新建流程</DialogTitle>
+            <DialogTitle>{t("新建流程")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>名称</Label>
+              <Label>{t("名称")}</Label>
               <Input
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="例如：CAR-T 杀伤评估自动化业务流"
+                placeholder={t("例如：CAR-T 杀伤评估自动化业务流")}
               />
             </div>
             <div className="space-y-1.5">
-              <Label>初始模板</Label>
+              <Label>{t("初始模板")}</Label>
               <Select value={form.templateKey} onValueChange={(v) => setForm({ ...form, templateKey: v })}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="blank">空白画布</SelectItem>
+                  <SelectItem value="blank">{t("空白画布")}</SelectItem>
                   <SelectGroup>
-                    <SelectLabel>合成生物学 Pipeline</SelectLabel>
+                    <SelectLabel>{t("合成生物学 Pipeline")}</SelectLabel>
                     {templates
-                      ?.filter((t) => t.group === "pipeline")
-                      .map((t) => (
-                        <SelectItem key={t.key} value={t.key}>
-                          {t.name}（{t.nodeCount} 节点）
+                      ?.filter((tpl) => tpl.group === "pipeline")
+                      .map((tpl) => (
+                        <SelectItem key={tpl.key} value={tpl.key}>
+                          {t(tpl.name)}（{t("{n} 节点", { n: tpl.nodeCount })}）
                         </SelectItem>
                       ))}
                   </SelectGroup>
                   <SelectGroup>
-                    <SelectLabel>通用业务流</SelectLabel>
+                    <SelectLabel>{t("通用业务流")}</SelectLabel>
                     {templates
-                      ?.filter((t) => t.group === "flow")
-                      .map((t) => (
-                        <SelectItem key={t.key} value={t.key}>
-                          {t.name}（{t.nodeCount} 节点）
+                      ?.filter((tpl) => tpl.group === "flow")
+                      .map((tpl) => (
+                        <SelectItem key={tpl.key} value={tpl.key}>
+                          {t(tpl.name)}（{t("{n} 节点", { n: tpl.nodeCount })}）
                         </SelectItem>
                       ))}
                   </SelectGroup>
                 </SelectContent>
               </Select>
               {selectedTpl && (
-                <p className="text-xs text-muted-foreground">{selectedTpl.description}</p>
+                <p className="text-xs text-muted-foreground">{t(selectedTpl.description)}</p>
               )}
             </div>
             <div className="space-y-1.5">
-              <Label>关联项目（可选）</Label>
+              <Label>{t("关联项目（可选）")}</Label>
               <Select value={form.projectId} onValueChange={(v) => setForm({ ...form, projectId: v })}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">不关联</SelectItem>
+                  <SelectItem value="none">{t("不关联")}</SelectItem>
                   {projects?.map((p) => (
                     <SelectItem key={p.id} value={String(p.id)}>
                       {p.name}
@@ -190,7 +192,7 @@ export default function Workflows() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>描述（可选）</Label>
+              <Label>{t("描述（可选）")}</Label>
               <Textarea
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
@@ -200,7 +202,7 @@ export default function Workflows() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              取消
+              {t("取消")}
             </Button>
             <Button
               className="bg-teal-600 hover:bg-teal-500"
@@ -214,7 +216,7 @@ export default function Workflows() {
                 })
               }
             >
-              创建并编辑
+              {t("创建并编辑")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -203,23 +203,29 @@ export const EQUIP_PARAM_SCHEMAS: Record<string, ParamField[]> = {
 
 export const TIMER_UNITS: Record<string, string> = { min: "分钟", h: "小时", d: "天" };
 
-/** 节点卡片上的参数摘要（设备取前两项，时间节点显示等待/定点信息） */
+/** 节点卡片上的参数摘要（设备取前两项，时间节点显示等待/定点信息）；t 为可选翻译函数（以中文原文为 key） */
 export function nodeParamSummary(
   nodeType: FlowNodeType,
   templateKey: string | null | undefined,
   params: NodeParams | null | undefined,
+  t?: (key: string, vars?: Record<string, unknown>) => string,
 ): string {
+  const tr = (key: string, vars?: Record<string, unknown>) => (t ? t(key, vars) : key);
   if (nodeType === "timer") {
     if (!params) return "";
-    if (params.mode === "scheduled" && params.datetime) return `${params.datetime} 开始`;
-    if (params.value) return `前置完成后等待 ${params.value} ${TIMER_UNITS[String(params.unit)] ?? String(params.unit ?? "h")}`;
-    return "等待前置完成";
+    if (params.mode === "scheduled" && params.datetime) return tr("{time} 开始", { time: params.datetime });
+    if (params.value)
+      return tr("前置完成后等待 {value} {unit}", {
+        value: params.value,
+        unit: tr(TIMER_UNITS[String(params.unit)] ?? String(params.unit ?? "h")),
+      });
+    return tr("等待前置完成");
   }
   if (nodeType === "equipment" && templateKey && params) {
     const schema = EQUIP_PARAM_SCHEMAS[templateKey] ?? [];
     return schema
       .slice(0, 2)
-      .map((f) => (params[f.key] != null && params[f.key] !== "" ? `${f.label} ${params[f.key]}${f.unit ? ` ${f.unit}` : ""}` : null))
+      .map((f) => (params[f.key] != null && params[f.key] !== "" ? `${tr(f.label)} ${tr(String(params[f.key]))}${f.unit ? ` ${f.unit}` : ""}` : null))
       .filter(Boolean)
       .join(" · ");
   }

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { ALERT_LABELS, fmtDate, sampleAlert, timeAgo, SAMPLE_TYPES } from "@/lib/labels";
+import { useI18n } from "@/i18n";
 import {
   BarChart,
   Bar,
@@ -31,6 +32,7 @@ import {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { t, lang } = useI18n();
   const { data: stats, isLoading } = trpc.dashboard.stats.useQuery();
   const { data: activity } = trpc.dashboard.recentActivity.useQuery({ limit: 12 });
   const { data: expiring } = trpc.dashboard.expiringSamples.useQuery();
@@ -38,23 +40,23 @@ export default function Dashboard() {
   const { data: experiments } = trpc.experiment.list.useQuery();
   const { data: workflows } = trpc.workflow.list.useQuery();
   const { data: equipmentList } = trpc.equipment.list.useQuery();
-  const { data: insights } = trpc.ai.insights.useQuery();
+  const { data: insights } = trpc.ai.insights.useQuery({ lang });
 
   const chartData = [
-    { name: "计划中", value: experiments?.filter((e) => e.status === "planning").length ?? 0, fill: "#94a3b8" },
-    { name: "进行中", value: experiments?.filter((e) => e.status === "in_progress").length ?? 0, fill: "#3b82f6" },
-    { name: "已完成", value: experiments?.filter((e) => e.status === "completed").length ?? 0, fill: "#10b981" },
-    { name: "已签署", value: experiments?.filter((e) => e.status === "signed").length ?? 0, fill: "#8b5cf6" },
+    { name: t("计划中"), value: experiments?.filter((e) => e.status === "planning").length ?? 0, fill: "#94a3b8" },
+    { name: t("进行中"), value: experiments?.filter((e) => e.status === "in_progress").length ?? 0, fill: "#3b82f6" },
+    { name: t("已完成"), value: experiments?.filter((e) => e.status === "completed").length ?? 0, fill: "#10b981" },
+    { name: t("已签署"), value: experiments?.filter((e) => e.status === "signed").length ?? 0, fill: "#8b5cf6" },
   ];
 
   const statCards = [
-    { label: "进行中项目", value: stats?.activeProjects, icon: FolderKanban, color: "text-teal-600 bg-teal-50", to: "/projects" },
-    { label: "进行中实验", value: stats?.inProgressExperiments, icon: NotebookPen, color: "text-blue-600 bg-blue-50", to: "/experiments" },
-    { label: "样本总数", value: stats?.totalSamples, icon: TestTubes, color: "text-violet-600 bg-violet-50", to: "/samples" },
-    { label: "进行中流程", value: workflows?.filter((w) => w.status === "active").length, icon: Network, color: "text-amber-600 bg-amber-50", to: "/workflows" },
-    { label: "设备总数", value: equipmentList?.length, icon: MonitorCog, color: "text-indigo-600 bg-indigo-50", to: "/equipment" },
+    { label: t("进行中项目"), value: stats?.activeProjects, icon: FolderKanban, color: "text-teal-600 bg-teal-50", to: "/projects" },
+    { label: t("进行中实验"), value: stats?.inProgressExperiments, icon: NotebookPen, color: "text-blue-600 bg-blue-50", to: "/experiments" },
+    { label: t("样本总数"), value: stats?.totalSamples, icon: TestTubes, color: "text-violet-600 bg-violet-50", to: "/samples" },
+    { label: t("进行中流程"), value: workflows?.filter((w) => w.status === "active").length, icon: Network, color: "text-amber-600 bg-amber-50", to: "/workflows" },
+    { label: t("设备总数"), value: equipmentList?.length, icon: MonitorCog, color: "text-indigo-600 bg-indigo-50", to: "/equipment" },
     {
-      label: "设备可用",
+      label: t("设备可用"),
       value: equipmentList?.filter((e) => e.status === "available").length,
       icon: Gauge,
       color: "text-emerald-600 bg-emerald-50",
@@ -74,9 +76,9 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">仪表盘</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("仪表盘")}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            实验室运行概览 · {new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}
+            {t("实验室运行概览")} · {new Date().toLocaleDateString(lang === "en" ? "en-US" : "zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}
           </p>
         </div>
       </div>
@@ -86,13 +88,13 @@ export default function Dashboard() {
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span>
-            库存预警：
-            {stats.expired > 0 && <b className="mx-1">{stats.expired} 个样本已过期</b>}
-            {stats.lowStock > 0 && <b className="mx-1">{stats.lowStock} 个样本低库存</b>}
-            {stats.expiringSoon > 0 && <b className="mx-1">{stats.expiringSoon} 个样本 30 天内到期</b>}
+            {t("库存预警：")}
+            {stats.expired > 0 && <b className="mx-1">{t("{n} 个样本已过期", { n: stats.expired })}</b>}
+            {stats.lowStock > 0 && <b className="mx-1">{t("{n} 个样本低库存", { n: stats.lowStock })}</b>}
+            {stats.expiringSoon > 0 && <b className="mx-1">{t("{n} 个样本 30 天内到期", { n: stats.expiringSoon })}</b>}
           </span>
           <Link to="/samples" className="ml-auto flex items-center gap-1 font-medium hover:underline">
-            去处理 <ArrowRight className="h-3.5 w-3.5" />
+            {t("去处理")} <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </div>
       )}
@@ -115,7 +117,7 @@ export default function Dashboard() {
                 ) : (
                   <div className="text-2xl font-bold leading-none">{c.value ?? 0}</div>
                 )}
-                <div className="text-xs text-muted-foreground mt-1.5">{c.label}</div>
+                <div className="text-xs text-muted-foreground mt-1.5">{t(c.label)}</div>
               </div>
             </CardContent>
           </Card>
@@ -129,9 +131,9 @@ export default function Dashboard() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <FileCheck2 className="h-4 w-4 text-teal-600" />
-                实验状态分布
+                {t("实验状态分布")}
                 <span className="text-xs font-normal text-muted-foreground ml-auto">
-                  共 {stats?.totalExperiments ?? 0} 个实验 · 已签署 {stats?.signedExperiments ?? 0}
+                  {t("共 {n} 个实验 · 已签署 {m}", { n: stats?.totalExperiments ?? 0, m: stats?.signedExperiments ?? 0 })}
                 </span>
               </CardTitle>
             </CardHeader>
@@ -154,9 +156,9 @@ export default function Dashboard() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <Clock className="h-4 w-4 text-teal-600" />
-                最近活动
+                {t("最近活动")}
                 <Link to="/activity" className="ml-auto text-xs font-normal text-teal-600 hover:underline flex items-center gap-1">
-                  查看全部 <ArrowRight className="h-3 w-3" />
+                  {t("查看全部")} <ArrowRight className="h-3 w-3" />
                 </Link>
               </CardTitle>
             </CardHeader>
@@ -166,7 +168,7 @@ export default function Dashboard() {
                   activity.map((a) => (
                     <div key={a.id} className="flex items-start gap-3 py-2 border-b border-slate-50 last:border-0">
                       <div className="h-7 w-7 rounded-full bg-teal-50 text-teal-700 flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5">
-                        {a.userName?.charAt(0) ?? "系"}
+                        {a.userName?.charAt(0) ?? t("系")}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm">
@@ -179,7 +181,7 @@ export default function Dashboard() {
                     </div>
                   ))
                 ) : (
-                  <p className="text-sm text-muted-foreground py-6 text-center">暂无活动记录</p>
+                  <p className="text-sm text-muted-foreground py-6 text-center">{t("暂无活动记录")}</p>
                 )}
               </div>
             </CardContent>
@@ -192,9 +194,9 @@ export default function Dashboard() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-teal-600" />
-                Copilot 洞察
+                {t("Copilot 洞察")}
                 <span className="text-[10px] font-normal text-teal-600 bg-teal-100 rounded-full px-2 py-0.5 ml-auto">
-                  AI 生成
+                  {t("AI 生成")}
                 </span>
               </CardTitle>
             </CardHeader>
@@ -220,7 +222,7 @@ export default function Dashboard() {
                 ) : (
                   <div key={i}>{body}</div>
                 );
-              }) ?? <p className="text-sm text-muted-foreground py-2">洞察生成中…</p>}
+              }) ?? <p className="text-sm text-muted-foreground py-2">{t("洞察生成中…")}</p>}
             </CardContent>
           </Card>
 
@@ -228,7 +230,7 @@ export default function Dashboard() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-amber-500" />
-                效期预警
+                {t("效期预警")}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -243,18 +245,18 @@ export default function Dashboard() {
                     >
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium truncate">{s.name}</div>
-                        <div className="text-xs text-muted-foreground">{s.sku} · 效期 {fmtDate(s.expiryDate)}</div>
+                        <div className="text-xs text-muted-foreground">{s.sku} · {t("效期")} {fmtDate(s.expiryDate)}</div>
                       </div>
                       {alert && (
                         <Badge variant="outline" className={ALERT_LABELS[alert].cls}>
-                          {ALERT_LABELS[alert].label}
+                          {t(ALERT_LABELS[alert].label)}
                         </Badge>
                       )}
                     </Link>
                   );
                 })
               ) : (
-                <p className="text-sm text-muted-foreground py-4 text-center">30 天内无到期样本</p>
+                <p className="text-sm text-muted-foreground py-4 text-center">{t("30 天内无到期样本")}</p>
               )}
             </CardContent>
           </Card>
@@ -263,7 +265,7 @@ export default function Dashboard() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <TestTubes className="h-4 w-4 text-amber-500" />
-                低库存提醒
+                {t("低库存提醒")}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -277,16 +279,16 @@ export default function Dashboard() {
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium truncate">{s.name}</div>
                       <div className="text-xs text-muted-foreground">
-                        {SAMPLE_TYPES[s.type]?.label ?? s.type} · 剩余 {s.quantity} {s.unit}
+                        {t(SAMPLE_TYPES[s.type]?.label ?? s.type)} · {t("剩余")} {s.quantity} {s.unit}
                       </div>
                     </div>
                     <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-                      补货
+                      {t("补货")}
                     </Badge>
                   </Link>
                 ))
               ) : (
-                <p className="text-sm text-muted-foreground py-4 text-center">库存水平健康</p>
+                <p className="text-sm text-muted-foreground py-4 text-center">{t("库存水平健康")}</p>
               )}
             </CardContent>
           </Card>

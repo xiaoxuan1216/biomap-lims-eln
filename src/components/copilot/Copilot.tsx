@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { getCopilotContext, insertBlocksToExperiment } from "@/lib/copilotContext";
 import { toast } from "sonner";
+import { useI18n } from "@/i18n";
 
 interface ChatAction {
   label: string;
@@ -53,6 +54,7 @@ function suggestionsFor(pathname: string, ctxType?: string): string[] {
 }
 
 export default function Copilot() {
+  const { t, lang } = useI18n();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -63,7 +65,7 @@ export default function Copilot() {
 
   const chatMut = trpc.ai.chat.useMutation({
     onError: (e) => {
-      setMessages((m) => [...m, { role: "assistant", text: `出错了：${e.message}` }]);
+      setMessages((m) => [...m, { role: "assistant", text: t("出错了：{msg}", { msg: e.message }) }]);
     },
   });
 
@@ -82,6 +84,7 @@ export default function Copilot() {
     chatMut.mutate(
       {
         message: msg,
+        lang,
         context: { page: location.pathname, entityType: ctx.entityType, entityId: ctx.entityId },
       },
       {
@@ -99,13 +102,13 @@ export default function Copilot() {
     if (action.kind === "createWorkflow" && action.templateKey) {
       if (createWfMut.isPending || action.done) return;
       try {
-        const wfName = action.name ?? "新建流程";
+        const wfName = action.name ?? t("新建流程");
         const { id } = await createWfMut.mutateAsync({
           name: wfName,
           templateKey: action.templateKey,
         });
         await utils.workflow.list.invalidate();
-        toast.success(`流程「${wfName}」已创建`);
+        toast.success(t("流程「{name}」已创建", { name: wfName }));
         setMessages((m) => {
           // 标记该创建按钮已使用，防止重复创建
           const next = m.map((msg, i) =>
@@ -122,13 +125,13 @@ export default function Copilot() {
             ...next,
             {
               role: "assistant" as const,
-              text: `✅ 已从模板创建流程「${wfName}」，整套 DAG（节点、连线、判断分支）已就位。打开编辑器可以查看流程图、分配负责人、调整节点参数。`,
-              actions: [{ label: "打开 DAG 编辑器", url: `/workflows/${id}` }],
+              text: t("✅ 已从模板创建流程「{name}」，整套 DAG（节点、连线、判断分支）已就位。打开编辑器可以查看流程图、分配负责人、调整节点参数。", { name: wfName }),
+              actions: [{ label: t("打开 DAG 编辑器"), url: `/workflows/${id}` }],
             },
           ];
         });
       } catch (e) {
-        toast.error(`创建失败：${e instanceof Error ? e.message : "未知错误"}`);
+        toast.error(t("创建失败：{msg}", { msg: e instanceof Error ? e.message : t("未知错误") }));
       }
       return;
     }
@@ -143,14 +146,14 @@ export default function Copilot() {
             })) as Parameters<typeof insertBlocksToExperiment>[0],
           );
           if (ok) {
-            toast.success(`「${data.label}」方案已插入实验记录`);
+            toast.success(t("「{label}」方案已插入实验记录", { label: data.label }));
             setOpen(false);
           } else {
-            toast.error("插入失败：请在实验详情页使用该功能");
+            toast.error(t("插入失败：请在实验详情页使用该功能"));
           }
         }
       } catch {
-        toast.error("方案获取失败");
+        toast.error(t("方案获取失败"));
       }
       return;
     }
@@ -174,7 +177,7 @@ export default function Copilot() {
           "flex items-center justify-center transition-all hover:scale-105 active:scale-95",
           open && "opacity-0 pointer-events-none",
         )}
-        title="LabNova Copilot"
+        title="BioMap OS Copilot"
       >
         <Sparkles className="h-6 w-6" />
         <span className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-400 border-2 border-white animate-pulse" />
@@ -192,10 +195,10 @@ export default function Copilot() {
         <div className="h-14 shrink-0 border-b flex items-center gap-2.5 px-4 bg-gradient-to-r from-teal-600 to-cyan-600 text-white">
           <Sparkles className="h-5 w-5" />
           <div className="flex-1">
-            <div className="font-semibold text-sm leading-none">LabNova Copilot</div>
+            <div className="font-semibold text-sm leading-none">BioMap OS Copilot</div>
             <div className="text-[11px] text-teal-100 mt-1">
-              合成生物学智能助手
-              {ctx.entityName && <span> · 上下文：{ctx.entityName}</span>}
+              {t("合成生物学智能助手")}
+              {ctx.entityName && <span> · {t("上下文")}：{ctx.entityName}</span>}
             </div>
           </div>
           <button onClick={() => setOpen(false)} className="p-1.5 hover:bg-white/10 rounded-lg">
@@ -208,10 +211,10 @@ export default function Copilot() {
           {messages.length === 0 && (
             <div className="space-y-4">
               <div className="rounded-2xl rounded-tl-sm bg-slate-100 px-4 py-3 text-sm text-slate-700">
-                你好！我是 LabNova Copilot 🧬 我可以帮你查询实验室数据、分析序列、生成实验方案，还能推荐并一键创建合成生物学 DAG 流程。
+                {t("你好！我是 BioMap OS Copilot 🧬 我可以帮你查询实验室数据、分析序列、生成实验方案，还能推荐并一键创建合成生物学 DAG 流程。")}
               </div>
               <div className="space-y-2">
-                <div className="text-xs text-muted-foreground font-medium px-1">试试这些：</div>
+                <div className="text-xs text-muted-foreground font-medium px-1">{t("试试这些：")}</div>
                 {suggestions.map((s) => (
                   <button
                     key={s}
@@ -219,7 +222,7 @@ export default function Copilot() {
                     className="w-full text-left text-sm rounded-xl border px-3.5 py-2.5 hover:border-teal-300 hover:bg-teal-50/50 transition-colors flex items-center gap-2"
                   >
                     <FlaskConical className="h-3.5 w-3.5 text-teal-500 shrink-0" />
-                    {s}
+                    {t(s)}
                   </button>
                 ))}
               </div>
@@ -265,7 +268,7 @@ export default function Copilot() {
                           ) : (
                             <ArrowRight className="h-3 w-3 mr-1" />
                           )}
-                          {a.done ? "已创建" : a.label}
+                          {a.done ? t("已创建") : t(a.label)}
                         </Button>
                       );
                     })}
@@ -279,7 +282,7 @@ export default function Copilot() {
             <div className="flex justify-start">
               <div className="rounded-2xl rounded-tl-sm bg-slate-100 px-4 py-3 text-sm text-slate-500 flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin text-teal-500" />
-                Copilot 思考中…
+                {t("Copilot 思考中…")}
               </div>
             </div>
           )}
@@ -296,7 +299,7 @@ export default function Copilot() {
                   onClick={() => send(s)}
                   className="text-xs whitespace-nowrap rounded-full border px-3 py-1.5 hover:border-teal-300 hover:bg-teal-50/50 transition-colors text-slate-600"
                 >
-                  {s}
+                  {t(s)}
                 </button>
               ))}
             </div>
@@ -311,7 +314,7 @@ export default function Copilot() {
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="问点什么，例如「生成 Gibson 方案」…"
+              placeholder={t("问点什么，例如「生成 Gibson 方案」…")}
               className="flex-1"
             />
             <Button

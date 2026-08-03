@@ -6,6 +6,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { LOCATION_TYPES } from "@/lib/labels";
+import { useI18n } from "@/i18n";
 
 export interface LocationNode {
   id: number;
@@ -37,6 +38,7 @@ interface Props {
 }
 
 export default function LocationSelect({ locations, value, onChange, boxOnly }: Props) {
+  const { t } = useI18n();
   const filtered = boxOnly ? locations.filter((l) => l.type === "box") : locations;
   return (
     <Select
@@ -44,14 +46,14 @@ export default function LocationSelect({ locations, value, onChange, boxOnly }: 
       onValueChange={(v) => onChange(v === "none" ? null : Number(v))}
     >
       <SelectTrigger>
-        <SelectValue placeholder="选择存储位置" />
+        <SelectValue placeholder={t("选择存储位置")} />
       </SelectTrigger>
       <SelectContent>
-        {!boxOnly && <SelectItem value="none">（不指定位置）</SelectItem>}
+        {!boxOnly && <SelectItem value="none">{t("（不指定位置）")}</SelectItem>}
         {filtered.map((l) => (
           <SelectItem key={l.id} value={String(l.id)}>
             {locationPath(locations, l.id)}
-            <span className="text-muted-foreground">（{LOCATION_TYPES[l.type]}）</span>
+            <span className="text-muted-foreground">（{t(LOCATION_TYPES[l.type] ?? l.type)}）</span>
           </SelectItem>
         ))}
       </SelectContent>

@@ -8,6 +8,7 @@ import {
   type FlowNodeStatus,
   type NodeParams,
 } from "@contracts/workflow";
+import { useI18n } from "@/i18n";
 
 export type FlowNodeData = {
   label: string;
@@ -33,6 +34,7 @@ const TYPE_ICONS = {
 } as const;
 
 export default function FlowNode({ data, selected }: NodeProps<RFNode>) {
+  const { t } = useI18n();
   const meta = FLOW_NODE_TYPES[data.nodeType];
   const st = FLOW_NODE_STATUS[data.status] ?? FLOW_NODE_STATUS.pending;
   const Icon = TYPE_ICONS[data.nodeType];
@@ -60,14 +62,14 @@ export default function FlowNode({ data, selected }: NodeProps<RFNode>) {
           <Icon className="h-3.5 w-3.5" />
         </span>
         <span className="text-[11px] font-semibold" style={{ color: meta.color }}>
-          {meta.label}
+          {t(meta.label)}
         </span>
         <span className="ml-auto flex items-center gap-1 text-[10px] text-slate-500">
           <span
             className={`h-2 w-2 rounded-full ${data.status === "in_progress" ? "animate-pulse" : ""}`}
             style={{ background: st.color }}
           />
-          {st.label}
+          {t(st.label)}
         </span>
       </div>
       {/* 主体 */}
@@ -78,7 +80,7 @@ export default function FlowNode({ data, selected }: NodeProps<RFNode>) {
           {data.owner ? (
             <span className="font-medium text-slate-600">{data.owner}</span>
           ) : (
-            <span className="italic text-slate-400">未分配负责人</span>
+            <span className="italic text-slate-400">{t("未分配负责人")}</span>
           )}
         </div>
         {data.equipmentName && (
@@ -88,7 +90,7 @@ export default function FlowNode({ data, selected }: NodeProps<RFNode>) {
           </div>
         )}
         {(() => {
-          const summary = nodeParamSummary(data.nodeType, data.templateKey, data.params);
+          const summary = nodeParamSummary(data.nodeType, data.templateKey, data.params, t);
           return summary ? (
             <div
               className="mt-1.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium"
@@ -110,7 +112,7 @@ export default function FlowNode({ data, selected }: NodeProps<RFNode>) {
             className="!h-2.5 !w-2.5 !border-2 !border-white"
           />
           <span className="absolute -right-1 top-[46%] -translate-y-1/2 translate-x-full rounded bg-emerald-100 px-1 text-[10px] font-bold text-emerald-700">
-            是
+            {t("是")}
           </span>
           <Handle
             type="source"
@@ -120,7 +122,7 @@ export default function FlowNode({ data, selected }: NodeProps<RFNode>) {
             className="!h-2.5 !w-2.5 !border-2 !border-white"
           />
           <span className="absolute -right-1 top-[78%] -translate-y-1/2 translate-x-full rounded bg-rose-100 px-1 text-[10px] font-bold text-rose-700">
-            否
+            {t("否")}
           </span>
         </>
       ) : (

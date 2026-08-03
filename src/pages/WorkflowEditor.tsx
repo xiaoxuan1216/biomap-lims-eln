@@ -56,6 +56,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { setCopilotContext } from "@/lib/copilotContext";
+import { useI18n } from "@/i18n";
 
 const nodeTypes = { flowNode: FlowNode };
 const GROUP_ICONS = { manual: Hand, equipment: Cog, decision: GitBranch, data: Database, timer: Clock } as const;
@@ -89,6 +90,7 @@ function parseParams(raw: string | null): NodeParams | null {
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 function EditorInner({ id }: { id: number }) {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const rf = useReactFlow();
@@ -256,7 +258,7 @@ function EditorInner({ id }: { id: number }) {
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-      const raw = e.dataTransfer.getData("application/labnova-node");
+      const raw = e.dataTransfer.getData("application/biomap-node");
       if (!raw) return;
       try {
         const tpl = JSON.parse(raw) as NodeTemplate;
@@ -273,16 +275,16 @@ function EditorInner({ id }: { id: number }) {
     (conn: Connection) => {
       if (!conn.source || !conn.target) return;
       if (conn.source === conn.target) {
-        toast.error("节点不能连接到自身");
+        toast.error(t("节点不能连接到自身"));
         return;
       }
       if (wouldCycle(edges, conn.source, conn.target)) {
-        toast.error("不允许形成循环依赖 —— 流程图必须是有向无环图（DAG）");
+        toast.error(t("不允许形成循环依赖 —— 流程图必须是有向无环图（DAG）"));
         return;
       }
       const src = nodes.find((n) => n.id === conn.source);
       const label =
-        src?.data.nodeType === "decision" ? (conn.sourceHandle === "no" ? "否" : "是") : undefined;
+        src?.data.nodeType === "decision" ? (conn.sourceHandle === "no" ? t("否") : t("是")) : undefined;
       setEdges((eds) =>
         addEdge(
           {
@@ -323,7 +325,7 @@ function EditorInner({ id }: { id: number }) {
   });
 
   const save = () => {
-    updateMut.mutate({ id, name: wfName.trim() || "未命名流程", description: wfDesc || null, status: wfStatus as "draft" | "active" | "completed" | "archived" });
+    updateMut.mutate({ id, name: wfName.trim() || t("未命名流程"), description: wfDesc || null, status: wfStatus as "draft" | "active" | "completed" | "archived" });
     saveMut.mutate(
       {
         id,
@@ -352,7 +354,7 @@ function EditorInner({ id }: { id: number }) {
       },
       {
         onSuccess: () => {
-          toast.success("流程图已保存");
+          toast.success(t("流程图已保存"));
           setDirty(false);
           utils.workflow.byId.invalidate({ id });
           utils.workflow.list.invalidate();
@@ -371,7 +373,7 @@ function EditorInner({ id }: { id: number }) {
       {/* 顶栏 */}
       <div className="mb-3 flex items-center gap-3">
         <Button variant="ghost" size="sm" onClick={() => navigate("/workflows")}>
-          <ArrowLeft className="h-4 w-4 mr-1" /> 返回
+          <ArrowLeft className="h-4 w-4 mr-1" /> {t("返回")}
         </Button>
         <Input
           value={wfName}
@@ -394,7 +396,7 @@ function EditorInner({ id }: { id: number }) {
           <SelectContent>
             {Object.entries(WORKFLOW_STATUS).map(([k, v]) => (
               <SelectItem key={k} value={k}>
-                {v.label}
+                {t(v.label)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -403,12 +405,12 @@ function EditorInner({ id }: { id: number }) {
           variant="outline"
           style={{ color: stMeta.color, borderColor: stMeta.color + "55", background: stMeta.color + "11" }}
         >
-          {nodes.length} 节点 · {edges.length} 连线
+          {t("{n} 节点 · {m} 连线", { n: nodes.length, m: edges.length })}
         </Badge>
-        {dirty && <Badge variant="secondary">未保存更改</Badge>}
+        {dirty && <Badge variant="secondary">{t("未保存更改")}</Badge>}
         <div className="ml-auto">
           <Button className="bg-teal-600 hover:bg-teal-500" onClick={save} disabled={saveMut.isPending}>
-            <Save className="h-4 w-4 mr-1" /> {saveMut.isPending ? "保存中…" : "保存"}
+            <Save className="h-4 w-4 mr-1" /> {saveMut.isPending ? t("保存中…") : t("保存")}
           </Button>
         </div>
       </div>
@@ -416,7 +418,7 @@ function EditorInner({ id }: { id: number }) {
       <div className="flex min-h-0 flex-1 gap-3">
         {/* 左侧：节点调色板 */}
         <div className="w-60 shrink-0 overflow-y-auto rounded-xl border bg-white p-3">
-          <div className="mb-2 text-xs font-semibold text-slate-500">节点组（拖入画布或点击添加）</div>
+          <div className="mb-2 text-xs font-semibold text-slate-500">{t("节点组（拖入画布或点击添加）")}</div>
           {NODE_PALETTE.map((g) => {
             const GIcon = GROUP_ICONS[g.type];
             const meta = FLOW_NODE_TYPES[g.type];
@@ -429,7 +431,7 @@ function EditorInner({ id }: { id: number }) {
                 >
                   {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                   <GIcon className="h-3.5 w-3.5" style={{ color: meta.color }} />
-                  {g.label}
+                  {t(g.label)}
                   <span className="ml-auto text-[10px] font-normal text-slate-400">{g.items.length}</span>
                 </button>
                 {!isCollapsed &&
@@ -437,13 +439,13 @@ function EditorInner({ id }: { id: number }) {
                     <div
                       key={tpl.key}
                       draggable
-                      onDragStart={(e) => e.dataTransfer.setData("application/labnova-node", JSON.stringify(tpl))}
+                      onDragStart={(e) => e.dataTransfer.setData("application/biomap-node", JSON.stringify(tpl))}
                       onClick={() => addNodeFromTemplate(tpl)}
                       className="ml-4 cursor-grab rounded-md border border-transparent px-2 py-1.5 text-xs text-slate-700 hover:border-slate-200 hover:bg-slate-50 active:cursor-grabbing"
-                      title={tpl.description}
+                      title={t(tpl.description)}
                     >
                       <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ background: meta.color }} />
-                      {tpl.label}
+                      {t(tpl.label)}
                     </div>
                   ))}
               </div>
@@ -504,29 +506,29 @@ function EditorInner({ id }: { id: number }) {
             />
           ) : selEdge ? (
             <div className="space-y-4">
-              <div className="text-sm font-semibold">连线属性</div>
+              <div className="text-sm font-semibold">{t("连线属性")}</div>
               <div className="text-xs text-muted-foreground">
                 {nodes.find((n) => n.id === selEdge.source)?.data.label} → {nodes.find((n) => n.id === selEdge.target)?.data.label}
               </div>
               <div className="space-y-1.5">
-                <Label>分支 / 条件标签</Label>
+                <Label>{t("分支 / 条件标签")}</Label>
                 <Input
                   value={typeof selEdge.label === "string" ? selEdge.label : ""}
-                  placeholder="例如：是 / 否 / 阳性 / 达标"
+                  placeholder={t("例如：是 / 否 / 阳性 / 达标")}
                   onChange={(e) =>
                     setEdges((es) => es.map((x) => (x.id === selEdge.id ? { ...x, label: e.target.value || undefined } : x)))
                   }
                 />
               </div>
               <Button variant="destructive" size="sm" onClick={() => deleteEdge(selEdge.id)}>
-                <Trash2 className="h-3.5 w-3.5 mr-1" /> 删除连线
+                <Trash2 className="h-3.5 w-3.5 mr-1" /> {t("删除连线")}
               </Button>
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="text-sm font-semibold">流程信息</div>
+              <div className="text-sm font-semibold">{t("流程信息")}</div>
               <div className="space-y-1.5">
-                <Label>描述</Label>
+                <Label>{t("描述")}</Label>
                 <Textarea
                   value={wfDesc}
                   rows={3}
@@ -537,27 +539,27 @@ function EditorInner({ id }: { id: number }) {
                 />
               </div>
               {wf?.projectName && (
-                <div className="text-xs text-muted-foreground">关联项目：{wf.projectName}</div>
+                <div className="text-xs text-muted-foreground">{t("关联项目")}：{wf.projectName}</div>
               )}
               <div className="border-t pt-3">
-                <div className="mb-2 text-xs font-semibold text-slate-500">节点类型图例</div>
+                <div className="mb-2 text-xs font-semibold text-slate-500">{t("节点类型图例")}</div>
                 {Object.entries(FLOW_NODE_TYPES).map(([k, v]) => (
                   <div key={k} className="mb-1.5 flex items-center gap-2 text-xs">
                     <span className="h-2.5 w-2.5 rounded-sm" style={{ background: v.color }} />
-                    <span className="font-medium">{v.label}</span>
-                    <span className="text-[10px] text-slate-400">{v.description}</span>
+                    <span className="font-medium">{t(v.label)}</span>
+                    <span className="text-[10px] text-slate-400">{t(v.description)}</span>
                   </div>
                 ))}
               </div>
               <div className="border-t pt-3 text-xs leading-5 text-slate-500">
                 <div className="mb-1 flex items-center gap-1 font-semibold text-slate-600">
-                  <Network className="h-3.5 w-3.5" /> 使用提示
+                  <Network className="h-3.5 w-3.5" /> {t("使用提示")}
                 </div>
-                · 从左侧拖入或点击节点组添加节点
-                <br />· 拖动节点右侧圆点到下一节点连线
-                <br />· 判断节点分「是 / 否」两路输出
-                <br />· 连线自动校验，禁止形成环（DAG）
-                <br />· 点击节点可分配负责人、绑定设备
+                {t("· 从左侧拖入或点击节点组添加节点")}
+                <br />{t("· 拖动节点右侧圆点到下一节点连线")}
+                <br />{t("· 判断节点分「是 / 否」两路输出")}
+                <br />{t("· 连线自动校验，禁止形成环（DAG）")}
+                <br />{t("· 点击节点可分配负责人、绑定设备")}
               </div>
             </div>
           )}
@@ -569,24 +571,25 @@ function EditorInner({ id }: { id: number }) {
 
 /** 时间控制节点参数表单 */
 function TimerParams({ node, onPatch }: { node: RFNode; onPatch: (p: Partial<FlowNodeData>) => void }) {
+  const { t } = useI18n();
   const params = node.data.params ?? {};
   const mode = (params.mode as string) ?? "delay";
   return (
     <div className="space-y-2">
-      <Label>时间模式</Label>
+      <Label>{t("时间模式")}</Label>
       <Select value={mode} onValueChange={(v) => onPatch({ params: { ...params, mode: v } })}>
         <SelectTrigger className="h-8 text-xs">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="delay">前置完成后延时</SelectItem>
-          <SelectItem value="scheduled">定点开始</SelectItem>
+          <SelectItem value="delay">{t("前置完成后延时")}</SelectItem>
+          <SelectItem value="scheduled">{t("定点开始")}</SelectItem>
         </SelectContent>
       </Select>
       {mode === "delay" ? (
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <div className="mb-1 text-[11px] text-slate-500">等待时长</div>
+            <div className="mb-1 text-[11px] text-slate-500">{t("等待时长")}</div>
             <Input
               className="h-8 text-xs"
               type="number"
@@ -595,7 +598,7 @@ function TimerParams({ node, onPatch }: { node: RFNode; onPatch: (p: Partial<Flo
             />
           </div>
           <div>
-            <div className="mb-1 text-[11px] text-slate-500">单位</div>
+            <div className="mb-1 text-[11px] text-slate-500">{t("单位")}</div>
             <Select
               value={(params.unit as string) ?? "h"}
               onValueChange={(v) => onPatch({ params: { ...params, unit: v } })}
@@ -606,7 +609,7 @@ function TimerParams({ node, onPatch }: { node: RFNode; onPatch: (p: Partial<Flo
               <SelectContent>
                 {Object.entries(TIMER_UNITS).map(([k, l]) => (
                   <SelectItem key={k} value={k}>
-                    {l}
+                    {t(l)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -615,7 +618,7 @@ function TimerParams({ node, onPatch }: { node: RFNode; onPatch: (p: Partial<Flo
         </div>
       ) : (
         <div>
-          <div className="mb-1 text-[11px] text-slate-500">开始时间</div>
+          <div className="mb-1 text-[11px] text-slate-500">{t("开始时间")}</div>
           <Input
             className="h-8 text-xs"
             type="datetime-local"
@@ -625,7 +628,7 @@ function TimerParams({ node, onPatch }: { node: RFNode; onPatch: (p: Partial<Flo
         </div>
       )}
       <p className="text-[11px] text-muted-foreground">
-        前置节点完成后，按此时间设置推进到下一节点（延时 / 定点）
+        {t("前置节点完成后，按此时间设置推进到下一节点（延时 / 定点）")}
       </p>
     </div>
   );
@@ -645,34 +648,35 @@ function NodeInspector({
   onDelete: () => void;
   onStatus: (s: FlowNodeStatus) => void;
 }) {
+  const { t } = useI18n();
   const meta = FLOW_NODE_TYPES[node.data.nodeType];
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <span className="h-3 w-3 rounded-sm" style={{ background: meta.color }} />
-        <span className="text-sm font-semibold">{meta.label}节点</span>
+        <span className="text-sm font-semibold">{t("{label}节点", { label: t(meta.label) })}</span>
       </div>
       <div className="space-y-1.5">
-        <Label>节点名称</Label>
+        <Label>{t("节点名称")}</Label>
         <Input value={node.data.label} onChange={(e) => onPatch({ label: e.target.value })} />
       </div>
       <div className="space-y-1.5">
-        <Label>实验负责人</Label>
+        <Label>{t("实验负责人")}</Label>
         <Input
           value={node.data.owner ?? ""}
-          placeholder="分配负责人"
+          placeholder={t("分配负责人")}
           list="team-members"
           onChange={(e) => onPatch({ owner: e.target.value || null })}
         />
         <datalist id="team-members">
-          {TEAM_SUGGESTIONS.map((t) => (
-            <option key={t} value={t} />
+          {TEAM_SUGGESTIONS.map((m) => (
+            <option key={m} value={m} />
           ))}
         </datalist>
       </div>
       {node.data.nodeType === "equipment" && (
         <div className="space-y-1.5">
-          <Label>绑定设备</Label>
+          <Label>{t("绑定设备")}</Label>
           <Select
             value={node.data.equipmentId ? String(node.data.equipmentId) : "none"}
             onValueChange={(v) =>
@@ -694,28 +698,28 @@ function NodeInspector({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">不绑定</SelectItem>
+              <SelectItem value="none">{t("不绑定")}</SelectItem>
               {equipList.map((eq) => (
                 <SelectItem key={eq.id} value={String(eq.id)}>
                   {eq.name}
-                  {eq.status !== "available" ? "（不可用）" : ""}
+                  {eq.status !== "available" ? t("（不可用）") : ""}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <p className="text-[11px] text-muted-foreground">绑定后可在设备管理中预约该机时</p>
+          <p className="text-[11px] text-muted-foreground">{t("绑定后可在设备管理中预约该机时")}</p>
         </div>
       )}
       {node.data.nodeType === "equipment" &&
         node.data.templateKey &&
         EQUIP_PARAM_SCHEMAS[node.data.templateKey] && (
           <div className="space-y-2">
-            <Label>方法 / 参数</Label>
+            <Label>{t("方法 / 参数")}</Label>
             <div className="grid grid-cols-2 gap-2">
               {EQUIP_PARAM_SCHEMAS[node.data.templateKey].map((f) => (
                 <div key={f.key} className={f.type === "text" ? "col-span-2" : ""}>
                   <div className="mb-1 text-[11px] text-slate-500">
-                    {f.label}
+                    {t(f.label)}
                     {f.unit ? `（${f.unit}）` : ""}
                   </div>
                   {f.type === "select" ? (
@@ -729,7 +733,7 @@ function NodeInspector({
                       <SelectContent>
                         {f.options?.map((o) => (
                           <SelectItem key={o} value={o}>
-                            {o}
+                            {t(o)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -756,16 +760,16 @@ function NodeInspector({
         )}
       {node.data.nodeType === "timer" && <TimerParams node={node} onPatch={onPatch} />}
       <div className="space-y-1.5">
-        <Label>参数 / 说明</Label>
+        <Label>{t("参数 / 说明")}</Label>
         <Textarea
           value={node.data.config ?? ""}
           rows={3}
-          placeholder="例如：50°C 60 min，插入片段:载体 = 3:1"
+          placeholder={t("例如：50°C 60 min，插入片段:载体 = 3:1")}
           onChange={(e) => onPatch({ config: e.target.value || null })}
         />
       </div>
       <div className="space-y-1.5">
-        <Label>执行状态</Label>
+        <Label>{t("执行状态")}</Label>
         <div className="grid grid-cols-2 gap-1.5">
           {(Object.keys(FLOW_NODE_STATUS) as FlowNodeStatus[]).map((s) => {
             const sm = FLOW_NODE_STATUS[s];
@@ -779,14 +783,14 @@ function NodeInspector({
                 }`}
                 style={active ? { background: sm.color } : { borderColor: "#e2e8f0" }}
               >
-                {sm.label}
+                {t(sm.label)}
               </button>
             );
           })}
         </div>
       </div>
       <Button variant="destructive" size="sm" className="w-full" onClick={onDelete}>
-        <Trash2 className="h-3.5 w-3.5 mr-1" /> 删除节点
+        <Trash2 className="h-3.5 w-3.5 mr-1" /> {t("删除节点")}
       </Button>
     </div>
   );
