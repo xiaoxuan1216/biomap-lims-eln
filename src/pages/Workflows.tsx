@@ -107,7 +107,7 @@ export default function Workflows() {
                     {w.owners.length > 0 && (
                       <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                         <Users className="h-3 w-3" />
-                        {w.owners.slice(0, 3).join("、")}
+                        {w.owners.slice(0, 3).join(t("、"))}
                         {w.owners.length > 3 ? t(" 等 {n} 人", { n: w.owners.length }) : ""}
                       </span>
                     )}

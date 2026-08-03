@@ -1,0 +1,11 @@
+import { getDb } from "../api/queries/connection";
+import { sql } from "drizzle-orm";
+const db = getDb();
+const q = async (s: string) => (await db.execute(sql.raw(s)))[0] as any[];
+console.log("counts:", await q(`SELECT (SELECT COUNT(*) FROM projects) p,(SELECT COUNT(*) FROM experiments) e,(SELECT COUNT(*) FROM samples) s,(SELECT COUNT(*) FROM equipment) eq,(SELECT COUNT(*) FROM workflows) w,(SELECT COUNT(*) FROM activities) a,(SELECT COUNT(*) FROM workflow_nodes) n`));
+console.log(await q(`SELECT id,name FROM projects ORDER BY id`));
+console.log(await q(`SELECT code,title FROM experiments ORDER BY code`));
+console.log(await q(`SELECT sku,name,unit FROM samples WHERE sku>='SMP-0014' ORDER BY sku LIMIT 5`));
+console.log(await q(`SELECT id,userName,action,entityName,detail FROM activities ORDER BY id DESC LIMIT 8`));
+console.log(await q(`SELECT w.name, n.label, n.owner FROM workflow_nodes n JOIN workflows w ON w.id=n.workflowId WHERE w.name LIKE '%CRISPR%' ORDER BY n.id LIMIT 12`));
+process.exit(0);
