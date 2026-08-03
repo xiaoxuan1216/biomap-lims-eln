@@ -617,3 +617,57 @@ WORKFLOW_TEMPLATES.push(
     ],
   },
 );
+
+/* ------------------------------------------------------------------ */
+/* 子流程（Sub-flow）模板：父节点 templateKey → 物理执行层子 DAG          */
+/* 大流程只呈现关键里程碑，选中节点即可穿透到实验操作级细节。            */
+/* ------------------------------------------------------------------ */
+export interface SubflowTemplate {
+  key: string;
+  name: string;
+  description: string;
+  nodes: WorkflowTemplateNode[];
+  edges: WorkflowTemplateEdge[];
+}
+
+export const SUBFLOW_TEMPLATES: Record<string, SubflowTemplate> = {
+  // 「抗体基因分子克隆」节点的物理执行层：片段 PCR → 定量 → 连接 → 转化 → 涂布 → 培养 → 挑菌 → 测序 → 培养 → 质粒抽提
+  m_ab_cloning: {
+    key: "sf_molecular_cloning",
+    name: "分子克隆物理执行流程",
+    description: "VH / VL 片段从 PCR 到阳性克隆质粒的完整湿实验操作流",
+    nodes: [
+      { key: "n1", type: "manual", templateKey: "m_pcr", label: "片段 PCR（VH / VL）", owner: "王工", config: "高保真酶，退火 60°C × 30 循环", x: 0, y: 0 },
+      { key: "n2", type: "manual", templateKey: "m_gel", label: "凝胶电泳质检", owner: "王工", config: "1% 琼脂糖，确认片段大小", x: 300, y: 0 },
+      { key: "n3", type: "equipment", templateKey: "e_qpcr", label: "PCR 产物定量", owner: "王工", x: 600, y: 0 },
+      { key: "n4", type: "manual", templateKey: "m_gibson", label: "Gibson 连接（片段:载体 = 3:1）", owner: "王工", config: "50°C 等温组装 60 min", x: 900, y: 0 },
+      { key: "n5", type: "manual", templateKey: "m_transform", label: "感受态转化（DH5α）", owner: "李工", config: "热激 42°C 45 s", x: 1200, y: 0 },
+      { key: "n6", type: "manual", label: "涂布平板（Amp+）", owner: "李工", x: 1500, y: 0 },
+      { key: "n7", type: "equipment", templateKey: "e_incubate", label: "平板培养（37°C，16 h）", owner: "李工", x: 1800, y: 0 },
+      { key: "n8", type: "manual", templateKey: "m_pick_clone", label: "挑取单克隆（×8）", owner: "李工", x: 1800, y: 260 },
+      { key: "n9", type: "equipment", templateKey: "e_seq", label: "Sanger 测序", owner: "张工", x: 1500, y: 260 },
+      { key: "n10", type: "data", templateKey: "p_seq_align", label: "序列比对分析", owner: "张工", x: 1200, y: 260 },
+      { key: "n11", type: "decision", templateKey: "d_seq_match", label: "测序正确？", x: 900, y: 250 },
+      { key: "n12", type: "equipment", templateKey: "e_incubate", label: "摇菌培养（37°C，220 rpm）", owner: "李工", x: 600, y: 260 },
+      { key: "n13", type: "manual", templateKey: "m_plasmid_prep", label: "质粒抽提（Miniprep）", owner: "李工", x: 300, y: 260 },
+      { key: "n14", type: "data", templateKey: "p_archive", label: "阳性克隆归档", owner: "张工", x: 0, y: 260 },
+      { key: "n15", type: "manual", label: "失败排查 · 重新挑菌", owner: "李工", config: "检查连接效率 / 感受态效率，扩大挑菌数量", x: 900, y: 500 },
+    ],
+    edges: [
+      { from: "n1", to: "n2" },
+      { from: "n2", to: "n3" },
+      { from: "n3", to: "n4" },
+      { from: "n4", to: "n5" },
+      { from: "n5", to: "n6" },
+      { from: "n6", to: "n7" },
+      { from: "n7", to: "n8" },
+      { from: "n8", to: "n9" },
+      { from: "n9", to: "n10" },
+      { from: "n10", to: "n11" },
+      { from: "n11", to: "n12", sourceHandle: "yes", label: "是" },
+      { from: "n11", to: "n15", sourceHandle: "no", label: "否" },
+      { from: "n12", to: "n13" },
+      { from: "n13", to: "n14" },
+    ],
+  },
+};

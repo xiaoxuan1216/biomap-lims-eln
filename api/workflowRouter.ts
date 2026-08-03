@@ -5,7 +5,7 @@ import { createRouter, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import { workflows, workflowNodes, workflowEdges, projects } from "@db/schema";
 import { logActivity } from "./queries/labHelpers";
-import { WORKFLOW_TEMPLATES, templateScenario } from "@contracts/workflow";
+import { WORKFLOW_TEMPLATES, SUBFLOW_TEMPLATES, templateScenario } from "@contracts/workflow";
 import { en } from "@/i18n/en";
 
 /** 实例化模板时的英文翻译：优先 en 词典，其次人名映射，未命中保留原文 */
@@ -129,7 +129,7 @@ export const workflowRouter = createRouter({
     });
   }),
 
-  /** 业务流详情（含节点与边） */
+  /** 业务流详情（含节点与边；附子流程摘要与父级面包屑） */
   byId: authedQuery.input(z.object({ id: z.number() })).query(async ({ input }) => {
     const db = getDb();
     const wf = await db.query.workflows.findFirst({ where: eq(workflows.id, input.id) });
@@ -141,7 +141,112 @@ export const workflowRouter = createRouter({
       const p = await db.query.projects.findFirst({ where: eq(projects.id, wf.projectId) });
       projectName = p?.name ?? null;
     }
-    return { ...wf, projectName, nodes, edges };
+    // 子流程摘要：节点 → 子业务流（名称 / 进度）
+    const childIds = [...new Set(nodes.map((n) => n.childWorkflowId).filter(Boolean))] as number[];
+    const subflows: Record<number, { id: number; name: string; nodeCount: number; doneCount: number }> = {};
+    if (childIds.length) {
+      const childWfs = await db.select().from(workflows);
+      const childNodes = await db.select().from(workflowNodes);
+      for (const cid of childIds) {
+        const cw = childWfs.find((w) => w.id === cid);
+        if (!cw) continue;
+        const cns = childNodes.filter((n) => n.workflowId === cid);
+        subflows[cid] = {
+          id: cid,
+          name: cw.name,
+          nodeCount: cns.length,
+          doneCount: cns.filter((n) => n.status === "done").length,
+        };
+      }
+    }
+    // 父级面包屑（当前流程是子流程时）
+    let parent: { workflowId: number; workflowName: string; nodeLabel: string | null } | null = null;
+    if (wf.parentWorkflowId) {
+      const pw = await db.query.workflows.findFirst({ where: eq(workflows.id, wf.parentWorkflowId) });
+      const pn = wf.parentNodeId
+        ? await db.query.workflowNodes.findFirst({ where: eq(workflowNodes.id, wf.parentNodeId) })
+        : null;
+      if (pw) parent = { workflowId: pw.id, workflowName: pw.name, nodeLabel: pn?.label ?? null };
+    }
+    return { ...wf, projectName, nodes, edges, subflows, parent };
+  }),
+
+  /** 创建子流程：在指定节点下挂接一张物理执行层子 DAG（可按子流程模板预填） */
+  createSubflow: authedQuery
+    .input(
+      z.object({
+        nodeId: z.number(),
+        name: z.string().max(255).optional(),
+        lang: z.enum(["zh", "en"]).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const node = await db.query.workflowNodes.findFirst({ where: eq(workflowNodes.id, input.nodeId) });
+      if (!node) throw new TRPCError({ code: "NOT_FOUND", message: "节点不存在" });
+      if (node.childWorkflowId) throw new TRPCError({ code: "BAD_REQUEST", message: "该节点已挂接子流程" });
+      const parentWf = await db.query.workflows.findFirst({ where: eq(workflows.id, node.workflowId) });
+      if (!parentWf) throw new TRPCError({ code: "NOT_FOUND", message: "父业务流不存在" });
+      const tpl = node.templateKey ? SUBFLOW_TEMPLATES[node.templateKey] : undefined;
+      const name =
+        input.name?.trim() ||
+        (tpl ? trForLang(tpl.name, input.lang) : `${node.label} · ${input.lang === "en" ? "Sub-flow" : "子流程"}`);
+      const [{ id }] = await db
+        .insert(workflows)
+        .values({
+          name,
+          description: tpl ? trForLang(tpl.description, input.lang) : null,
+          scenario: parentWf.scenario,
+          status: "active",
+          projectId: parentWf.projectId ?? null,
+          parentWorkflowId: parentWf.id,
+          parentNodeId: node.id,
+          createdByName: ctx.user.name ?? "未知用户",
+        })
+        .$returningId();
+      if (tpl) {
+        await db.insert(workflowNodes).values(
+          tpl.nodes.map((n) => ({
+            workflowId: id,
+            nodeKey: n.key,
+            type: n.type,
+            templateKey: n.templateKey ?? null,
+            label: trForLang(n.label, input.lang),
+            owner: trForLang(n.owner ?? "", input.lang) || null,
+            config: n.config ? trForLang(n.config, input.lang) : null,
+            params: n.params ? JSON.stringify(trParams(n.params, input.lang)) : null,
+            posX: n.x,
+            posY: n.y,
+          })),
+        );
+        await db.insert(workflowEdges).values(
+          tpl.edges.map((e, i) => ({
+            workflowId: id,
+            edgeKey: `e${i + 1}`,
+            sourceKey: e.from,
+            targetKey: e.to,
+            sourceHandle: e.sourceHandle ?? null,
+            label: e.label ? trForLang(e.label, input.lang) : null,
+          })),
+        );
+      }
+      await db.update(workflowNodes).set({ childWorkflowId: id }).where(eq(workflowNodes.id, node.id));
+      await logActivity({
+        userName: ctx.user.name ?? "未知用户",
+        action: "创建了子流程",
+        entityType: "workflow",
+        entityId: id,
+        entityName: name,
+        detail: `父流程「${parentWf.name}」节点「${node.label}」`,
+      });
+      return { id };
+    }),
+
+  /** 节点是否有可用的子流程模板 */
+  subflowTemplateFor: authedQuery.input(z.object({ nodeId: z.number() })).query(async ({ input }) => {
+    const node = await getDb().query.workflowNodes.findFirst({ where: eq(workflowNodes.id, input.nodeId) });
+    const tpl = node?.templateKey ? SUBFLOW_TEMPLATES[node.templateKey] : undefined;
+    return tpl ? { key: tpl.key, name: tpl.name, nodeCount: tpl.nodes.length } : null;
   }),
 
   /** 预置模板清单 */
@@ -239,6 +344,7 @@ export const workflowRouter = createRouter({
         .from(workflowNodes)
         .where(eq(workflowNodes.workflowId, input.id));
       const statusByKey = new Map(existing.map((n) => [n.nodeKey, n.status]));
+      const childByKey = new Map(existing.filter((n) => n.childWorkflowId).map((n) => [n.nodeKey, n.childWorkflowId]));
 
       await db.delete(workflowEdges).where(eq(workflowEdges.workflowId, input.id));
       await db.delete(workflowNodes).where(eq(workflowNodes.workflowId, input.id));
@@ -252,6 +358,7 @@ export const workflowRouter = createRouter({
             label: n.label,
             owner: n.owner || null,
             equipmentId: n.equipmentId ?? null,
+            childWorkflowId: childByKey.get(n.nodeKey) ?? null,
             config: n.config ?? null,
             params: n.params ?? null,
             status: statusByKey.get(n.nodeKey) ?? "pending",
@@ -304,12 +411,22 @@ export const workflowRouter = createRouter({
       return { ok: true };
     }),
 
-  /** 删除业务流 */
+  /** 删除业务流（级联删除其下所有子流程，并解除父节点挂接） */
   remove: authedQuery.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
     const db = getDb();
-    await db.delete(workflowEdges).where(eq(workflowEdges.workflowId, input.id));
-    await db.delete(workflowNodes).where(eq(workflowNodes.workflowId, input.id));
-    await db.delete(workflows).where(eq(workflows.id, input.id));
+    const deleteTree = async (wfId: number) => {
+      const children = (await db.select().from(workflows)).filter((w) => w.parentWorkflowId === wfId);
+      for (const c of children) await deleteTree(c.id);
+      // 解除父节点上的挂接
+      const wf = await db.query.workflows.findFirst({ where: eq(workflows.id, wfId) });
+      if (wf?.parentNodeId) {
+        await db.update(workflowNodes).set({ childWorkflowId: null }).where(eq(workflowNodes.id, wf.parentNodeId));
+      }
+      await db.delete(workflowEdges).where(eq(workflowEdges.workflowId, wfId));
+      await db.delete(workflowNodes).where(eq(workflowNodes.workflowId, wfId));
+      await db.delete(workflows).where(eq(workflows.id, wfId));
+    };
+    await deleteTree(input.id);
     return { ok: true };
   }),
 });

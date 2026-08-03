@@ -349,6 +349,9 @@ export const workflows = mysqlTable("workflows", {
     .default("draft")
     .notNull(),
   projectId: bigint("projectId", { mode: "number", unsigned: true }),
+  /** 子流程：指向父流程与父节点（穿透式层级 DAG） */
+  parentWorkflowId: bigint("parentWorkflowId", { mode: "number", unsigned: true }),
+  parentNodeId: bigint("parentNodeId", { mode: "number", unsigned: true }),
   createdByName: varchar("createdByName", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
@@ -367,6 +370,8 @@ export const workflowNodes = mysqlTable(
     label: varchar("label", { length: 255 }).notNull(),
     owner: varchar("owner", { length: 255 }),
     equipmentId: bigint("equipmentId", { mode: "number", unsigned: true }),
+    /** 子流程：该节点下钻挂接的子业务流 */
+    childWorkflowId: bigint("childWorkflowId", { mode: "number", unsigned: true }),
     config: text("config"),
     params: text("params"),
     status: mysqlEnum("status", ["pending", "in_progress", "done", "skipped"])

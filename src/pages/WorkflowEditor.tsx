@@ -53,6 +53,7 @@ import {
   ChevronDown,
   ChevronRight,
   Network,
+  Workflow,
 } from "lucide-react";
 import { toast } from "sonner";
 import { setCopilotContext } from "@/lib/copilotContext";
@@ -90,7 +91,7 @@ function parseParams(raw: string | null): NodeParams | null {
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 function EditorInner({ id }: { id: number }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const rf = useReactFlow();
@@ -152,6 +153,14 @@ function EditorInner({ id }: { id: number }) {
           params: parseParams(n.params),
           status: n.status,
           dbId: n.id,
+          childWorkflowId: n.childWorkflowId,
+          subflowName: n.childWorkflowId ? (wf.subflows?.[n.childWorkflowId]?.name ?? null) : null,
+          subflowProgress: n.childWorkflowId
+            ? (() => {
+                const s = wf.subflows?.[n.childWorkflowId!];
+                return s ? t("{done}/{total}", { done: s.doneCount, total: s.nodeCount }) : null;
+              })()
+            : null,
         },
       })),
     );
@@ -323,6 +332,28 @@ function EditorInner({ id }: { id: number }) {
   const statusMut = trpc.workflow.updateNodeStatus.useMutation({
     onError: (e) => toast.error(e.message),
   });
+  const createSubMut = trpc.workflow.createSubflow.useMutation({
+    onError: (e) => toast.error(e.message),
+  });
+
+  /** 创建子流程并穿透进入编辑 */
+  const createSubflow = (node: RFNode) => {
+    if (!node.data.dbId) {
+      toast.error(t("请先保存流程，再为节点创建子流程"));
+      return;
+    }
+    createSubMut.mutate(
+      { nodeId: node.data.dbId, lang },
+      {
+        onSuccess: (r) => {
+          toast.success(t("子流程已创建"));
+          utils.workflow.byId.invalidate({ id });
+          utils.workflow.list.invalidate();
+          navigate(`/workflows/${r.id}`);
+        },
+      },
+    );
+  };
 
   const save = () => {
     updateMut.mutate({ id, name: wfName.trim() || t("未命名流程"), description: wfDesc || null, status: wfStatus as "draft" | "active" | "completed" | "archived" });
@@ -372,9 +403,28 @@ function EditorInner({ id }: { id: number }) {
     <div className="flex h-[calc(100vh-7.5rem)] flex-col">
       {/* 顶栏 */}
       <div className="mb-3 flex items-center gap-3">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/workflows")}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate(wf?.parent ? `/workflows/${wf.parent.workflowId}` : "/workflows")}
+        >
           <ArrowLeft className="h-4 w-4 mr-1" /> {t("返回")}
         </Button>
+        {wf?.parent && (
+          <button
+            className="flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-medium text-teal-700 hover:bg-teal-100"
+            onClick={() => navigate(`/workflows/${wf.parent!.workflowId}`)}
+            title={t("返回父流程")}
+          >
+            <Workflow className="h-3 w-3" />
+            {t("父流程")}{lang === "en" ? ": " : "："}{wf.parent.workflowName}
+            {wf.parent.nodeLabel
+              ? lang === "en"
+                ? ` / ${t("节点")} "${wf.parent.nodeLabel}"`
+                : ` / ${t("节点")}「${wf.parent.nodeLabel}」`
+              : ""}
+          </button>
+        )}
         <Input
           value={wfName}
           onChange={(e) => {
@@ -503,6 +553,9 @@ function EditorInner({ id }: { id: number }) {
                 patchNode(selNode.id, { status: s });
                 if (selNode.data.dbId) statusMut.mutate({ nodeId: selNode.data.dbId, status: s });
               }}
+              onOpenSubflow={() => navigate(`/workflows/${selNode.data.childWorkflowId}`)}
+              onCreateSubflow={() => createSubflow(selNode)}
+              creatingSubflow={createSubMut.isPending}
             />
           ) : selEdge ? (
             <div className="space-y-4">
@@ -641,12 +694,18 @@ function NodeInspector({
   onPatch,
   onDelete,
   onStatus,
+  onOpenSubflow,
+  onCreateSubflow,
+  creatingSubflow,
 }: {
   node: RFNode;
   equipList: { id: number; name: string; model: string | null; status: string }[];
   onPatch: (p: Partial<FlowNodeData>) => void;
   onDelete: () => void;
   onStatus: (s: FlowNodeStatus) => void;
+  onOpenSubflow: () => void;
+  onCreateSubflow: () => void;
+  creatingSubflow: boolean;
 }) {
   const { t } = useI18n();
   const meta = FLOW_NODE_TYPES[node.data.nodeType];
@@ -788,6 +847,43 @@ function NodeInspector({
             );
           })}
         </div>
+      </div>
+      {/* 子流程：穿透到物理执行层子 DAG */}
+      <div className="space-y-1.5 border-t pt-3">
+        <Label className="flex items-center gap-1">
+          <Workflow className="h-3.5 w-3.5 text-teal-600" /> {t("子流程（物理执行层）")}
+        </Label>
+        {node.data.childWorkflowId ? (
+          <>
+            <Button
+              size="sm"
+              className="w-full bg-teal-600 hover:bg-teal-500"
+              onClick={onOpenSubflow}
+            >
+              <Workflow className="h-3.5 w-3.5 mr-1" /> {t("打开子流程")}
+              {node.data.subflowProgress ? `（${node.data.subflowProgress}）` : ""}
+            </Button>
+            <p className="text-[11px] text-muted-foreground">
+              {t("该节点已挂接子流程，可穿透查看实验操作级细节")}
+            </p>
+          </>
+        ) : (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full border-teal-200 text-teal-700 hover:bg-teal-50"
+              onClick={onCreateSubflow}
+              disabled={creatingSubflow}
+            >
+              <Workflow className="h-3.5 w-3.5 mr-1" />
+              {creatingSubflow ? t("创建中…") : t("创建子流程")}
+            </Button>
+            <p className="text-[11px] text-muted-foreground">
+              {t("为大节点挂接一张物理执行层子 DAG（如分子克隆的 PCR→连接→转化→挑菌→测序→质粒抽提），主流程保持简洁")}
+            </p>
+          </>
+        )}
       </div>
       <Button variant="destructive" size="sm" className="w-full" onClick={onDelete}>
         <Trash2 className="h-3.5 w-3.5 mr-1" /> {t("删除节点")}

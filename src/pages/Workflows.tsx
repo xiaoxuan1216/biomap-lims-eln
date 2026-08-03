@@ -33,7 +33,9 @@ export default function Workflows() {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
-  const { data: wfs, isLoading } = trpc.workflow.list.useQuery();
+  const { data: wfsAll, isLoading } = trpc.workflow.list.useQuery();
+  // 子流程不在主列表展示，通过父流程节点穿透访问
+  const wfs = wfsAll?.filter((w) => !w.parentWorkflowId);
   const { data: templates } = trpc.workflow.templates.useQuery();
   const { data: projects } = trpc.project.options.useQuery();
   const [createOpen, setCreateOpen] = useState(false);

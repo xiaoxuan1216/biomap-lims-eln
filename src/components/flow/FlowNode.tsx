@@ -1,5 +1,6 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import { Hand, Cog, GitBranch, Database, User, MonitorCog, Clock } from "lucide-react";
+import { useNavigate } from "react-router";
+import { Hand, Cog, GitBranch, Database, User, MonitorCog, Clock, Workflow } from "lucide-react";
 import {
   FLOW_NODE_TYPES,
   FLOW_NODE_STATUS,
@@ -21,6 +22,10 @@ export type FlowNodeData = {
   params?: NodeParams | null;
   status: FlowNodeStatus;
   dbId?: number;
+  /** 子流程挂接：存在时节点可下钻到物理执行层子 DAG */
+  childWorkflowId?: number | null;
+  subflowName?: string | null;
+  subflowProgress?: string | null;
 };
 
 export type RFNode = Node<FlowNodeData, "flowNode">;
@@ -35,6 +40,7 @@ const TYPE_ICONS = {
 
 export default function FlowNode({ data, selected }: NodeProps<RFNode>) {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const meta = FLOW_NODE_TYPES[data.nodeType];
   const st = FLOW_NODE_STATUS[data.status] ?? FLOW_NODE_STATUS.pending;
   const Icon = TYPE_ICONS[data.nodeType];
@@ -101,6 +107,21 @@ export default function FlowNode({ data, selected }: NodeProps<RFNode>) {
           ) : null;
         })()}
       </div>
+      {/* 子流程入口：点击穿透到物理执行层子 DAG */}
+      {data.childWorkflowId && (
+        <button
+          className="nodrag flex w-full items-center gap-1.5 rounded-b-[10px] border-t border-teal-100 bg-teal-50/80 px-3 py-1.5 text-left text-[11px] font-semibold text-teal-700 transition-colors hover:bg-teal-100"
+          onClick={(e) => {
+            e.stopPropagation();
+            navigate(`/workflows/${data.childWorkflowId}`);
+          }}
+          title={t("穿透到物理执行层子流程")}
+        >
+          <Workflow className="h-3 w-3 shrink-0" />
+          <span className="truncate">{t("子流程")}{data.subflowName ? ` · ${data.subflowName}` : ""}</span>
+          <span className="ml-auto shrink-0 font-normal text-teal-500">{data.subflowProgress ?? ""} ▸</span>
+        </button>
+      )}
       {/* 输出手柄：判断节点分「是 / 否」两路 */}
       {isDecision ? (
         <>
