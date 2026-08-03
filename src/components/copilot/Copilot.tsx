@@ -40,7 +40,7 @@ const SUGGESTIONS: Record<string, string[]> = {
   sequence: ["帮我分析这条序列", "Gibson 引物怎么设计？", "这条序列有什么酶切位点？"],
   sample: ["哪些样本需要补货？", "哪些样本快过期了？"],
   equipment: ["设备状态怎么样？", "今明两天有哪些预约？"],
-  workflow: ["现在有哪些流程？", "推荐一个载体构建 Pipeline"],
+  workflow: ["现在有哪些流程？", "推荐一个载体构建 Pipeline", "推荐抗体研发 Pipeline"],
 };
 
 function suggestionsFor(pathname: string, ctxType?: string): string[] {
@@ -106,6 +106,7 @@ export default function Copilot() {
         const { id } = await createWfMut.mutateAsync({
           name: wfName,
           templateKey: action.templateKey,
+          lang,
         });
         await utils.workflow.list.invalidate();
         toast.success(t("流程「{name}」已创建", { name: wfName }));

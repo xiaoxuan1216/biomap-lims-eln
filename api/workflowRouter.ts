@@ -5,7 +5,29 @@ import { createRouter, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import { workflows, workflowNodes, workflowEdges, projects } from "@db/schema";
 import { logActivity } from "./queries/labHelpers";
-import { WORKFLOW_TEMPLATES } from "@contracts/workflow";
+import { WORKFLOW_TEMPLATES, templateScenario } from "@contracts/workflow";
+import { en } from "@/i18n/en";
+
+/** 实例化模板时的英文翻译：优先 en 词典，其次人名映射，未命中保留原文 */
+const OWNER_EN: Record<string, string> = {
+  王工: "Wang",
+  李工: "Li",
+  张工: "Zhang",
+  赵工: "Zhao",
+  陈研究员: "Dr. Chen",
+  公共: "Shared",
+  演示用户: "Demo User",
+};
+function trForLang(s: string, lang?: string): string {
+  if (lang !== "en" || !s) return s;
+  return en[s] ?? OWNER_EN[s] ?? s;
+}
+function trParams(params: Record<string, string | number> | undefined, lang?: string) {
+  if (!params) return params;
+  const out: Record<string, string | number> = {};
+  for (const [k, v] of Object.entries(params)) out[k] = typeof v === "string" ? trForLang(v, lang) : v;
+  return out;
+}
 
 const NODE_TYPES = ["manual", "equipment", "decision", "data", "timer"] as const;
 const NODE_STATUS = ["pending", "in_progress", "done", "skipped"] as const;
@@ -54,7 +76,7 @@ function hasCycle(nodeKeys: string[], edges: { sourceKey: string; targetKey: str
   return visited !== nodeKeys.length;
 }
 
-async function instantiateTemplate(workflowId: number, templateKey: string) {
+async function instantiateTemplate(workflowId: number, templateKey: string, lang?: string) {
   const tpl = WORKFLOW_TEMPLATES.find((t) => t.key === templateKey);
   if (!tpl) return;
   const db = getDb();
@@ -65,10 +87,10 @@ async function instantiateTemplate(workflowId: number, templateKey: string) {
         nodeKey: n.key,
         type: n.type,
         templateKey: n.templateKey ?? null,
-        label: n.label,
-        owner: n.owner ?? null,
-        config: n.config ?? null,
-        params: n.params ? JSON.stringify(n.params) : null,
+        label: trForLang(n.label, lang),
+        owner: trForLang(n.owner ?? "", lang) || null,
+        config: n.config ? trForLang(n.config, lang) : null,
+        params: n.params ? JSON.stringify(trParams(n.params, lang)) : null,
         posX: n.x,
         posY: n.y,
       })),
@@ -82,7 +104,7 @@ async function instantiateTemplate(workflowId: number, templateKey: string) {
         sourceKey: e.from,
         targetKey: e.to,
         sourceHandle: e.sourceHandle ?? null,
-        label: e.label ?? null,
+        label: e.label ? trForLang(e.label, lang) : null,
       })),
     );
   }
@@ -141,21 +163,25 @@ export const workflowRouter = createRouter({
         description: z.string().optional(),
         projectId: z.number().nullish(),
         templateKey: z.string().nullish(),
+        scenario: z.enum(["synbio", "antibody"]).optional(),
+        lang: z.enum(["zh", "en"]).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
+      const tpl = input.templateKey ? WORKFLOW_TEMPLATES.find((t) => t.key === input.templateKey) : undefined;
       const [{ id }] = await db
         .insert(workflows)
         .values({
           name: input.name,
-          description: input.description ?? null,
+          description: input.description ?? (tpl ? trForLang(tpl.description, input.lang) : null),
           projectId: input.projectId ?? null,
+          scenario: input.scenario ?? (tpl ? templateScenario(tpl.group) : "synbio"),
           status: "draft",
           createdByName: ctx.user.name ?? "未知用户",
         })
         .$returningId();
-      if (input.templateKey) await instantiateTemplate(id, input.templateKey);
+      if (input.templateKey) await instantiateTemplate(id, input.templateKey, input.lang);
       await logActivity({
         userName: ctx.user.name ?? "未知用户",
         action: "创建了业务流",

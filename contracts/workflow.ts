@@ -91,6 +91,21 @@ export const NODE_PALETTE: NodeGroup[] = [
     ],
   },
   {
+    key: "antibody",
+    label: "抗体研发",
+    type: "manual",
+    items: [
+      { key: "m_ab_cloning", type: "manual", label: "抗体基因分子克隆", description: "VH / VL 克隆至表达骨架" },
+      { key: "m_transient_expr", type: "manual", label: "瞬转表达", description: "HEK293 / CHO 悬浮瞬转" },
+      { key: "m_lib_construct", type: "manual", label: "抗体文库构建", description: "scFv / Fab / VHH 文库" },
+      { key: "m_phage_rescue", type: "manual", label: "噬菌体救援扩增", description: "辅助噬菌体超感染与收获" },
+      { key: "m_panning", type: "manual", label: "淘选（Panning）", description: "固相 / 液相抗原淘选" },
+      { key: "m_yeast_display", type: "manual", label: "酵母诱导展示", description: "半乳糖诱导表面展示" },
+      { key: "m_affinity_maturation", type: "manual", label: "亲和力成熟", description: "易错 PCR / CDR 定向突变文库" },
+      { key: "m_humanization", type: "manual", label: "抗体人源化", description: "CDR 移植与回复突变设计" },
+    ],
+  },
+  {
     key: "equipment",
     label: "设备任务",
     type: "equipment",
@@ -103,6 +118,10 @@ export const NODE_PALETTE: NodeGroup[] = [
       { key: "e_liquid", type: "equipment", label: "自动化液体处理", description: "工作站自动移液体系构建" },
       { key: "e_incubate", type: "equipment", label: "培养箱孵育", description: "温控培养 / 共孵育" },
       { key: "e_purify", type: "equipment", label: "蛋白纯化", description: "层析纯化（ÄKTA）" },
+      { key: "e_elisa", type: "equipment", label: "ELISA 检测", description: "抗原结合初筛" },
+      { key: "e_facs", type: "equipment", label: "FACS 分选", description: "荧光激活细胞分选" },
+      { key: "e_spr", type: "equipment", label: "SPR / BLI 亲和力检测", description: "KD / kon / koff 测定" },
+      { key: "e_dsf", type: "equipment", label: "DSF / DSC 稳定性检测", description: "Tm / Tagg 测定" },
     ],
   },
   {
@@ -114,6 +133,9 @@ export const NODE_PALETTE: NodeGroup[] = [
       { key: "d_seq_match", type: "decision", label: "测序是否匹配？", description: "Sanger 比对一致性" },
       { key: "d_expr_ok", type: "decision", label: "表达量是否达标？", description: "表达 / 滴度阈值判断" },
       { key: "d_activity_ok", type: "decision", label: "活性是否达标？", description: "功能学指标阈值判断" },
+      { key: "d_affinity_ok", type: "decision", label: "亲和力是否达标？", description: "KD 阈值判断" },
+      { key: "d_enrich", type: "decision", label: "淘选是否富集？", description: "产出 / 投入比判断" },
+      { key: "d_stability_ok", type: "decision", label: "稳定性是否达标？", description: "Tm / 聚集体阈值判断" },
       { key: "d_custom", type: "decision", label: "自定义判断", description: "自定义分支条件" },
     ],
   },
@@ -126,6 +148,8 @@ export const NODE_PALETTE: NodeGroup[] = [
       { key: "p_flow_analysis", type: "data", label: "流式数据分析", description: "圈门与阳性率统计" },
       { key: "p_curve_fit", type: "data", label: "曲线拟合（IC50）", description: "剂量-效应曲线拟合" },
       { key: "p_activity_calc", type: "data", label: "活性 / 杀伤率计算", description: "功能学指标计算" },
+      { key: "p_kd_fit", type: "data", label: "亲和力拟合（KD）", description: "1:1 Langmuir 拟合" },
+      { key: "p_ngs_analysis", type: "data", label: "NGS 富集分析", description: "序列去重与 CDR 聚类" },
       { key: "p_stats", type: "data", label: "统计分析", description: "重复间统计检验" },
       { key: "p_archive", type: "data", label: "数据归档", description: "原始数据与报告归档入库" },
     ],
@@ -193,9 +217,29 @@ export const EQUIP_PARAM_SCHEMAS: Record<string, ParamField[]> = {
     { key: "mixTimes", label: "混合次数", type: "number", unit: "次", default: 3 },
   ],
   e_purify: [
-    { key: "column", label: "层析柱类型", type: "select", options: ["Ni-NTA 亲和", "离子交换", "分子筛"], default: "Ni-NTA 亲和" },
+    { key: "column", label: "层析柱类型", type: "select", options: ["Protein A 亲和", "Ni-NTA 亲和", "离子交换", "分子筛"], default: "Ni-NTA 亲和" },
     { key: "flowRate", label: "流速", type: "number", unit: "mL/min", default: 1 },
     { key: "gradient", label: "洗脱梯度", type: "text", default: "20–250 mM 咪唑" },
+  ],
+  e_elisa: [
+    { key: "antigen", label: "包被抗原", type: "text" },
+    { key: "coatConc", label: "包被浓度", type: "number", unit: "µg/mL", default: 1 },
+    { key: "detect", label: "检测二抗", type: "select", options: ["anti-Fc-HRP", "anti-His-HRP", "anti-Fab-HRP"], default: "anti-Fc-HRP" },
+  ],
+  e_facs: [
+    { key: "gate", label: "分选门控", type: "select", options: ["双阳性 top 1%", "双阳性 top 5%", "单阳性"], default: "双阳性 top 1%" },
+    { key: "cells", label: "分选细胞数", type: "number", unit: "events", default: 10000000 },
+    { key: "mode", label: "分选模式", type: "select", options: ["富集", "纯度"], default: "富集" },
+  ],
+  e_spr: [
+    { key: "platform", label: "检测平台", type: "select", options: ["SPR（Biacore）", "BLI（Octet）"], default: "SPR（Biacore）" },
+    { key: "ligand", label: "固定相", type: "select", options: ["抗原固定", "抗体捕获"], default: "抗原固定" },
+    { key: "concSeries", label: "浓度梯度", type: "text", default: "0.78–100 nM" },
+  ],
+  e_dsf: [
+    { key: "method", label: "检测方法", type: "select", options: ["DSF（nanoDSF）", "DSC"], default: "DSF（nanoDSF）" },
+    { key: "rampRate", label: "升温速率", type: "number", unit: "°C/min", default: 1 },
+    { key: "conc", label: "样品浓度", type: "number", unit: "mg/mL", default: 1 },
   ],
 };
 
@@ -257,16 +301,24 @@ export interface WorkflowTemplate {
   key: string;
   name: string;
   description: string;
-  /** pipeline = 合成生物学 Pipeline；flow = 通用业务流 */
-  group: "pipeline" | "flow";
+  /** pipeline = 合成生物学 Pipeline；antibody = 抗体研发 Pipeline；flow = 通用业务流 */
+  group: "pipeline" | "antibody" | "flow";
   nodes: WorkflowTemplateNode[];
   edges: WorkflowTemplateEdge[];
 }
 
 export const TEMPLATE_GROUPS: Record<string, string> = {
   pipeline: "合成生物学 Pipeline",
+  antibody: "抗体研发 Pipeline",
   flow: "通用业务流",
 };
+
+export const TEMPLATE_GROUP_ORDER = ["pipeline", "antibody", "flow"] as const;
+
+/** 模板分组 → 业务流场景 */
+export function templateScenario(group: string): "synbio" | "antibody" {
+  return group === "antibody" ? "antibody" : "synbio";
+}
 
 export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   {
@@ -441,3 +493,127 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     ],
   },
 ];
+
+// ─── 抗体研发 Pipeline ───
+
+WORKFLOW_TEMPLATES.push(
+  {
+    key: "ab_recombinant",
+    name: "重组抗体表达与表征 Pipeline",
+    description: "从分子克隆到亲和力 / 稳定性表征的重组抗体表达流程（HEK293 / CHO 瞬转），含表达量、KD、Tm 三级质量判断",
+    group: "antibody",
+    nodes: [
+      { key: "n1", type: "data", templateKey: "p_seq_align", label: "抗体序列设计与密码子优化", owner: "王工", x: 60, y: 180 },
+      { key: "n2", type: "manual", templateKey: "m_ab_cloning", label: "分子克隆（表达骨架构建）", owner: "陈研究员", x: 320, y: 180 },
+      { key: "n3", type: "decision", templateKey: "d_seq_match", label: "质粒测序正确？", x: 580, y: 170 },
+      { key: "n4", type: "manual", templateKey: "m_transient_expr", label: "HEK293F 小试瞬转表达", owner: "陈研究员", x: 840, y: 80 },
+      { key: "n5", type: "decision", templateKey: "d_expr_ok", label: "表达量 ≥ 50 mg/L？", x: 1100, y: 70 },
+      { key: "n6", type: "equipment", templateKey: "e_purify", label: "Protein A 亲和纯化", owner: "王工", params: { column: "Protein A 亲和" }, x: 1360, y: 80 },
+      { key: "n7", type: "equipment", templateKey: "e_purify", label: "SEC 精纯（去聚集体）", owner: "王工", params: { column: "分子筛" }, x: 1620, y: 80 },
+      { key: "n8", type: "equipment", templateKey: "e_spr", label: "SPR 亲和力检测（KD）", owner: "张工", x: 1880, y: 80 },
+      { key: "n9", type: "decision", templateKey: "d_affinity_ok", label: "KD ≤ 10 nM？", x: 2140, y: 70 },
+      { key: "n10", type: "equipment", templateKey: "e_dsf", label: "DSF 热稳定性检测", owner: "张工", x: 2400, y: 80 },
+      { key: "n11", type: "decision", templateKey: "d_stability_ok", label: "Tm ≥ 60 °C？", x: 2660, y: 70 },
+      { key: "n12", type: "data", templateKey: "p_archive", label: "表征报告归档", owner: "王工", x: 2920, y: 80 },
+      { key: "n13", type: "manual", templateKey: "m_ab_cloning", label: "定点突变重新克隆", owner: "陈研究员", x: 2140, y: 300 },
+      { key: "n14", type: "data", templateKey: "p_seq_align", label: "序列优化（去聚集 / 去 PTM）", owner: "王工", x: 2660, y: 300 },
+    ],
+    edges: [
+      { from: "n1", to: "n2" },
+      { from: "n2", to: "n3" },
+      { from: "n3", to: "n4", sourceHandle: "yes", label: "是" },
+      { from: "n3", to: "n13", sourceHandle: "no", label: "否" },
+      { from: "n4", to: "n5" },
+      { from: "n5", to: "n6", sourceHandle: "yes", label: "是" },
+      { from: "n5", to: "n13", sourceHandle: "no", label: "否" },
+      { from: "n6", to: "n7" },
+      { from: "n7", to: "n8" },
+      { from: "n8", to: "n9" },
+      { from: "n9", to: "n10", sourceHandle: "yes", label: "是" },
+      { from: "n9", to: "n13", sourceHandle: "no", label: "否" },
+      { from: "n10", to: "n11" },
+      { from: "n11", to: "n12", sourceHandle: "yes", label: "是" },
+      { from: "n11", to: "n14", sourceHandle: "no", label: "否" },
+    ],
+  },
+  {
+    key: "ab_phage_display",
+    name: "噬菌体展示抗体筛选 Pipeline",
+    description: "从文库构建到候选分子归档的噬菌体展示筛选流程，含淘选富集判断、ELISA 初筛、亲和力排序与人源化",
+    group: "antibody",
+    nodes: [
+      { key: "n1", type: "manual", templateKey: "m_lib_construct", label: "scFv 噬菌体抗体文库构建", owner: "王工", x: 60, y: 180 },
+      { key: "n2", type: "manual", templateKey: "m_phage_rescue", label: "噬菌体救援与扩增", owner: "陈研究员", x: 320, y: 180 },
+      { key: "n3", type: "manual", templateKey: "m_panning", label: "固相淘选（3 轮，抗原递减）", owner: "陈研究员", x: 580, y: 180 },
+      { key: "n4", type: "decision", templateKey: "d_enrich", label: "产出 / 投入比富集 ≥ 100 倍？", x: 840, y: 170 },
+      { key: "n5", type: "equipment", templateKey: "e_elisa", label: "单克隆 phage ELISA 初筛", owner: "张工", x: 1100, y: 80 },
+      { key: "n6", type: "decision", templateKey: "d_clone_pos", label: "阳性率 ≥ 10%？", x: 1360, y: 70 },
+      { key: "n7", type: "equipment", templateKey: "e_seq", label: "阳性克隆 Sanger 测序", owner: "张工", params: { seqType: "Sanger" }, x: 1620, y: 80 },
+      { key: "n8", type: "data", templateKey: "p_ngs_analysis", label: "序列去重与 CDR 聚类", owner: "王工", x: 1880, y: 80 },
+      { key: "n9", type: "manual", templateKey: "m_transient_expr", label: "scFv-Fc 重组表达", owner: "陈研究员", x: 2140, y: 80 },
+      { key: "n10", type: "equipment", templateKey: "e_spr", label: "SPR 亲和力排序", owner: "张工", x: 2400, y: 80 },
+      { key: "n11", type: "decision", templateKey: "d_affinity_ok", label: "获得 nM 级克隆？", x: 2660, y: 70 },
+      { key: "n12", type: "manual", templateKey: "m_humanization", label: "人源化设计", owner: "王工", x: 2920, y: 80 },
+      { key: "n13", type: "data", templateKey: "p_archive", label: "候选分子归档", owner: "王工", x: 3180, y: 80 },
+      { key: "n14", type: "manual", templateKey: "m_panning", label: "提高严格度追加淘选", owner: "陈研究员", x: 1100, y: 300 },
+      { key: "n15", type: "equipment", templateKey: "e_elisa", label: "复测确认结合", owner: "张工", x: 1360, y: 300 },
+      { key: "n16", type: "manual", templateKey: "m_affinity_maturation", label: "亲和力成熟文库", owner: "王工", x: 2660, y: 300 },
+    ],
+    edges: [
+      { from: "n1", to: "n2" },
+      { from: "n2", to: "n3" },
+      { from: "n3", to: "n4" },
+      { from: "n4", to: "n5", sourceHandle: "yes", label: "是" },
+      { from: "n4", to: "n14", sourceHandle: "no", label: "否" },
+      { from: "n5", to: "n6" },
+      { from: "n6", to: "n7", sourceHandle: "yes", label: "是" },
+      { from: "n6", to: "n15", sourceHandle: "no", label: "否" },
+      { from: "n7", to: "n8" },
+      { from: "n8", to: "n9" },
+      { from: "n9", to: "n10" },
+      { from: "n10", to: "n11" },
+      { from: "n11", to: "n12", sourceHandle: "yes", label: "是" },
+      { from: "n11", to: "n16", sourceHandle: "no", label: "否" },
+      { from: "n12", to: "n13" },
+    ],
+  },
+  {
+    key: "ab_yeast_display",
+    name: "酵母表面展示筛选 Pipeline",
+    description: "酵母展示文库经 FACS 多轮分选富集高亲和力克隆，含 NGS 富集分析、全长 IgG 验证与亲和力成熟分支",
+    group: "antibody",
+    nodes: [
+      { key: "n1", type: "manual", templateKey: "m_lib_construct", label: "酵母展示 scFv 文库构建", owner: "王工", x: 60, y: 180 },
+      { key: "n2", type: "manual", templateKey: "m_transform", label: "电转酿酒酵母（覆盖 1E8）", owner: "陈研究员", x: 320, y: 180 },
+      { key: "n3", type: "manual", templateKey: "m_yeast_display", label: "半乳糖诱导表面展示", owner: "陈研究员", x: 580, y: 180 },
+      { key: "n4", type: "manual", templateKey: "m_stain", label: "抗原荧光标记染色", owner: "陈研究员", x: 840, y: 180 },
+      { key: "n5", type: "equipment", templateKey: "e_facs", label: "FACS 双阳性分选", owner: "张工", x: 1100, y: 180 },
+      { key: "n6", type: "decision", templateKey: "d_enrich", label: "双阳性群体富集？", x: 1360, y: 170 },
+      { key: "n7", type: "equipment", templateKey: "e_seq", label: "分选克隆 NGS 测序", owner: "张工", params: { seqType: "NGS（Illumina）" }, x: 1620, y: 80 },
+      { key: "n8", type: "data", templateKey: "p_ngs_analysis", label: "富集序列聚类分析", owner: "王工", x: 1880, y: 80 },
+      { key: "n9", type: "manual", templateKey: "m_transient_expr", label: "全长 IgG 重组表达", owner: "陈研究员", x: 2140, y: 80 },
+      { key: "n10", type: "equipment", templateKey: "e_spr", label: "SPR / BLI 亲和力验证", owner: "张工", x: 2400, y: 80 },
+      { key: "n11", type: "decision", templateKey: "d_affinity_ok", label: "KD 达标（nM 级）？", x: 2660, y: 70 },
+      { key: "n12", type: "data", templateKey: "p_archive", label: "候选分子归档", owner: "王工", x: 2920, y: 80 },
+      { key: "n13", type: "manual", templateKey: "m_affinity_maturation", label: "易错 PCR 亲和力成熟文库", owner: "王工", x: 2920, y: 300 },
+      { key: "n14", type: "manual", templateKey: "m_yeast_display", label: "新一轮展示与分选", owner: "陈研究员", x: 3180, y: 300 },
+      { key: "n15", type: "manual", templateKey: "m_yeast_display", label: "放宽门控复筛", owner: "陈研究员", x: 1620, y: 300 },
+    ],
+    edges: [
+      { from: "n1", to: "n2" },
+      { from: "n2", to: "n3" },
+      { from: "n3", to: "n4" },
+      { from: "n4", to: "n5" },
+      { from: "n5", to: "n6" },
+      { from: "n6", to: "n7", sourceHandle: "yes", label: "是" },
+      { from: "n6", to: "n15", sourceHandle: "no", label: "否" },
+      { from: "n7", to: "n8" },
+      { from: "n8", to: "n9" },
+      { from: "n9", to: "n10" },
+      { from: "n10", to: "n11" },
+      { from: "n11", to: "n12", sourceHandle: "yes", label: "是" },
+      { from: "n11", to: "n13", sourceHandle: "no", label: "否" },
+      { from: "n13", to: "n14" },
+    ],
+  },
+);

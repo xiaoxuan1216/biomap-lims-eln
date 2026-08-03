@@ -25,19 +25,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Network, Users, GitBranch } from "lucide-react";
-import { WORKFLOW_STATUS } from "@contracts/workflow";
+import { WORKFLOW_STATUS, TEMPLATE_GROUPS, TEMPLATE_GROUP_ORDER } from "@contracts/workflow";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n";
 
 export default function Workflows() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const { data: wfs, isLoading } = trpc.workflow.list.useQuery();
   const { data: templates } = trpc.workflow.templates.useQuery();
   const { data: projects } = trpc.project.options.useQuery();
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", templateKey: "blank", projectId: "none", description: "" });
+  const [form, setForm] = useState({ name: "", templateKey: "blank", projectId: "none", description: "", scenario: "synbio" as "synbio" | "antibody" });
+  const [tab, setTab] = useState<"all" | "synbio" | "antibody">("all");
 
   const createMut = trpc.workflow.create.useMutation({
     onSuccess: (r) => {
@@ -55,14 +56,38 @@ export default function Workflows() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t("SynFlow 合成流")}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("BioFlow 工作流")}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {t("合成生物学流程编排平台 · 手工 / 设备 / 判断 / 数据处理节点 · 负责人分配 · 合成 Pipeline 即开即用")}
+            {t("生物研发流程编排平台 · 合成生物 × 抗体研发 · 手工 / 设备 / 判断 / 数据节点 · 预置 Pipeline 即开即用")}
           </p>
         </div>
         <Button className="bg-teal-600 hover:bg-teal-500" onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4 mr-1" /> {t("新建流程")}
         </Button>
+      </div>
+
+      {/* 场景分栏 */}
+      <div className="flex gap-2">
+        {([
+          { key: "all", label: t("全部") },
+          { key: "synbio", label: t("合成生物") },
+          { key: "antibody", label: t("抗体研发") },
+        ] as const).map((it) => (
+          <button
+            key={it.key}
+            onClick={() => setTab(it.key)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              tab === it.key
+                ? "bg-teal-600 text-white"
+                : "bg-muted text-muted-foreground hover:bg-muted/70"
+            }`}
+          >
+            {it.label}
+            <span className="ml-1.5 opacity-70">
+              {it.key === "all" ? wfs?.length ?? 0 : wfs?.filter((w) => (w.scenario ?? "synbio") === it.key).length ?? 0}
+            </span>
+          </button>
+        ))}
       </div>
 
       {isLoading ? (
@@ -76,7 +101,7 @@ export default function Workflows() {
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          {wfs.map((w) => {
+          {wfs.filter((w) => tab === "all" || (w.scenario ?? "synbio") === tab).map((w) => {
             const st = WORKFLOW_STATUS[w.status] ?? WORKFLOW_STATUS.draft;
             const pct = w.activeCount ? Math.round((w.doneCount / w.activeCount) * 100) : 0;
             return (
@@ -103,7 +128,9 @@ export default function Workflows() {
                       <GitBranch className="h-3 w-3 mr-1" />
                       {t("{n} 节点", { n: w.nodeCount })}
                     </Badge>
-                    <Badge variant="secondary" className="text-[11px]">{t("合成生物学")}</Badge>
+                    <Badge variant="secondary" className="text-[11px]">
+                      {t(w.scenario === "antibody" ? "抗体研发" : "合成生物学")}
+                    </Badge>
                     {w.owners.length > 0 && (
                       <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                         <Users className="h-3 w-3" />
@@ -149,32 +176,38 @@ export default function Workflows() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="blank">{t("空白画布")}</SelectItem>
-                  <SelectGroup>
-                    <SelectLabel>{t("合成生物学 Pipeline")}</SelectLabel>
-                    {templates
-                      ?.filter((tpl) => tpl.group === "pipeline")
-                      .map((tpl) => (
-                        <SelectItem key={tpl.key} value={tpl.key}>
-                          {t(tpl.name)}（{t("{n} 节点", { n: tpl.nodeCount })}）
-                        </SelectItem>
-                      ))}
-                  </SelectGroup>
-                  <SelectGroup>
-                    <SelectLabel>{t("通用业务流")}</SelectLabel>
-                    {templates
-                      ?.filter((tpl) => tpl.group === "flow")
-                      .map((tpl) => (
-                        <SelectItem key={tpl.key} value={tpl.key}>
-                          {t(tpl.name)}（{t("{n} 节点", { n: tpl.nodeCount })}）
-                        </SelectItem>
-                      ))}
-                  </SelectGroup>
+                  {TEMPLATE_GROUP_ORDER.map((g) => (
+                    <SelectGroup key={g}>
+                      <SelectLabel>{t(TEMPLATE_GROUPS[g])}</SelectLabel>
+                      {templates
+                        ?.filter((tpl) => tpl.group === g)
+                        .map((tpl) => (
+                          <SelectItem key={tpl.key} value={tpl.key}>
+                            {t(tpl.name)}（{t("{n} 节点", { n: tpl.nodeCount })}）
+                          </SelectItem>
+                        ))}
+                    </SelectGroup>
+                  ))}
                 </SelectContent>
               </Select>
               {selectedTpl && (
                 <p className="text-xs text-muted-foreground">{t(selectedTpl.description)}</p>
               )}
             </div>
+            {form.templateKey === "blank" && (
+              <div className="space-y-1.5">
+                <Label>{t("场景")}</Label>
+                <Select value={form.scenario} onValueChange={(v) => setForm({ ...form, scenario: v as "synbio" | "antibody" })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="synbio">{t("合成生物")}</SelectItem>
+                    <SelectItem value="antibody">{t("抗体研发")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>{t("关联项目（可选）")}</Label>
               <Select value={form.projectId} onValueChange={(v) => setForm({ ...form, projectId: v })}>
@@ -213,6 +246,8 @@ export default function Workflows() {
                   description: form.description || undefined,
                   projectId: form.projectId === "none" ? null : Number(form.projectId),
                   templateKey: form.templateKey === "blank" ? null : form.templateKey,
+                  scenario: form.templateKey === "blank" ? form.scenario : undefined,
+                  lang,
                 })
               }
             >

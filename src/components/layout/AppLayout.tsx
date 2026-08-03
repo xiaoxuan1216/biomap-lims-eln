@@ -47,7 +47,7 @@ const NAV_GROUPS = [
     items: [
       { icon: FolderKanban, label: "项目管理", path: "/projects" },
       { icon: NotebookPen, label: "实验记录本", path: "/experiments" },
-      { icon: Network, label: "SynFlow 合成流", path: "/workflows" },
+      { icon: Network, label: "BioFlow 工作流", path: "/workflows" },
       { icon: Dna, label: "序列库", path: "/sequences" },
     ],
   },

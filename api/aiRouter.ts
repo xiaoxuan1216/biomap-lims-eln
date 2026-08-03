@@ -397,13 +397,61 @@ export const aiRouter = createRouter({
         };
       }
 
-      // ── SynFlow 流程推荐（支持一键创建） ──
+      // ── BioFlow 抗体研发流程推荐（支持一键创建） ──
+      {
+        const abSpecific = /噬菌体|phage|酵母|yeast|表面展示|display|亲和力|affinity|人源化|humaniz|scFv|VHH|单抗|mab\b|SPR|BLI|淘选|panning/i.test(msg);
+        const abGeneric = /抗体|antibod|Fab/i.test(msg) && /研发|筛选|展示|表达|pipeline|流程|文库|library|screen|discover|develop|engineering/i.test(msg);
+        if (abSpecific || abGeneric) {
+          if (/噬菌体|phage/i.test(msg)) {
+            return {
+              reply: R(
+                "噬菌体展示筛选推荐 BioFlow 的「噬菌体展示抗体筛选 Pipeline」模板：scFv 文库构建 → 噬菌体救援扩增 → 3 轮固相淘选 →「富集 ≥ 100 倍？」判断 → phage ELISA 初筛 → 测序与 CDR 聚类 → scFv-Fc 重组表达 → SPR 亲和力排序 → 人源化设计。\n\n点击下方按钮即可一键创建整套 DAG：",
+                "For phage display screening, I recommend the BioFlow \"Phage Display Antibody Discovery Pipeline\" template: scFv library construction → phage rescue → 3 rounds of solid-phase panning → \"Enrichment ≥ 100×?\" decision → phage ELISA screening → sequencing & CDR clustering → scFv-Fc recombinant expression → SPR affinity ranking → humanization.\n\nClick below to create the full DAG in one step:"),
+              actions: [
+                { label: R("立即创建噬菌体展示流程", "Create phage display workflow"), kind: "createWorkflow", templateKey: "ab_phage_display", name: R("噬菌体展示抗体筛选 Pipeline", "Phage Display Antibody Discovery Pipeline") },
+              ],
+            };
+          }
+          if (/酵母|yeast/i.test(msg)) {
+            return {
+              reply: R(
+                "酵母表面展示推荐 BioFlow 的「酵母表面展示筛选 Pipeline」模板：文库构建 → 电转酵母 → 诱导展示 → 抗原荧光标记 → FACS 双阳性分选 →「群体富集？」判断 → NGS 测序与聚类 → 全长 IgG 重组表达 → SPR / BLI 验证，未达标自动衔接亲和力成熟分支。\n\n点击下方按钮即可一键创建整套 DAG：",
+                "For yeast surface display, I recommend the BioFlow \"Yeast Surface Display Screening Pipeline\" template: library construction → yeast electroporation → induction & display → fluorescent antigen staining → FACS double-positive sorting → \"Population enriched?\" decision → NGS sequencing & clustering → full-length IgG recombinant expression → SPR/BLI validation, with an affinity-maturation branch if not on target.\n\nClick below to create the full DAG in one step:"),
+              actions: [
+                { label: R("立即创建酵母展示流程", "Create yeast display workflow"), kind: "createWorkflow", templateKey: "ab_yeast_display", name: R("酵母表面展示筛选 Pipeline", "Yeast Surface Display Screening Pipeline") },
+              ],
+            };
+          }
+          if (/表达|纯化|表征|瞬转|express|purif|characteri|recombinant/i.test(msg)) {
+            return {
+              reply: R(
+                "重组抗体表达推荐 BioFlow 的「重组抗体表达与表征 Pipeline」模板：序列设计 → 分子克隆 → 小试瞬转 →「表达量 ≥ 50 mg/L？」判断 → Protein A 亲和纯化 → SEC 精纯 → SPR 亲和力（KD）→「KD ≤ 10 nM？」判断 → DSF 热稳定性（Tm）→ 表征报告归档，任一级不达标自动回流优化分支。\n\n点击下方按钮即可一键创建整套 DAG：",
+                "For recombinant antibody expression, I recommend the BioFlow \"Recombinant Antibody Expression & Characterization Pipeline\" template: sequence design → molecular cloning → small-scale transient expression → \"Titer ≥ 50 mg/L?\" decision → Protein A affinity purification → SEC polishing → SPR affinity (KD) → \"KD ≤ 10 nM?\" decision → DSF thermal stability (Tm) → characterization report archiving, with feedback branches at every quality gate.\n\nClick below to create the full DAG in one step:"),
+              actions: [
+                { label: R("立即创建重组抗体流程", "Create recombinant antibody workflow"), kind: "createWorkflow", templateKey: "ab_recombinant", name: R("重组抗体表达与表征 Pipeline", "Recombinant Antibody Expression & Characterization Pipeline") },
+              ],
+            };
+          }
+          return {
+            reply: R(
+              "抗体研发有三条内置路线，都已作为 Pipeline 模板内置在 BioFlow 中，自带判断分支：\n\n🧪 **重组抗体表达与表征** — 分子克隆 → 瞬转表达 → Protein A / SEC 纯化 → 亲和力（KD）与稳定性（Tm）检测\n🔬 **噬菌体展示筛选** — 文库 → 淘选富集 → ELISA 初筛 → 亲和力排序 → 人源化\n🍞 **酵母表面展示筛选** — 文库 → FACS 多轮分选 → NGS 富集分析 → 亲和力成熟\n\n点击下方按钮即可一键创建：",
+              "Three built-in routes for antibody R&D, all available as BioFlow pipeline templates with decision branches:\n\n🧪 **Recombinant Expression & Characterization** — cloning → transient expression → Protein A / SEC purification → affinity (KD) & stability (Tm)\n🔬 **Phage Display Discovery** — library → panning enrichment → ELISA screening → affinity ranking → humanization\n🍞 **Yeast Surface Display** — library → multi-round FACS sorting → NGS enrichment analysis → affinity maturation\n\nClick a button below to create one in a single step:"),
+            actions: [
+              { label: R("重组抗体表达流程", "Recombinant expression"), kind: "createWorkflow", templateKey: "ab_recombinant", name: R("重组抗体表达与表征 Pipeline", "Recombinant Antibody Expression & Characterization Pipeline") },
+              { label: R("噬菌体展示流程", "Phage display"), kind: "createWorkflow", templateKey: "ab_phage_display", name: R("噬菌体展示抗体筛选 Pipeline", "Phage Display Antibody Discovery Pipeline") },
+              { label: R("酵母展示流程", "Yeast display"), kind: "createWorkflow", templateKey: "ab_yeast_display", name: R("酵母表面展示筛选 Pipeline", "Yeast Surface Display Screening Pipeline") },
+            ],
+          };
+        }
+      }
+
+      // ── BioFlow 流程推荐（支持一键创建） ──
       if (/载体|菌株|CRISPR|基因编辑|敲除|敲入|蛋白表达|蛋白质|纯化|DBTL|工程循环|Golden\s*Gate|Gibson|组装|质粒|分子克隆|克隆构建|vector|strain|genome edit|knockout|knock-?in|protein expression|purif|assembly|plasmid|clon/i.test(msg)) {
         if (/菌株|CRISPR|基因编辑|敲除|敲入|strain|genome edit|knockout|knock-?in/i.test(msg)) {
           return {
             reply: R(
-              "针对菌株基因组编辑，推荐使用 SynFlow 合成流的「菌株基因组编辑 Pipeline（CRISPR）」模板：gRNA 设计 → 编辑质粒构建 → 转化 → 「克隆是否阳性？」判断 → Sanger 测序 → 「测序是否匹配？」判断 → 编辑效率分析。\n\n点击下方按钮即可一键创建整套 DAG 流程：",
-              "For strain genome editing, I recommend the SynFlow \"Strain Genome Editing Pipeline (CRISPR)\" template: gRNA design → editing plasmid construction → transformation → \"Clone positive?\" decision → Sanger sequencing → \"Sequence match?\" decision → editing-efficiency analysis.\n\nClick the button below to create the full DAG in one step:"),
+              "针对菌株基因组编辑，推荐 BioFlow 的「菌株基因组编辑 Pipeline（CRISPR）」模板：gRNA 设计 → 编辑质粒构建 → 转化 → 「克隆是否阳性？」判断 → Sanger 测序 → 「测序是否匹配？」判断 → 编辑效率分析。\n\n点击下方按钮即可一键创建整套 DAG 流程：",
+              "For strain genome editing, I recommend the BioFlow \"Strain Genome Editing Pipeline (CRISPR)\" template: gRNA design → editing plasmid construction → transformation → \"Clone positive?\" decision → Sanger sequencing → \"Sequence match?\" decision → editing-efficiency analysis.\n\nClick the button below to create the full DAG in one step:"),
             actions: [
               { label: R("立即创建 CRISPR 流程", "Create CRISPR workflow"), kind: "createWorkflow", templateKey: "crispr_strain", name: R("菌株基因组编辑 Pipeline（CRISPR）", "Strain Genome Editing Pipeline (CRISPR)") },
             ],
@@ -412,8 +460,8 @@ export const aiRouter = createRouter({
         if (/DBTL|工程循环|迭代|design.?build.?test|iteration/i.test(msg)) {
           return {
             reply: R(
-              "DBTL 工程循环已作为模板内置在 SynFlow 合成流中：Design（数据节点）→ Build（手工节点）→ Test（设备节点）→ Learn（数据节点）→「进入下一轮迭代？」判断节点，自动衔接第 N+1 轮循环。\n\n点击下方按钮即可一键创建：",
-              "The DBTL engineering cycle is built into SynFlow as a template: Design (data node) → Build (manual node) → Test (equipment node) → Learn (data node) → \"Next iteration?\" decision, flowing into round N+1.\n\nClick the button below to create it in one step:"),
+              "DBTL 工程循环已作为模板内置在 BioFlow 中：Design（数据节点）→ Build（手工节点）→ Test（设备节点）→ Learn（数据节点）→「进入下一轮迭代？」判断节点，自动衔接第 N+1 轮循环。\n\n点击下方按钮即可一键创建：",
+              "The DBTL engineering cycle is built into BioFlow as a template: Design (data node) → Build (manual node) → Test (equipment node) → Learn (data node) → \"Next iteration?\" decision, flowing into round N+1.\n\nClick the button below to create it in one step:"),
             actions: [
               { label: R("立即创建 DBTL 循环", "Create DBTL cycle"), kind: "createWorkflow", templateKey: "dbtl_cycle", name: R("DBTL 工程循环", "DBTL Engineering Cycle") },
             ],
@@ -422,8 +470,8 @@ export const aiRouter = createRouter({
         if (/蛋白表达|纯化|表达|protein expression|purif/i.test(msg)) {
           return {
             reply: R(
-              "蛋白表达推荐使用 SynFlow 的「蛋白表达纯化 Pipeline」模板：转化 → 小试诱导 →「表达量是否达标？」判断 → 放大培养 → 亲和层析纯化 → 浓度纯度测定 → IC50 曲线拟合 → 数据归档。\n\n点击下方按钮即可一键创建：",
-              "For protein expression, I recommend the SynFlow \"Protein Expression & Purification Pipeline\" template: transformation → small-scale induction → \"Expression on target?\" decision → scale-up culture → affinity purification → concentration/purity measurement → IC50 curve fitting → archiving.\n\nClick the button below to create it in one step:"),
+              "蛋白表达推荐 BioFlow 的「蛋白表达纯化 Pipeline」模板：转化 → 小试诱导 →「表达量是否达标？」判断 → 放大培养 → 亲和层析纯化 → 浓度纯度测定 → IC50 曲线拟合 → 数据归档。\n\n点击下方按钮即可一键创建：",
+              "For protein expression, I recommend the BioFlow \"Protein Expression & Purification Pipeline\" template: transformation → small-scale induction → \"Expression on target?\" decision → scale-up culture → affinity purification → concentration/purity measurement → IC50 curve fitting → archiving.\n\nClick the button below to create it in one step:"),
             actions: [
               { label: R("立即创建蛋白表达流程", "Create protein expression workflow"), kind: "createWorkflow", templateKey: "protein_expr", name: R("蛋白表达纯化 Pipeline", "Protein Expression & Purification Pipeline") },
             ],
@@ -451,8 +499,8 @@ export const aiRouter = createRouter({
         }
         return {
           reply: R(
-            "载体构建有两条推荐路线：\n\n🧬 **Gibson 组装**：适合 1–3 个片段，同源臂 20–40 bp，通用高效\n🔗 **Golden Gate**：适合 ≥4 个部件的标准化组装（MoClo 体系），无痕、可层级化\n\n两套路线都已作为 Pipeline 模板内置在 SynFlow 合成流中，自带阳性筛选与测序判断分支。点击下方按钮即可一键创建：",
-            "Two recommended routes for vector construction:\n\n🧬 **Gibson Assembly**: 1–3 fragments, 20–40 bp homology arms, versatile and efficient\n🔗 **Golden Gate**: standardized assembly of ≥4 parts (MoClo), scarless and hierarchical\n\nBoth are built into SynFlow as pipeline templates with positive-screen and sequencing decision branches. Click a button below to create one in a single step:"),
+            "载体构建有两条推荐路线：\n\n🧬 **Gibson 组装**：适合 1–3 个片段，同源臂 20–40 bp，通用高效\n🔗 **Golden Gate**：适合 ≥4 个部件的标准化组装（MoClo 体系），无痕、可层级化\n\n两套路线都已作为 Pipeline 模板内置在 BioFlow 中，自带阳性筛选与测序判断分支。点击下方按钮即可一键创建：",
+            "Two recommended routes for vector construction:\n\n🧬 **Gibson Assembly**: 1–3 fragments, 20–40 bp homology arms, versatile and efficient\n🔗 **Golden Gate**: standardized assembly of ≥4 parts (MoClo), scarless and hierarchical\n\nBoth are built into BioFlow as pipeline templates with positive-screen and sequencing decision branches. Click a button below to create one in a single step:"),
           actions: [
             { label: R("创建 Gibson 流程", "Create Gibson workflow"), kind: "createWorkflow", templateKey: "gibson_assembly", name: R("Gibson 组装 Pipeline", "Gibson Assembly Pipeline") },
             { label: R("创建 Golden Gate 流程", "Create Golden Gate workflow"), kind: "createWorkflow", templateKey: "golden_gate", name: R("Golden Gate 组装 Pipeline", "Golden Gate Assembly Pipeline") },
@@ -461,14 +509,14 @@ export const aiRouter = createRouter({
       }
 
       // ── SynFlow 流程查询 ──
-      if (/业务流|工作流|DAG|流程|pipeline|Pipeline|SynFlow|合成流|workflow/i.test(msg)) {
+      if (/业务流|工作流|DAG|流程|pipeline|Pipeline|SynFlow|BioFlow|合成流|workflow/i.test(msg)) {
         const wfs = await db.select().from(workflows);
         const allWn = await db.select().from(workflowNodes);
         if (!wfs.length) {
           return {
-            reply: R("还没有流程。去 SynFlow 合成流新建一个吧——内置合成生物学 Pipeline 模板（Gibson / Golden Gate / CRISPR / 蛋白表达 / DBTL），也可以用手工、设备、判断、数据处理节点从零搭建。",
-              "No workflows yet. Create one in SynFlow — built-in synthetic-biology pipeline templates (Gibson / Golden Gate / CRISPR / protein expression / DBTL), or build from scratch with manual, equipment, decision, and data nodes."),
-            actions: [{ label: R("SynFlow 合成流", "SynFlow"), url: "/workflows" }],
+            reply: R("还没有流程。去 BioFlow 新建一个吧——内置合成生物与抗体研发 Pipeline 模板（Gibson / Golden Gate / CRISPR / 蛋白表达 / DBTL / 重组抗体 / 噬菌体展示 / 酵母展示），也可以用手工、设备、判断、数据处理节点从零搭建。",
+              "No workflows yet. Create one in BioFlow — built-in synbio and antibody pipeline templates (Gibson / Golden Gate / CRISPR / protein expression / DBTL / recombinant antibody / phage display / yeast display), or build from scratch with manual, equipment, decision, and data nodes."),
+            actions: [{ label: R("BioFlow 工作流", "BioFlow"), url: "/workflows" }],
           };
         }
         const lines = wfs.map((w) => {
@@ -480,9 +528,9 @@ export const aiRouter = createRouter({
             `• ${w.name}: ${done}/${ns.length} nodes done${cur ? `, currently "${cur.label}" (${cur.owner ?? "unassigned"})` : ""}`);
         });
         return {
-          reply: R(`当前共 ${wfs.length} 条流程：\n\n${lines.join("\n")}\n\n打开 SynFlow 合成流可以查看 DAG 图、推进节点、分配负责人。`,
-            `${wfs.length} workflow(s):\n\n${lines.join("\n")}\n\nOpen SynFlow to view the DAG, advance nodes, and assign owners.`),
-          actions: [{ label: R("SynFlow 合成流", "SynFlow"), url: "/workflows" }],
+          reply: R(`当前共 ${wfs.length} 条流程：\n\n${lines.join("\n")}\n\n打开 BioFlow 可以查看 DAG 图、推进节点、分配负责人。`,
+            `${wfs.length} workflow(s):\n\n${lines.join("\n")}\n\nOpen BioFlow to view the DAG, advance nodes, and assign owners.`),
+          actions: [{ label: R("BioFlow 工作流", "BioFlow"), url: "/workflows" }],
         };
       }
 
@@ -620,11 +668,11 @@ export const aiRouter = createRouter({
       // ── 兜底：能力清单 ──
       return {
         reply: R(
-          `我是 BioMap OS Copilot，你的合成生物学实验助手 🧬\n\n我目前可以：\n\n📊 **实验室问答** —「哪些样本快过期了」「流式细胞仪今天有预约吗」「实验室现在什么情况」\n🧬 **序列分析** — 在序列页打开我，自动给出 GC%、ORF、酶切位点分析\n📋 **方案生成** — 说出「Gibson 方案」「qPCR 步骤」等，生成标准 Protocol 并插入实验记录\n🔧 **设计建议** — Gibson 引物设计、载体构建路线选择、Pipeline 推荐并可一键创建整套 DAG 流程\n\n试试对我说：「帮我分析这条序列」或「生成 Gibson 组装方案」`,
-          `I'm BioMap OS Copilot, your synthetic-biology lab assistant 🧬\n\nI can:\n\n📊 **Answer lab questions** — "which samples expire soon", "any bookings on the flow cytometer today", "how is the lab doing"\n🧬 **Analyze sequences** — open me on a sequence page for GC%, ORF, and restriction-site analysis\n📋 **Generate protocols** — say "Gibson protocol" or "qPCR steps" to get a standard protocol inserted into your experiment record\n🔧 **Design advice** — Gibson primer design, vector-construction route selection, and pipeline recommendations with one-click DAG creation\n\nTry: "analyze this sequence" or "generate a Gibson protocol"`),
+          `我是 BioMap OS Copilot，你的合成生物学实验助手 🧬\n\n我目前可以：\n\n📊 **实验室问答** —「哪些样本快过期了」「流式细胞仪今天有预约吗」「实验室现在什么情况」\n🧬 **序列分析** — 在序列页打开我，自动给出 GC%、ORF、酶切位点分析\n📋 **方案生成** — 说出「Gibson 方案」「qPCR 步骤」等，生成标准 Protocol 并插入实验记录\n🔧 **设计建议** — Gibson 引物设计、载体构建路线选择、Pipeline（含抗体研发）推荐并可一键创建整套 DAG 流程\n\n试试对我说：「帮我分析这条序列」或「生成 Gibson 组装方案」`,
+          `I'm BioMap OS Copilot, your synthetic-biology lab assistant 🧬\n\nI can:\n\n📊 **Answer lab questions** — "which samples expire soon", "any bookings on the flow cytometer today", "how is the lab doing"\n🧬 **Analyze sequences** — open me on a sequence page for GC%, ORF, and restriction-site analysis\n📋 **Generate protocols** — say "Gibson protocol" or "qPCR steps" to get a standard protocol inserted into your experiment record\n🔧 **Design advice** — Gibson primer design, vector-construction route selection, and pipeline recommendations (incl. antibody R&D) with one-click DAG creation\n\nTry: "analyze this sequence" or "generate a Gibson protocol"`),
         actions: [
           { label: R("序列库", "Sequence Library"), url: "/sequences" },
-          { label: R("SynFlow 合成流", "SynFlow"), url: "/workflows" },
+          { label: R("BioFlow 工作流", "BioFlow"), url: "/workflows" },
         ],
       };
       } catch (err) {
