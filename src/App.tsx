@@ -7,6 +7,7 @@ import Experiments from "@/pages/Experiments";
 import ExperimentDetail from "@/pages/ExperimentDetail";
 import Samples from "@/pages/Samples";
 import SampleDetail from "@/pages/SampleDetail";
+import SampleLineage from "@/pages/SampleLineage";
 import Storage from "@/pages/Storage";
 import BoxDetail from "@/pages/BoxDetail";
 import Sequences from "@/pages/Sequences";
@@ -35,6 +36,7 @@ export default function App() {
               <Route path="/experiments/:id" element={<ExperimentDetail />} />
               <Route path="/samples" element={<Samples />} />
               <Route path="/samples/:id" element={<SampleDetail />} />
+              <Route path="/samples/:id/lineage" element={<SampleLineage />} />
               <Route path="/storage" element={<Storage />} />
               <Route path="/storage/box/:id" element={<BoxDetail />} />
               <Route path="/sequences" element={<Sequences />} />

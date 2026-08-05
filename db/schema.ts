@@ -150,6 +150,8 @@ export const samples = mysqlTable(
     locationId: bigint("locationId", { mode: "number", unsigned: true }),
     boxRow: int("boxRow"),
     boxCol: int("boxCol"),
+    /** 分子定义：该样本对应的序列记录（蛋白 AA / 质粒 DNA） */
+    sequenceId: bigint("sequenceId", { mode: "number", unsigned: true }),
     projectId: bigint("projectId", { mode: "number", unsigned: true }),
     expiryDate: date("expiryDate", { mode: "string" }),
     notes: text("notes"),
@@ -188,6 +190,8 @@ export const sequences = mysqlTable("sequences", {
   name: varchar("name", { length: 255 }).notNull(),
   type: mysqlEnum("type", ["dna", "rna", "protein"]).default("dna").notNull(),
   sequence: text("sequence").notNull(),
+  /** 蛋白三级结构（RCSB PDB ID），用于结构面板 */
+  pdbId: varchar("pdbId", { length: 10 }),
   description: text("description"),
   createdByName: varchar("createdByName", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -338,6 +342,29 @@ export const activities = mysqlTable(
 );
 
 export type Activity = typeof activities.$inferSelect;
+
+// ─── 样本全生命周期追溯（谱系图）：样本 / 序列混合 DAG ─────────────────
+/** 边方向：child ← parent（child 由 parent 衍生），如 纯化蛋白 ←纯化自← 表达菌液 */
+export const lineageEdges = mysqlTable(
+  "lineage_edges",
+  {
+    id: serial("id").primaryKey(),
+    childKind: mysqlEnum("childKind", ["sample", "sequence"]).notNull(),
+    childId: bigint("childId", { mode: "number", unsigned: true }).notNull(),
+    parentKind: mysqlEnum("parentKind", ["sample", "sequence"]).notNull(),
+    parentId: bigint("parentId", { mode: "number", unsigned: true }).notNull(),
+    /** expressed_from / purified_from / backbone_from / insert_from / aliquoted_from */
+    relation: varchar("relation", { length: 40 }).notNull(),
+    note: text("note"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    childIdx: index("lineage_child_idx").on(table.childKind, table.childId),
+    parentIdx: index("lineage_parent_idx").on(table.parentKind, table.parentId),
+  }),
+);
+
+export type LineageEdge = typeof lineageEdges.$inferSelect;
 
 // ─── 业务流 DAG（合成生物学流程编排）────────────────────────────────────
 export const workflows = mysqlTable("workflows", {

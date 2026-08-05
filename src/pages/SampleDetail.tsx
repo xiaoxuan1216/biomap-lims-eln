@@ -50,6 +50,7 @@ import {
   NotebookPen,
   Pencil,
   PackageX,
+  GitBranch,
 } from "lucide-react";
 import {
   ALERT_LABELS,
@@ -244,6 +245,13 @@ export default function SampleDetail() {
                 onClick={() => setDeleteOpen(true)}
               >
                 <Trash2 className="h-4 w-4 mr-1" /> {t("删除")}
+              </Button>
+              <Button
+                variant="outline"
+                className="col-span-2 border-teal-200 text-teal-700 hover:bg-teal-50 hover:text-teal-800"
+                onClick={() => navigate(`/samples/${sampleId}/lineage`)}
+              >
+                <GitBranch className="h-4 w-4 mr-1" /> {t("生命周期追溯")}
               </Button>
             </div>
           </CardContent>

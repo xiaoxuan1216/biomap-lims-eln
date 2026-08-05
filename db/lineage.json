@@ -1,0 +1,429 @@
+{
+ "sequences": [
+  {
+   "key": "vec_pet28a",
+   "name": "pET-28a(+) 载体骨架",
+   "type": "dna",
+   "sequence": "TCACTGCCCGCTTTCCAGTCGGGAAACCTGTCGTGCCAGCTGCATTAATGAATCGGCCAACGCGCGGGGAGAGGCGGTTTGCGTATTGGGCGCCAGGGTGGTTTTTCTTTTCACCAGTGAGACGGGCAACAGCTGATTGCCCTTCACCGCCTGGCCCTGAGAGAGTTGCAGCAAGCGGTCCACGCTGGTTTGCCCCAGCAGGCGAAAATCCTGTTTGATGGTGGTTGACGGCGGGATATAACATGAGCTGTCTTCGGTATCGTCGTATCCCACTACCGAGATATCCGCACCAACGCGCAGCCCGGACTCGGTAATGGCGCGCATTGCGCCCAGCGCCATCTGATCGTTGGCAACCAGCATCGCAGTGGGAACGATGCCCTCATTCAGCATTTGCATGGTTTGTTGAAAACCGGACATGGCACTCCAGTCGCCTTCCCGTTCCGCTATCGGCTGAATTTGATTGCGAGTGAGATATTTATGCCAGCCAGCCAGACGCAGACGCGCCGAGACAGAACTTAATGGGCCCGCTAACAGCGCGATTTGCTGGTGACCCAATGCGACCAGATGCTCCACGCCCAGTCGCGTACCGTCTTCATGGGAGAAAATAATACTGTTGATGGGTGTCTGGTCAGAGACATCAAGAAATAACGCCGGAACATTAGTGCAGGCAGCTTCCACAGCAATGGCATCCTGGTCATCCAGCGGATAGTTAATGATCAGCCCACTGACGCGTTGCGCGAGAAGATTGTGCACCGCCGCTTTACAGGCTTCGACGCCGCTTCGTTCTACCATCGACACCACCACGCTGGCACCCAGTTGATCGGCGCGAGATTTAATCGCCGCGACAATTTGCGACGGCGCGTGCAGGGCCAGACTGGAGGTGGCAACGCCAATCAGCAACGACTGTTTGCCCGCCAGTTGTTGTGCCACGCGGTTGGGAATGTAATTCAGCTCCGCCATCGCCGCTTCCACTTTTTCCCGCGTTTTCGCAGAAACGTGGCTGGCCTGGTTCACCACGCGGGAAACGGTCTGATAAGAGACACCGGCATACTCTGCGACATCGTATAACGTTACTGGTTTCACATTCACCACCCTGAATTGACTCTCTTCCGGGCGCTATCATGCCATACCGCGAAAGGTTTTGCGCCATTCGATGGTGTCGTGACCAAACAGGAAAAAACCGCCCTTAACATGGCCCGCTTTATCAGAAGCCAGACATTAACGCTTCTGGAGAAACTCAACGAGCTGGACGCGGATGAACAGGCAGACATCTGTGAATCGCTTCACGACCACGCTGATGAGCTTTACCGCAGCTGCCTCGCGCGTTTCGGTGATGACGGTGAAAACCTCTGACACATGCAGCTCCCGGAGACGGTCACAGCTTGTCTGTAAGCGGATGCCGGGAGCAGACAAGCCCGTCAGGGCGCGTCAGCGGGTGTTGGCGGGTGTCGGGGCGCAGCCATGACCCAGTCACGTAGCGATAGCGGAGTGTATACTGGCTTAACTATGCGGCATCAGAGCAGATTGTACTGAGAGTGCACCATATGCGGTGTGAAATACCGCACAGATGCGTAAGGAGAAAATACCGCATCAGGCGCTCTTCCGCTTCCTCGCTCACTGACTCGCTGCGCTCGGTCGTTCGGCTGCGGCGAGCGGTATCAGCTCACTCAAAGGCGGTAATACGGTTATCCACAGAATCAGGGGATAACGCAGGAAAGAACATGTGAGCAAAAGGCCAGCAAAAGGCCAGGAACCGTAAAAAGGCCGCGTTGCTGGCGTTTTTCCATAGGCTCCGCCCCCCTGACGAGCATCACAAAAATCGACGCTCAAGTCAGAGGTGGCGAAACCCGACAGGACTATAAAGATACCAGGCGTTTCCCCCTGGAAGCTCCCTCGTGCGCTCTCCTGTTCCGACCCTGCCGCTTACCGGATACCTGTCCGCCTTTCTCCCTTCGGGAAGCGTGGCGCTTTCTCATAGCTCACGCTGTAGGTATCTCAGTTCGGTGTAGGTCGTTCGCTCCAAGCTGGGCTGTGTGCACGAACCCCCCGTTCAGCCCGACCGCTGCGCCTTATCCGGTAACTATCGTCTTGAGTCCAACCCGGTAAGACACGACTTATCGCCACTGGCAGCAGCCACTGGTAACAGGATTAGCAGAGCGAGGTATGTAGGCGGTGCTACAGAGTTCTTGAAGTGGTGGCCTAACTACGGCTACACTAGAAGGACAGTATTTGGTATCTGCGCTCTGCTGAAGCCAGTTACCTTCGGAAAAAGAGTTGGTAGCTCTTGATCCGGCAAACAAACCACCGCTGGTAGCGGTGGTTTTTTTGTTTGCAAGCAGCAGATTACGCGCAGAAAAAAAGGATCTCAAGAAGATCCTTTGATCTTTTCTACGGGGTCTGACGCTCAGTGGAACGAAAACTCACGTTAAGGGATTTTGGTCATGAGATTATCAAAAAGGATCTTCACCTAGATCCTTTTAAATTAAAAATGAAGTTTTAAATCAATCTAAAGTATATATGAGTAAACTTGGTCTGACTTAGAAAAACTCATCGAGCATCAAATGAAACTGCAATTTATTCATATCAGGATTATCAATACCATATTTTTGAAAAAGCCGTTTCTGTAATGAAGGAGAAAACTCACCGAGGCAGTTCCATAGGATGGCAAGATCCTGGTATCGGTCTGCGATTCCGACTCGTCCAACATCAATACAACCTATTAATTTCCCCTCGTCAAAAATAAGGTTATCAAGTGAGAAATCACCATGAGTGACGACTGAATCCGGTGAGAATGGCAAAAGCTTATGCATTTCTTTCCAGACTTGTTCAACAGGCCAGCCATTACGCTCGTCATCAAAATCACTCGCATCAACCAAACCGTTATTCATTCGTGATTGCGCCTGAGCGAGACGAAATACGCGATCGCTGTTAAAAGGACAATTACAAACAGGAATCGAATGCAACCGGCGCAGGAACACTGCCAGCGCATCAACAATATTTTCACCTGAATCAGGATATTCTTCTAATACCTGGAATGCTGTTTTCCCGGGGATCGCAGTGGTGAGTAACCATGCATCATCAGGAGTACGGATAAAATGCTTGATGGTCGGAAGAGGCATAAATTCCGTCAGCCAGTTTAGTCTGACCATCTCATCTGTAACATCATTGGCAACGCTACCTTTGCCATGTTTCAGAAACAACTCTGGCGCATCGGGCTTCCCATACAATCGATAGATTGTCGCACCTGATTGCCCGACATTATCGCGAGCCCATTTATACCCATATAAATCAGCATCCATGTTGGAATTTAATCGCGGCCTAGAGCAAGACGTTTCCCGTTGAATATGGCTCATCTAAATTGTAAGCGTTAATATTTTGTTAAAATTCGCGTTAAATTTTTGTTAAATCAGCTCATTTTTTAACCAATAGGCCGAAATCGGCAAAATCCCTTATAAATCAAAAGAATAGACCGAGATAGGGTTGAGTGTTGTTCCAGTTTGGAACAAGAGTCCACTATTAAAGAACGTGGACTCCAACGTCAAAGGGCGAAAAACCGTCTATCAGGGCGATGGCCCACTACGTGAACCATCACCCTAATCAAGTTTTTTGGGGTCGAGGTGCCGTAAAGCACTAAATCGGAACCCTAAAGGGAGCCCCCGATTTAGAGCTTGACGGGGAAAGCCGGCGAACGTGGCGAGAAAGGAAGGGAAGAAAGCGAAAGGAGCGGGCGCTAGGGCGCTGGCAAGTGTAGCGGTCACGCTGCGCGTAACCACCACACCCGCCGCGCTTAATGCGCCGCTACAGGGCGCGTCC",
+   "pdbId": null,
+   "description": "pET-28a(+) 表达载体骨架（Novagen #69864-3）：T7/lac 表达盒之外的载体部分——lacI 阻遏、rop 拷贝数调控、pBR322 ori（中拷贝）、KanR/aph(3')-Ia 抗性、f1 ori。",
+   "features": [
+    {
+     "name": "lacI",
+     "type": "cds",
+     "start": 1,
+     "end": 1083,
+     "strand": -1,
+     "color": "teal",
+     "note": "Lac 阻遏蛋白（360 aa，GenBank J01636）"
+    },
+    {
+     "name": "lacI promoter",
+     "type": "promoter",
+     "start": 1084,
+     "end": 1161,
+     "strand": -1,
+     "color": "emerald",
+     "note": "lacI 组成型启动子"
+    },
+    {
+     "name": "rop (rom)",
+     "type": "cds",
+     "start": 1162,
+     "end": 1353,
+     "strand": 1,
+     "color": "teal",
+     "note": "拷贝数控制蛋白（63 aa，pBR322 J01749）"
+    },
+    {
+     "name": "pBR322 ori",
+     "type": "origin",
+     "start": 1354,
+     "end": 2537,
+     "strand": 1,
+     "color": "sky",
+     "note": "ColE1/pMB1 型高拷贝复制起点（含 bom 区，pBR322 J01749）"
+    },
+    {
+     "name": "KanR / aph(3')-Ia",
+     "type": "resistance",
+     "start": 2538,
+     "end": 3353,
+     "strand": -1,
+     "color": "rose",
+     "note": "氨基糖苷磷酸转移酶，卡那霉素抗性（Tn903 V00359，两端锚点与 SnapGene pET-28a(+) 一致）"
+    },
+    {
+     "name": "f1 ori",
+     "type": "origin",
+     "start": 3354,
+     "end": 3813,
+     "strand": 1,
+     "color": "sky",
+     "note": "丝状噬菌体单链复制起点（pBluescript X52328）"
+    }
+   ]
+  },
+  {
+   "key": "gene_egfp",
+   "name": "EGFP 基因片段（U55762）",
+   "type": "dna",
+   "sequence": "ATGGTGAGCAAGGGCGAGGAGCTGTTCACCGGGGTGGTGCCCATCCTGGTCGAGCTGGACGGCGACGTAAACGGCCACAAGTTCAGCGTGTCCGGCGAGGGCGAGGGCGATGCCACCTACGGCAAGCTGACCCTGAAGTTCATCTGCACCACCGGCAAGCTGCCCGTGCCCTGGCCCACCCTCGTGACCACCCTGACCTACGGCGTGCAGTGCTTCAGCCGCTACCCCGACCACATGAAGCAGCACGACTTCTTCAAGTCCGCCATGCCCGAAGGCTACGTCCAGGAGCGCACCATCTTCTTCAAGGACGACGGCAACTACAAGACCCGCGCCGAGGTGAAGTTCGAGGGCGACACCCTGGTGAACCGCATCGAGCTGAAGGGCATCGACTTCAAGGAGGACGGCAACATCCTGGGGCACAAGCTGGAGTACAACTACAACAGCCACAACGTCTATATCATGGCCGACAAGCAGAAGAACGGCATCAAGGTGAACTTCAAGATCCGCCACAACATCGAGGACGGCAGCGTGCAGCTCGCCGACCACTACCAGCAGAACACCCCCATCGGCGACGGCCCCGTGCTGCTGCCCGACAACCACTACCTGAGCACCCAGTCCGCCCTGAGCAAAGACCCCAACGAGAAGCGCGATCACATGGTCCTGCTGGAGTTCGTGACCGCCGCCGGGATCACTCTCGGCATGGACGAGCTGTACAAGTAA",
+   "pdbId": null,
+   "description": "增强型绿色荧光蛋白编码区（GenBank U55762，720 bp 含终止子），F64L / S65T 双突变增强型 GFP，经 BamHI/XhoI 同框克隆。",
+   "features": [
+    {
+     "name": "EGFP CDS",
+     "type": "cds",
+     "start": 1,
+     "end": 720,
+     "strand": 1,
+     "color": "teal",
+     "note": "240 密码子含终止子；S65T 发色团"
+    }
+   ]
+  },
+  {
+   "key": "gene_egfrkd",
+   "name": "EGFR 激酶域基因片段（NM_005228.5:2263-3132）",
+   "type": "dna",
+   "sequence": "ATGCGAAGGCGCCACATCGTTCGGAAGCGCACGCTGCGGAGGCTGCTGCAGGAGAGGGAGCTTGTGGAGCCTCTTACACCCAGTGGAGAAGCTCCCAACCAAGCTCTCTTGAGGATCTTGAAGGAAACTGAATTCAAAAAGATCAAAGTGCTGGGCTCCGGTGCGTTCGGCACGGTGTATAAGGGACTCTGGATCCCAGAAGGTGAGAAAGTTAAAATTCCCGTCGCTATCAAGGAATTAAGAGAAGCAACATCTCCGAAAGCCAACAAGGAAATCCTCGATGAAGCCTACGTGATGGCCAGCGTGGACAACCCCCACGTGTGCCGCCTGCTGGGCATCTGCCTCACCTCCACCGTGCAGCTCATCACGCAGCTCATGCCCTTCGGCTGCCTCCTGGACTATGTCCGGGAACACAAAGACAATATTGGCTCCCAGTACCTGCTCAACTGGTGTGTGCAGATCGCAAAGGGCATGAACTACTTGGAGGACCGTCGCTTGGTGCACCGCGACCTGGCAGCCAGGAACGTACTGGTGAAAACACCGCAGCATGTCAAGATCACAGATTTTGGGCTGGCCAAACTGCTGGGTGCGGAAGAGAAAGAATACCATGCAGAAGGAGGCAAAGTGCCTATCAAGTGGATGGCATTGGAATCAATTTTACACAGAATCTATACCCACCAGAGTGATGTCTGGAGCTACGGGGTGACTGTTTGGGAGTTGATGACCTTTGGATCCAAGCCATATGACGGAATCCCTGCCAGCGAGATCTCCTCCATCCTGGAGAAAGGAGAACGCCTCCCTCAGCCACCCATATGTACCATCGATGTCTACATGATCATGGTCAAGTGCTGGATGATAGACGCAGATAGTTAA",
+   "pdbId": null,
+   "description": "人 EGFR 胞内酪氨酸激酶域（RefSeq NM_005228.5 nt 2263-3132，873 bp 含终止子），对应蛋白 aa 668-957，经 SacI/XhoI 克隆。",
+   "features": [
+    {
+     "name": "EGFR-KD CDS",
+     "type": "cds",
+     "start": 1,
+     "end": 873,
+     "strand": 1,
+     "color": "teal",
+     "note": "291 密码子含终止子"
+    }
+   ]
+  },
+  {
+   "key": "gene_scfv",
+   "name": "anti-HER2 scFv 合成基因（密码子优化）",
+   "type": "dna",
+   "sequence": "GAAGTGCAGCTGGTGGAAAGCGGTGGTGGTCTGGTGCAGCCGGGTGGTAGCCTGCGTCTGAGCTGCGCGGCGAGCGGTTTCAACATCAAAGACACCTACATCCACTGGGTGCGTCAGGCGCCGGGTAAAGGTCTGGAATGGGTGGCGCGTATCTACCCGACCAACGGTTACACCCGTTACGCGGACAGCGTGAAAGGTCGTTTCACCATCAGCGCGGACACCAGCAAAAACACCGCGTACCTGCAGATGAACAGCCTGCGTGCGGAAGACACCGCGGTGTACTACTGCAGCCGTTGGGGTGGTGACGGTTTCTACGCGATGGACTACTGGGGTCAGGGTACCCTGGTGACCGTGAGCAGCGGTGGTGGTGGTAGCGGTGGTGGTGGTAGCGGTGGTGGTGGTAGCGACATCCAGATGACCCAGAGCCCGAGCAGCCTGAGCGCGAGCGTGGGTGACCGTGTGACCATCACCTGCCGTGCGAGCCAGGACGTGAACACCGCGGTGGCGTGGTACCAGCAGAAACCGGGTAAAGCGCCGAAACTGCTGATCTACAGCGCGAGCTTCCTGTACAGCGGTGTGCCGAGCCGTTTCAGCGGTAGCCGTAGCGGTACCGACTTCACCCTGACCATCAGCAGCCTGCAGCCGGAAGACTTCGCGACCTACTACTGCCAGCAGCACTACACCACCCCGCCGACCTTCGGTCAGGGTACCAAAGTGGAAATCAAA",
+   "pdbId": null,
+   "description": "曲妥珠单抗（trastuzumab）scFv 合成基因：VH-(G4S)3-VL 按 E. coli 最优密码子回译（序列源自 PDB 1N8Z / DrugBank DB00072），经 NdeI/XhoI 克隆。",
+   "features": [
+    {
+     "name": "VH",
+     "type": "cds",
+     "start": 1,
+     "end": 360,
+     "strand": 1,
+     "color": "teal",
+     "note": "120 aa"
+    },
+    {
+     "name": "(G4S)3 linker",
+     "type": "tag",
+     "start": 361,
+     "end": 405,
+     "strand": 1,
+     "color": "amber",
+     "note": "15 aa 柔性接头"
+    },
+    {
+     "name": "VL",
+     "type": "cds",
+     "start": 406,
+     "end": 726,
+     "strand": 1,
+     "color": "sky",
+     "note": "107 aa"
+    }
+   ]
+  },
+  {
+   "key": "prot_scfv",
+   "name": "Trastuzumab scFv 蛋白（抗 HER2）",
+   "type": "protein",
+   "sequence": "EVQLVESGGGLVQPGGSLRLSCAASGFNIKDTYIHWVRQAPGKGLEWVARIYPTNGYTRYADSVKGRFTISADTSKNTAYLQMNSLRAEDTAVYYCSRWGGDGFYAMDYWGQGTLVTVSSGGGGSGGGGSGGGGSDIQMTQSPSSLSASVGDRVTITCRASQDVNTAVAWYQQKPGKAPKLLIYSASFLYSGVPSRFSGSRSGTDFTLTISSLQPEDFATYYCQQHYTTPPTFGQGTKVEIKLEHHHHHH",
+   "pdbId": "1N8Z",
+   "description": "抗 HER2 单链抗体（scFv），250 aa：VH-(G4S)3-VL + XhoI 接头(LE) + C 端 6×His。结构参考 PDB 1N8Z（trastuzumab Fab–HER2 胞外域复合物）。",
+   "features": [
+    {
+     "name": "VH 重链可变区",
+     "type": "cds",
+     "start": 1,
+     "end": 120,
+     "strand": 1,
+     "color": "teal",
+     "note": "抗原结合（HER2 Domain IV）"
+    },
+    {
+     "name": "(G4S)3 柔性接头",
+     "type": "tag",
+     "start": 120,
+     "end": 134,
+     "strand": 1,
+     "color": "amber",
+     "note": "15 aa"
+    },
+    {
+     "name": "VL 轻链可变区",
+     "type": "cds",
+     "start": 135,
+     "end": 242,
+     "strand": 1,
+     "color": "sky",
+     "note": null
+    },
+    {
+     "name": "XhoI 接头 (LE)",
+     "type": "tag",
+     "start": 243,
+     "end": 244,
+     "strand": 1,
+     "color": "slate",
+     "note": "克隆 scar"
+    },
+    {
+     "name": "6×His 标签",
+     "type": "tag",
+     "start": 245,
+     "end": 250,
+     "strand": 1,
+     "color": "violet",
+     "note": "Ni-NTA 纯化"
+    }
+   ]
+  },
+  {
+   "key": "prot_egfrkd",
+   "name": "EGFR 激酶域蛋白（EGFR-KD）",
+   "type": "protein",
+   "sequence": "MRRRHIVRKRTLRRLLQERELVEPLTPSGEAPNQALLRILKETEFKKIKVLGSGAFGTVYKGLWIPEGEKVKIPVAIKELREATSPKANKEILDEAYVMASVDNPHVCRLLGICLTSTVQLITQLMPFGCLLDYVREHKDNIGSQYLLNWCVQIAKGMNYLEDRRLVHRDLAARNVLVKTPQHVKITDFGLAKLLGAEEKEYHAEGGKVPIKWMALESILHRIYTHQSDVWSYGVTVWELMTFGSKPYDGIPASEISSILEKGERLPQPPICTIDVYMIMVKCWMIDADS",
+   "pdbId": "1M17",
+   "description": "人 EGFR 胞内酪氨酸激酶域，290 aa（全长受体 aa 668-957）。结构参考 PDB 1M17（EGFR-KD 与 erlotinib 复合物）。",
+   "features": [
+    {
+     "name": "P-loop（ATP 结合）",
+     "type": "cds",
+     "start": 52,
+     "end": 59,
+     "strand": 1,
+     "color": "amber",
+     "note": "GSGAFG，对应全长 719-726"
+    },
+    {
+     "name": "HRDLAARN 催化环",
+     "type": "cds",
+     "start": 168,
+     "end": 175,
+     "strand": 1,
+     "color": "rose",
+     "note": "催化 Asp（全长 836）"
+    },
+    {
+     "name": "DFG 激活环基序",
+     "type": "cds",
+     "start": 188,
+     "end": 190,
+     "strand": 1,
+     "color": "violet",
+     "note": "全长 855-857"
+    },
+    {
+     "name": "蛋白酪氨酸激酶域",
+     "type": "cds",
+     "start": 45,
+     "end": 285,
+     "strand": 1,
+     "color": "teal",
+     "note": "PTK domain"
+    }
+   ]
+  },
+  {
+   "key": "prot_egfp",
+   "name": "EGFP 蛋白",
+   "type": "protein",
+   "sequence": "MVSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTLTYGVQCFSRYPDHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSALSKDPNEKRDHMVLLEFVTAAGITLGMDELYK",
+   "pdbId": "1EMA",
+   "description": "增强型绿色荧光蛋白，239 aa，11 股 β-桶包裹发色团。结构参考 PDB 1EMA（S65T GFP）。",
+   "features": [
+    {
+     "name": "β-桶结构",
+     "type": "cds",
+     "start": 8,
+     "end": 230,
+     "strand": 1,
+     "color": "teal",
+     "note": "11-stranded β-barrel"
+    },
+    {
+     "name": "发色团（T65-Y66-G67）",
+     "type": "tag",
+     "start": 65,
+     "end": 67,
+     "strand": 1,
+     "color": "amber",
+     "note": "环化成熟后发光，Ex 488 / Em 509"
+    }
+   ]
+  }
+ ],
+ "samples": [
+  {
+   "key": "samp_scfv",
+   "name": "Trastuzumab scFv 纯化蛋白（抗 HER2）",
+   "type": "antibody",
+   "quantity": 3,
+   "unit": "管",
+   "seqKey": "prot_scfv",
+   "notes": "0.5 mM IPTG 16 °C × 16 h 诱导；Ni-NTA 亲和 + SEC 精纯，SEC 单体峰 >95%，-80 °C 保存"
+  },
+  {
+   "key": "samp_egfrkd",
+   "name": "EGFR 激酶域蛋白（纯化，His 标签）",
+   "type": "protein",
+   "quantity": 5,
+   "unit": "管",
+   "seqKey": "prot_egfrkd",
+   "notes": "Ni-NTA 纯化，激酶活性阳性（poly(Glu:Tyr) 底物），50% 甘油 -20 °C"
+  },
+  {
+   "key": "samp_egfp",
+   "name": "EGFP 蛋白（纯化）",
+   "type": "protein",
+   "quantity": 8,
+   "unit": "管",
+   "seqKey": "prot_egfp",
+   "notes": "Ni-NTA 纯化，荧光成熟 >90%（Ex 488 / Em 509 验证）"
+  },
+  {
+   "key": "samp_culture_scfv",
+   "name": "BL21(DE3) + pET-28a-antiHER2-scFv 表达菌液",
+   "type": "cell_line",
+   "quantity": 2,
+   "unit": "瓶",
+   "seqKey": null,
+   "notes": "诱导后菌液（OD600 0.8 起诱导）"
+  },
+  {
+   "key": "samp_culture_egfrkd",
+   "name": "BL21(DE3) + pET-28a-EGFR-KD 表达菌液",
+   "type": "cell_line",
+   "quantity": 2,
+   "unit": "瓶",
+   "seqKey": null,
+   "notes": "诱导后菌液"
+  },
+  {
+   "key": "samp_culture_egfp",
+   "name": "BL21(DE3) + pET-28a-EGFP 表达菌液",
+   "type": "cell_line",
+   "quantity": 2,
+   "unit": "瓶",
+   "seqKey": null,
+   "notes": "诱导后菌液"
+  },
+  {
+   "key": "samp_plasmid_scfv",
+   "name": "pET-28a-antiHER2-scFv 表达质粒",
+   "type": "plasmid",
+   "quantity": 10,
+   "unit": "管",
+   "seqName": "pET-28a-antiHER2-scFv（trastuzumab）",
+   "notes": "转化/转染用质粒，测序验证正确"
+  },
+  {
+   "key": "samp_plasmid_egfrkd",
+   "name": "pET-28a-EGFR-KD 表达质粒",
+   "type": "plasmid",
+   "quantity": 10,
+   "unit": "管",
+   "seqName": "pET-28a-EGFR-KD（激酶域表达构建）",
+   "notes": "转化用质粒"
+  },
+  {
+   "key": "samp_plasmid_egfp",
+   "name": "pET-28a-EGFP 表达质粒",
+   "type": "plasmid",
+   "quantity": 10,
+   "unit": "管",
+   "seqName": "pET-28a-EGFP（表达构建）",
+   "notes": "转化用质粒"
+  }
+ ],
+ "edges": [
+  {
+   "child": "samp_scfv",
+   "parent": "samp_culture_scfv",
+   "relation": "purified_from",
+   "note": "收菌 → 裂解 → Ni-NTA 亲和 → SEC 精纯"
+  },
+  {
+   "child": "samp_egfrkd",
+   "parent": "samp_culture_egfrkd",
+   "relation": "purified_from",
+   "note": "收菌 → 裂解 → Ni-NTA 亲和"
+  },
+  {
+   "child": "samp_egfp",
+   "parent": "samp_culture_egfp",
+   "relation": "purified_from",
+   "note": "收菌 → 裂解 → Ni-NTA 亲和"
+  },
+  {
+   "child": "samp_culture_scfv",
+   "parent": "samp_plasmid_scfv",
+   "relation": "expressed_from",
+   "note": "42 °C 热激转化 BL21(DE3)，Kan 50 µg/mL 筛选；0.5 mM IPTG 16 °C 诱导 16 h"
+  },
+  {
+   "child": "samp_culture_egfrkd",
+   "parent": "samp_plasmid_egfrkd",
+   "relation": "expressed_from",
+   "note": "42 °C 热激转化 BL21(DE3)；0.5 mM IPTG 16 °C 诱导 16 h"
+  },
+  {
+   "child": "samp_culture_egfp",
+   "parent": "samp_plasmid_egfp",
+   "relation": "expressed_from",
+   "note": "42 °C 热激转化 BL21(DE3)；0.5 mM IPTG 20 °C 诱导 12 h"
+  },
+  {
+   "childSeq": "pET-28a-antiHER2-scFv（trastuzumab）",
+   "parentSeqKey": "vec_pet28a",
+   "relation": "backbone_from",
+   "note": "NdeI/XhoI 双酶切骨架"
+  },
+  {
+   "childSeq": "pET-28a-antiHER2-scFv（trastuzumab）",
+   "parentSeqKey": "gene_scfv",
+   "relation": "insert_from",
+   "note": "NdeI/XhoI 同框插入"
+  },
+  {
+   "childSeq": "pET-28a-EGFR-KD（激酶域表达构建）",
+   "parentSeqKey": "vec_pet28a",
+   "relation": "backbone_from",
+   "note": "SacI/XhoI 双酶切骨架"
+  },
+  {
+   "childSeq": "pET-28a-EGFR-KD（激酶域表达构建）",
+   "parentSeqKey": "gene_egfrkd",
+   "relation": "insert_from",
+   "note": "SacI/XhoI 插入（保留 N 端 His/T7 标签同框）"
+  },
+  {
+   "childSeq": "pET-28a-EGFP（表达构建）",
+   "parentSeqKey": "vec_pet28a",
+   "relation": "backbone_from",
+   "note": "BamHI/XhoI 双酶切骨架"
+  },
+  {
+   "childSeq": "pET-28a-EGFP（表达构建）",
+   "parentSeqKey": "gene_egfp",
+   "relation": "insert_from",
+   "note": "BamHI/XhoI 同框插入"
+  }
+ ]
+}
