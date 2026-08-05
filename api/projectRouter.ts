@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { asc, desc, eq, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
 import { createRouter, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
-import { experiments, projects, samples } from "@db/schema";
+import { activities, experiments, projects, samples, workflowNodes, workflows } from "@db/schema";
 import { logActivity } from "./queries/labHelpers";
 
 const projectInput = z.object({
@@ -106,6 +106,76 @@ export const projectRouter = createRouter({
       entityId: input.id,
     });
     return { ok: true };
+  }),
+
+  /** 项目专属仪表盘：业务流进度（含逐节点状态）+ 实验状态分布 + 最近动态 */
+  dashboard: authedQuery.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    const db = getDb();
+    const project = await db.query.projects.findFirst({ where: eq(projects.id, input.id) });
+    if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "项目不存在" });
+
+    const wfs = await db
+      .select()
+      .from(workflows)
+      .where(eq(workflows.projectId, input.id))
+      .orderBy(desc(workflows.updatedAt));
+    const wfIds = wfs.map((w) => w.id);
+    const nodes = wfIds.length
+      ? await db.select().from(workflowNodes).where(inArray(workflowNodes.workflowId, wfIds))
+      : [];
+
+    const wfSummaries = wfs.map((w) => {
+      const ns = nodes
+        .filter((n) => n.workflowId === w.id)
+        .sort((a, b) => a.id - b.id);
+      const active = ns.filter((n) => n.status !== "skipped");
+      const done = ns.filter((n) => n.status === "done").length;
+      return {
+        id: w.id,
+        name: w.name,
+        status: w.status,
+        experimentId: w.experimentId,
+        parentWorkflowId: w.parentWorkflowId,
+        parentNodeId: w.parentNodeId,
+        updatedAt: w.updatedAt,
+        total: active.length,
+        done,
+        inProgress: ns.filter((n) => n.status === "in_progress").length,
+        progress: active.length ? Math.round((done / active.length) * 100) : 0,
+        nodes: ns.map((n) => ({
+          id: n.id,
+          label: n.label,
+          status: n.status,
+          type: n.type,
+        })),
+      };
+    });
+
+    const expRows = await db
+      .select({ id: experiments.id, status: experiments.status })
+      .from(experiments)
+      .where(eq(experiments.projectId, input.id));
+    const expIds = expRows.map((e) => e.id);
+    const expByStatus: Record<string, number> = {};
+    for (const e of expRows) expByStatus[e.status] = (expByStatus[e.status] ?? 0) + 1;
+
+    const actWhere = [
+      and(eq(activities.entityType, "project"), eq(activities.entityId, input.id)),
+      ...(expIds.length
+        ? [and(eq(activities.entityType, "experiment"), inArray(activities.entityId, expIds))]
+        : []),
+      ...(wfIds.length
+        ? [and(eq(activities.entityType, "workflow"), inArray(activities.entityId, wfIds))]
+        : []),
+    ];
+    const recentActs = await db
+      .select()
+      .from(activities)
+      .where(or(...actWhere))
+      .orderBy(desc(activities.createdAt))
+      .limit(12);
+
+    return { project, workflows: wfSummaries, expByStatus, expTotal: expRows.length, activities: recentActs };
   }),
 
   /** 项目下拉选项 */

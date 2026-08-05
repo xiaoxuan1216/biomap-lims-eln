@@ -349,6 +349,8 @@ export const workflows = mysqlTable("workflows", {
     .default("draft")
     .notNull(),
   projectId: bigint("projectId", { mode: "number", unsigned: true }),
+  /** 归属的实验任务（项目 → 任务 → 业务流 三级追踪链） */
+  experimentId: bigint("experimentId", { mode: "number", unsigned: true }),
   /** 子流程：指向父流程与父节点（穿透式层级 DAG） */
   parentWorkflowId: bigint("parentWorkflowId", { mode: "number", unsigned: true }),
   parentNodeId: bigint("parentNodeId", { mode: "number", unsigned: true }),
