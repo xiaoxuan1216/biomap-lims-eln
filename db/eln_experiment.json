@@ -1,0 +1,88 @@
+{
+  "project": {
+    "name": "重组抗体表达与表征",
+    "description": "以 Trastuzumab scFv（抗 HER2）为模型分子，打通分子克隆 → E. coli 重组表达 → 纯化 → 结构与亲和力表征的全流程；表达与纯化段配套全自动分子克隆机械臂子流程（BioFlow）。",
+    "color": "cyan",
+    "status": "active"
+  },
+  "experiment": {
+    "code": "EXP-0013",
+    "title": "Trastuzumab scFv（抗 HER2）重组表达与纯化",
+    "objective": "建立 Trastuzumab scFv（抗 HER2，VH-(G4S)3-VL，C 端 6×His，250 aa，理论 27.6 kDa）的 E. coli BL21(DE3) 重组表达与 Ni-NTA 亲和 + SEC 两步纯化工艺，获得单体纯度 >95% 的蛋白样品（目标产量 ≥5 mg/L），完成入库并支撑后续 SPR 亲和力测定。",
+    "status": "signed",
+    "createdByName": "登月者7772",
+    "signedByName": "登月者7772",
+    "createdAt": "2026-08-02 09:15:00",
+    "updatedAt": "2026-08-05 10:28:00",
+    "signedAt": "2026-08-05 10:30:00",
+    "blocks": [
+      { "id": "e1", "type": "heading", "text": "一、实验目的" },
+      { "id": "e2", "type": "text", "text": "在 E. coli BL21(DE3) 中重组表达抗 HER2 单链抗体 Trastuzumab scFv（VH-(G4S)3-VL，C 端 6×His 标签，250 aa，理论分子量 27.6 kDa，结构参考 PDB 1N8Z），经 Ni-NTA 亲和层析 + 凝胶过滤（SEC）精纯，获得单体纯度 >95%、产量 ≥5 mg/L 的蛋白样品，用于后续 SPR 亲和力测定与 HER2 内吞实验。" },
+      { "id": "e3", "type": "heading", "text": "二、实验设计" },
+      { "id": "e4", "type": "text", "text": "表达载体 pET-28a-antiHER2-scFv（KanR，T7/lac 系统；构建见业务流「重组抗体表达与表征 Pipeline」全自动分子克隆子流程，Sanger 测序验证通过）。诱导条件采用低温策略：OD600 0.6–0.8 时加入 IPTG 0.5 mM，16 °C 诱导 16 h（预实验显示 25/37 °C 包涵体比例 >60%，16 °C 可溶比例最高）。纯化路线：Ni-NTA 亲和捕获 → Superdex 75 SEC 精纯去除聚集体，全程 4 °C。" },
+      { "id": "e5", "type": "heading", "text": "三、材料与试剂" },
+      { "id": "e6", "type": "checklist", "items": [
+        { "id": "m1", "text": "pET-28a-antiHER2-scFv 表达质粒（SMP-319701，领用 1 管）", "done": true },
+        { "id": "m2", "text": "BL21(DE3) 化学感受态细胞", "done": true },
+        { "id": "m3", "text": "LB 培养基 + Kan 50 µg/mL", "done": true },
+        { "id": "m4", "text": "IPTG 储液 1 M（-20 °C）", "done": true },
+        { "id": "m5", "text": "Ni-NTA 填料 5 mL 柱", "done": true },
+        { "id": "m6", "text": "Superdex 75 10/300 GL 凝胶过滤柱", "done": true },
+        { "id": "m7", "text": "裂解液：50 mM Tris-HCl pH 8.0 + 300 mM NaCl + 10 mM 咪唑 + 1 mM PMSF", "done": true },
+        { "id": "m8", "text": "洗脱液：同缓冲液 + 250 mM 咪唑；SEC 流动相：PBS pH 7.4", "done": true }
+      ] },
+      { "id": "e7", "type": "heading", "text": "四、仪器设备" },
+      { "id": "e8", "type": "checklist", "items": [
+        { "id": "v1", "text": "恒温振荡培养箱（37 °C / 16 °C，220 rpm，2 L 锥形瓶）", "done": true },
+        { "id": "v2", "text": "高速冷冻离心机（收菌 8000 ×g；裂解上清 20000 ×g）", "done": true },
+        { "id": "v3", "text": "超声波细胞破碎仪（冰浴，3 s 开 / 5 s 关，共 12 min）", "done": true },
+        { "id": "v4", "text": "蛋白纯化系统（Ni-NTA 与 SEC，UV 280 nm 监测）", "done": true },
+        { "id": "v5", "text": "多功能酶标仪（BCA 蛋白定量，562 nm）", "done": true },
+        { "id": "v6", "text": "生物分析仪（纯度与分子量复核）", "done": true }
+      ] },
+      { "id": "e9", "type": "heading", "text": "五、实验步骤" },
+      { "id": "e10", "type": "text", "text": "5.1 转化与接种（Day 1）：取 1 管质粒（约 100 ng）热激转化 BL21(DE3)，涂布 LB + Kan 平板，37 °C 过夜；挑取单克隆接种 5 mL LB + Kan，37 °C 220 rpm 过夜作为种子液。" },
+      { "id": "e11", "type": "checklist", "items": [
+        { "id": "s1", "text": "热激转化：42 °C 60 s，SOC 复苏 1 h，涂板（克隆数 >200，无卫星斑）", "done": true },
+        { "id": "s2", "text": "挑 3 个单克隆小摇验证，取 1 株接种 1 L LB + Kan（1:100），37 °C 220 rpm", "done": true },
+        { "id": "s3", "text": "OD600 达 0.72 时降温至 16 °C，平衡 30 min", "done": true }
+      ] },
+      { "id": "e12", "type": "checklist", "items": [
+        { "id": "s4", "text": "加入 IPTG 至终浓度 0.5 mM，16 °C 诱导 16 h（Day 2 晚 → Day 3）", "done": true },
+        { "id": "s5", "text": "收菌：8000 ×g，4 °C，15 min；菌体湿重 3.2 g/L", "done": true },
+        { "id": "s6", "text": "重悬于裂解液（1:10 w/v），超声破碎，20000 ×g 离心 40 min 取上清（可溶组分）", "done": true }
+      ] },
+      { "id": "e13", "type": "checklist", "items": [
+        { "id": "s7", "text": "Ni-NTA：上样 → 20 mM 咪唑洗涤 → 250 mM 咪唑线性洗脱，收集主峰", "done": true },
+        { "id": "s8", "text": "洗脱峰浓缩至 2 mL（10 kDa 超滤管），上 Superdex 75，PBS 1 mL/min 收集单体峰", "done": true },
+        { "id": "s9", "text": "BCA 定量、生物分析仪质控；分装 3 管 × 200 µL，液氮速冻，-80 °C 入库（SMP-319695）", "done": true }
+      ] },
+      { "id": "e14", "type": "heading", "text": "六、结果与数据" },
+      { "id": "e15", "type": "text", "text": "表达：诱导前 OD600 = 0.72，16 °C × 16 h 后 OD600 = 1.85；菌体湿重 3.2 g/L；可溶上清占总蛋白约 45%（超声后沉淀重溶对照估算）。" },
+      { "id": "e16", "type": "text", "text": "纯化：Ni-NTA 洗脱主峰于 250 mM 咪唑段，回收率约 78%；SEC 出现明显单体峰（Ve ≈ 11.8 mL，对应约 27–28 kDa）与少量聚集体前沿峰（<8%），合并单体峰管。" },
+      { "id": "e17", "type": "text", "text": "质控：BCA 终浓度 1.24 mg/mL，总回收 6.8 mg/L 培养物；生物分析仪纯度 96.3%，表观分子量 ≈ 28 kDa，与理论 27.6 kDa 一致；SEC 单体峰面积占比 96.9%；内毒素待检。" },
+      { "id": "e18", "type": "heading", "text": "七、结果分析" },
+      { "id": "e19", "type": "text", "text": "低温诱导策略有效：可溶表达比例约 45%，较 25 °C 预实验（约 22%）显著提升，与 scFv 在胞质中折叠速率较慢的特性一致。(G4S)3 柔性接头与 C 端 His6 设计未影响表达量；SEC 单体峰保留体积与 1N8Z 单体结构预期相符。产量 6.8 mg/L 超过 5 mg/L 目标；聚集体比例 <10% 属正常范围，已被 SEC 去除。" },
+      { "id": "e20", "type": "heading", "text": "八、偏差与异常" },
+      { "id": "e21", "type": "text", "text": "1) Day 2 大摇一瓶（500 mL 中试）出现杂菌污染（镜检见杆菌形态异常），整瓶高压灭活丢弃，数据仅基于剩余 1 L；2) Ni-NTA 洗脱尾部轻微拖尾，推测为非特异结合的宿主蛋白，已通过 SEC 去除，不影响终产品纯度；3) BCA 定量重复孔 CV = 3.1%，在可接受范围内。" },
+      { "id": "e22", "type": "heading", "text": "九、结论与下一步" },
+      { "id": "e23", "type": "text", "text": "成功建立 Trastuzumab scFv 的可溶表达与两步纯化工艺：产量 6.8 mg/L，单体纯度 96.9%，样品已分装入库（SMP-319695，3 管 × 200 µL，-80 °C），全生命周期谱系可在样本库中向上追溯至表达质粒与基因片段。本实验记录内容完整、数据可追溯，提交电子签署。" },
+      { "id": "e24", "type": "checklist", "items": [
+        { "id": "n1", "text": "样品入库登记：SMP-319695 Trastuzumab scFv 纯化蛋白（抗 HER2）", "done": true },
+        { "id": "n2", "text": "SPR 亲和力测定（HER2 胞外域，预期 KD ≈ 5 nM）—— 新建实验任务", "done": false },
+        { "id": "n3", "text": "内毒素检测（LAL 法，用于细胞实验前放行）", "done": false },
+        { "id": "n4", "text": "表达条件 DOE 优化（诱导温度 × IPTG 浓度）列入下迭代 DBTL", "done": false }
+      ] }
+    ]
+  },
+  "consume": [
+    { "sampleId": 319701, "amount": 1, "note": "热激转化 BL21(DE3) 感受态" }
+  ],
+  "linkWorkflowId": 134264,
+  "activities": [
+    { "action": "创建了实验", "entityType": "experiment", "detail": "项目「重组抗体表达与表征」", "createdAt": "2026-08-02 09:15:00" },
+    { "action": "消耗了样本", "entityType": "sample", "entityId": 319701, "entityName": "pET-28a-antiHER2-scFv 表达质粒", "detail": "EXP-0013 领用 1 管", "createdAt": "2026-08-02 09:40:00" },
+    { "action": "更新了实验记录", "entityType": "experiment", "detail": "补充结果与数据章节", "createdAt": "2026-08-04 18:12:00" },
+    { "action": "签署了实验记录", "entityType": "experiment", "detail": "电子签署，记录锁定", "createdAt": "2026-08-05 10:30:00" }
+  ]
+}
