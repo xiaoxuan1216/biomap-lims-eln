@@ -122,6 +122,11 @@ export const NODE_PALETTE: NodeGroup[] = [
       { key: "e_facs", type: "equipment", label: "FACS 分选", description: "荧光激活细胞分选" },
       { key: "e_spr", type: "equipment", label: "SPR / BLI 亲和力检测", description: "KD / kon / koff 测定" },
       { key: "e_dsf", type: "equipment", label: "DSF / DSC 稳定性检测", description: "Tm / Tagg 测定" },
+      { key: "e_hamilton_cleanup", type: "equipment", label: "Hamilton STAR V 纯化定量", description: "磁珠法 PCR 产物纯化与 Qubit 定量" },
+      { key: "e_hamilton_gibson", type: "equipment", label: "Hamilton VANTAGE 体系构建", description: "Gibson / PCR 体系自动化构建" },
+      { key: "e_biomek_colony", type: "equipment", label: "Biomek i7 挑菌分液", description: "96 深孔板克隆接种与分液" },
+      { key: "e_mgi_g400", type: "equipment", label: "MGI DNBSEQ-G400 测序", description: "扩增子 PE150 高通量测序" },
+      { key: "e_ont_minion", type: "equipment", label: "ONT MinION Mk1B 测序", description: "质粒全长纳米孔验证测序" },
     ],
   },
   {
@@ -243,6 +248,206 @@ export const EQUIP_PARAM_SCHEMAS: Record<string, ParamField[]> = {
   ],
 };
 
+// ─── 具体仪器指令档案（厂商型号级：板位 / 体积 / 方法脚本） ───
+
+export interface BiText {
+  zh: string;
+  en: string;
+}
+
+export interface InstrumentDeckSlot {
+  pos: string;
+  labware: BiText;
+  content: BiText;
+}
+
+export interface InstrumentParam {
+  label: BiText;
+  value: string;
+}
+
+export interface InstrumentProfile {
+  key: string;
+  vendor: string;
+  model: string;
+  software: string;
+  /** 厂商方法 / 脚本文件名（与厂家软件联动） */
+  methodFile: string;
+  /** 台面板位布局（测序仪为上机配置） */
+  deckLayout: InstrumentDeckSlot[];
+  /** 关键运行参数（体积 / 比例 / 循环等） */
+  params: InstrumentParam[];
+  /** 自动运行步骤 */
+  steps: BiText[];
+  /** 耗材与注意事项 */
+  tips: BiText;
+}
+
+export const INSTRUMENT_PROFILES: Record<string, InstrumentProfile> = {
+  e_hamilton_cleanup: {
+    key: "e_hamilton_cleanup",
+    vendor: "Hamilton",
+    model: "Microlab STAR V",
+    software: "VENUS 6.1",
+    methodFile: "PCR_Cleanup_AmpureXP_v3.2.med",
+    deckLayout: [
+      { pos: "P1", labware: { zh: "96 孔 PCR 板（样本）", en: "96-well PCR plate (samples)" }, content: { zh: "PCR 产物 50 µL/孔 ×8", en: "PCR products, 50 µL/well ×8" } },
+      { pos: "P2", labware: { zh: "试剂槽", en: "Reagent trough" }, content: { zh: "AMPure XP 磁珠（1.8×）", en: "AMPure XP beads (1.8×)" } },
+      { pos: "P3", labware: { zh: "试剂槽", en: "Reagent trough" }, content: { zh: "80% 乙醇（新鲜配制）", en: "80% ethanol (freshly prepared)" } },
+      { pos: "P4", labware: { zh: "试剂槽", en: "Reagent trough" }, content: { zh: "Buffer EB 洗脱液", en: "Buffer EB eluent" } },
+      { pos: "P5", labware: { zh: "300 µL 吸头架 ×2", en: "300 µL tip racks ×2" }, content: { zh: "CO-RE II 滤芯吸头", en: "CO-RE II filter tips" } },
+      { pos: "P6", labware: { zh: "Alpaqua 96S 磁力架", en: "Alpaqua 96S magnet plate" }, content: { zh: "磁珠分离位", en: "Bead separation position" } },
+      { pos: "P7", labware: { zh: "Qubit 管架", en: "Qubit tube rack" }, content: { zh: "dsDNA HS 定量（2 µL 上样）", en: "dsDNA HS assay (2 µL load)" } },
+    ],
+    params: [
+      { label: { zh: "磁珠比例", en: "Bead ratio" }, value: "1.8× (90 µL)" },
+      { label: { zh: "结合时间", en: "Binding time" }, value: "5 min" },
+      { label: { zh: "漂洗", en: "Washes" }, value: "200 µL ×2 (80% EtOH)" },
+      { label: { zh: "洗脱体积", en: "Elution volume" }, value: "40 µL EB" },
+      { label: { zh: "混匀", en: "Mixing" }, value: "Mix ×10 @ 150 µL/s" },
+      { label: { zh: "通道模式", en: "Channels" }, value: "8-ch independent" },
+    ],
+    steps: [
+      { zh: "台面自检与吸头装载（Deck Scan）", en: "Deck scan & tip loading" },
+      { zh: "磁珠重悬后按 1.8× 加入样本，吹打混匀", en: "Resuspend beads, add to samples at 1.8×, mix" },
+      { zh: "室温结合 5 min，磁力架分离 3 min，弃上清", en: "Bind 5 min RT, separate on magnet 3 min, discard supernatant" },
+      { zh: "80% 乙醇漂洗两次（200 µL ×2）", en: "Two 80% ethanol washes (200 µL ×2)" },
+      { zh: "室温干燥 5 min，40 µL EB 洗脱", en: "Air-dry 5 min, elute in 40 µL EB" },
+      { zh: "Qubit dsDNA HS 定量，浓度回写 LIMS", en: "Qubit dsDNA HS quantification, results written back to LIMS" },
+    ],
+    tips: {
+      zh: "耗材：CO-RE II 300 µL 滤芯吸头；AMPure XP 需室温平衡 30 min 后使用",
+      en: "Consumables: CO-RE II 300 µL filter tips; equilibrate AMPure XP at RT for 30 min before use",
+    },
+  },
+  e_hamilton_gibson: {
+    key: "e_hamilton_gibson",
+    vendor: "Hamilton",
+    model: "Microlab VANTAGE",
+    software: "VENUS 6.1 · 台面制冷载台",
+    methodFile: "Gibson_Assembly_Setup_v1.8.med",
+    deckLayout: [
+      { pos: "P1", labware: { zh: "96 孔 PCR 板（反应板）", en: "96-well PCR plate (reactions)" }, content: { zh: "4°C 预冷", en: "Pre-chilled at 4°C" } },
+      { pos: "P2", labware: { zh: "载体管架", en: "Vector tube rack" }, content: { zh: "线性化载体 50 ng/µL", en: "Linearized vector, 50 ng/µL" } },
+      { pos: "P3", labware: { zh: "片段管架", en: "Insert tube rack" }, content: { zh: "VH / VL 纯化片段", en: "Purified VH / VL fragments" } },
+      { pos: "P4", labware: { zh: "试剂槽（冰浴）", en: "Reagent trough (on ice)" }, content: { zh: "2× Gibson Master Mix (NEB E2611)", en: "2× Gibson Master Mix (NEB E2611)" } },
+      { pos: "P5", labware: { zh: "50 µL 吸头架 ×2", en: "50 µL tip racks ×2" }, content: { zh: "低吸附滤芯吸头", en: "Low-retention filter tips" } },
+    ],
+    params: [
+      { label: { zh: "片段 : 载体摩尔比", en: "Insert : vector molar ratio" }, value: "3 : 1" },
+      { label: { zh: "载体用量", en: "Vector input" }, value: "50 ng" },
+      { label: { zh: "反应总体积", en: "Reaction volume" }, value: "20 µL（Mix 10 µL）" },
+      { label: { zh: "加样顺序", en: "Pipetting order" }, value: "Mix → Vector → Insert" },
+      { label: { zh: "混匀", en: "Mixing" }, value: "Mix ×10 @ 50% speed" },
+      { label: { zh: "保温", en: "Incubation" }, value: "50°C × 60 min（PCR 仪）" },
+    ],
+    steps: [
+      { zh: "台面 4°C 预冷并完成自检", en: "Pre-chill deck to 4°C and run self-check" },
+      { zh: "各孔分配 2× Gibson Master Mix 10 µL", en: "Dispense 10 µL 2× Gibson Master Mix per well" },
+      { zh: "按 3:1 摩尔比计算并加入载体与片段", en: "Add vector and inserts at 3:1 molar ratio" },
+      { zh: "低速吹打混匀 10 次，避免气泡", en: "Mix by gentle pipetting ×10, avoid bubbles" },
+      { zh: "封膜，导出加样记录 CSV 并回写实", en: "Seal plate, export pipetting log CSV back to ELN" },
+      { zh: "转移 PCR 仪：50°C × 60 min → 4°C 保持", en: "Transfer to cycler: 50°C × 60 min → 4°C hold" },
+    ],
+    tips: {
+      zh: "NEB E2611 全程冰上操作；加样记录自动写入实验日志，体积误差 < 5%",
+      en: "Keep NEB E2611 on ice throughout; pipetting log auto-written to ELN, volume error < 5%",
+    },
+  },
+  e_biomek_colony: {
+    key: "e_biomek_colony",
+    vendor: "Beckman Coulter",
+    model: "Biomek i7 Hybrid",
+    software: "Biomek Software 5.1",
+    methodFile: "Colony_Inoculation_96DW_v2.4.bmf",
+    deckLayout: [
+      { pos: "P1", labware: { zh: "96 深孔板（2.2 mL 方孔）", en: "96 deep-well plate (2.2 mL square)" }, content: { zh: "LB + Kan 50 µg/mL，1 mL/孔", en: "LB + Kan 50 µg/mL, 1 mL/well" } },
+      { pos: "P2", labware: { zh: "源板位", en: "Source position" }, content: { zh: "转化平板（已挑单克隆）", en: "Transformation plates (picked colonies)" } },
+      { pos: "P3", labware: { zh: "P1000 吸头盒", en: "P1000 tip box" }, content: { zh: "Span-8 用无菌吸头", en: "Sterile tips for Span-8" } },
+      { pos: "P4", labware: { zh: "废弃位", en: "Waste position" }, content: { zh: "吸头废弃槽", en: "Tip waste chute" } },
+    ],
+    params: [
+      { label: { zh: "培养基分液", en: "Media dispense" }, value: "1000 µL/well" },
+      { label: { zh: "接种转移", en: "Inoculum transfer" }, value: "50 µL" },
+      { label: { zh: "通道", en: "Channels" }, value: "Span-8（P1000）" },
+      { label: { zh: "培养", en: "Culture" }, value: "37°C · 220 rpm × 16 h" },
+      { label: { zh: "追溯", en: "Traceability" }, value: "Well-to-colony mapping" },
+    ],
+    steps: [
+      { zh: "深孔板自动分液 LB + Kan 1 mL/孔", en: "Auto-dispense 1 mL/well LB + Kan into deep-well plate" },
+      { zh: "人工挑取单克隆至对应孔位，扫码确认映射", en: "Pick single colonies into mapped wells, scan to confirm" },
+      { zh: "透气封板膜封口", en: "Seal with breathable film" },
+      { zh: "转移 37°C 摇床 220 rpm 培养 16 h", en: "Transfer to 37°C shaker, 220 rpm, 16 h" },
+      { zh: "取样 2 µL 作为菌落 PCR 模板", en: "Sample 2 µL as colony-PCR template" },
+    ],
+    tips: {
+      zh: "孔位-克隆映射表自动回写 LIMS，杜绝克隆错位",
+      en: "Well-to-colony mapping auto-written to LIMS, eliminating clone misplacement",
+    },
+  },
+  e_mgi_g400: {
+    key: "e_mgi_g400",
+    vendor: "MGI 华大智造",
+    model: "DNBSEQ-G400",
+    software: "DNBSEQ-G400RS 控制软件 · ZLIMS",
+    methodFile: "RunConfig_G400_FCL_PE150.xml",
+    deckLayout: [
+      { pos: "Slot A", labware: { zh: "FCL 测序芯片", en: "FCL flow cell" }, content: { zh: "2 lane · PE150", en: "2 lanes · PE150" } },
+      { pos: "Reagent", labware: { zh: "FCL PE150 测序试剂盒", en: "FCL PE150 sequencing kit" }, content: { zh: "DNBSEQ-G400RS 高通量试剂套装", en: "DNBSEQ-G400RS high-throughput reagent set" } },
+      { pos: "Sample", labware: { zh: "DNB 文库管", en: "DNB library tube" }, content: { zh: "扩增子双 barcode 环化文库，8 克隆混样", en: "Dual-barcoded circularized amplicon library, 8 clones pooled" } },
+    ],
+    params: [
+      { label: { zh: "读长", en: "Read length" }, value: "PE150" },
+      { label: { zh: "数据量", en: "Output" }, value: "≥1 Gb / sample" },
+      { label: { zh: "Q30", en: "Q30" }, value: "≥85%" },
+      { label: { zh: "拆分", en: "Demultiplexing" }, value: "Dual-barcode exact match" },
+      { label: { zh: "运行时长", en: "Run time" }, value: "≈36 h" },
+    ],
+    steps: [
+      { zh: "扩增子加接头与双 barcode（MGIEasy UDB）", en: "Ligate adapters & dual barcodes (MGIEasy UDB)" },
+      { zh: "单链环化制备 ssCir DNA", en: "Circularize to ssCir DNA" },
+      { zh: "DNB 制备与自动加载", en: "DNB preparation and auto-loading" },
+      { zh: "上机 PE150 测序（2 lane FCL）", en: "Sequence PE150 on FCL flow cell" },
+      { zh: "basecall 与 barcode 拆分，FASTQ 自动归档", en: "Basecall & demultiplex, auto-archive FASTQ" },
+    ],
+    tips: {
+      zh: "8 克隆混样单 lane 即可；Q30 与拆分率自动写入测序报告",
+      en: "8 clones fit in a single lane; Q30 & demux rate auto-written to run report",
+    },
+  },
+  e_ont_minion: {
+    key: "e_ont_minion",
+    vendor: "Oxford Nanopore",
+    model: "MinION Mk1B",
+    software: "MinKNOW 24.06 · Dorado SUP v5",
+    methodFile: "SQK-NBD114.24 Native Barcode · FLO-MIN114",
+    deckLayout: [
+      { pos: "Flow cell", labware: { zh: "FLO-MIN114（R10.4.1）", en: "FLO-MIN114 (R10.4.1)" }, content: { zh: "可用孔 ≥800", en: "≥800 available pores" } },
+      { pos: "Library", labware: { zh: "Native barcode 连接文库", en: "Native-barcoded ligation library" }, content: { zh: "8 质粒等摩尔混样", en: "8 plasmids, equimolar pool" } },
+      { pos: "Buffer", labware: { zh: "Flow Cell Priming Kit (EXP-FLP002)", en: "Flow Cell Priming Kit (EXP-FLP002)" }, content: { zh: "priming ×2 次", en: "Prime ×2" } },
+    ],
+    params: [
+      { label: { zh: "运行时长", en: "Run time" }, value: "12 h (early stop OK)" },
+      { label: { zh: "碱基识别", en: "Basecalling" }, value: "Dorado SUP v5" },
+      { label: { zh: "读长", en: "Read length" }, value: "N50 > 5 kb (spans plasmid)" },
+      { label: { zh: "混样", en: "Multiplex" }, value: "8 native barcodes" },
+      { label: { zh: "产出", en: "Output" }, value: "≈2–5 Gb" },
+    ],
+    steps: [
+      { zh: "质粒定量并等摩尔混样（200 fmol/样本）", en: "Quantify plasmids and pool equimolar (200 fmol/sample)" },
+      { zh: "末端修复 + native barcode 连接", en: "End-prep + native barcode ligation" },
+      { zh: "测序接头连接，磁珠纯化", en: "Adapter ligation, bead cleanup" },
+      { zh: "芯片 priming 后上样 50 fmol", en: "Prime flow cell, load 50 fmol" },
+      { zh: "MinKNOW 运行 12 h，Dorado SUP 实时碱基识别", en: "Run 12 h in MinKNOW with live Dorado SUP basecalling" },
+      { zh: "全长一致性序列与参考比对", en: "Align full-length consensus to reference" },
+    ],
+    tips: {
+      zh: "全长读长直接跨越载体重复元件，无需短读长拼接",
+      en: "Full-length reads span vector repeats directly — no short-read assembly needed",
+    },
+  },
+};
+
 // ─── 时间控制节点参数 ───
 
 export const TIMER_UNITS: Record<string, string> = { min: "分钟", h: "小时", d: "天" };
@@ -264,6 +469,10 @@ export function nodeParamSummary(
         unit: tr(TIMER_UNITS[String(params.unit)] ?? String(params.unit ?? "h")),
       });
     return tr("等待前置完成");
+  }
+  if (nodeType === "equipment" && templateKey && INSTRUMENT_PROFILES[templateKey]) {
+    const p = INSTRUMENT_PROFILES[templateKey];
+    return `${p.vendor} ${p.model} · ${p.methodFile}`;
   }
   if (nodeType === "equipment" && templateKey && params) {
     const schema = EQUIP_PARAM_SCHEMAS[templateKey] ?? [];
@@ -639,17 +848,18 @@ export const SUBFLOW_TEMPLATES: Record<string, SubflowTemplate> = {
     nodes: [
       { key: "n1", type: "manual", templateKey: "m_pcr", label: "片段 PCR（VH / VL）", owner: "王工", config: "高保真酶，退火 60°C × 30 循环", x: 0, y: 0 },
       { key: "n2", type: "manual", templateKey: "m_gel", label: "凝胶电泳质检", owner: "王工", config: "1% 琼脂糖，确认片段大小", x: 300, y: 0 },
-      { key: "n3", type: "equipment", templateKey: "e_qpcr", label: "PCR 产物定量", owner: "王工", x: 600, y: 0 },
-      { key: "n4", type: "manual", templateKey: "m_gibson", label: "Gibson 连接（片段:载体 = 3:1）", owner: "王工", config: "50°C 等温组装 60 min", x: 900, y: 0 },
+      { key: "n3", type: "equipment", templateKey: "e_hamilton_cleanup", label: "PCR 产物纯化定量（Hamilton STAR V）", owner: "王工", x: 600, y: 0 },
+      { key: "n4", type: "equipment", templateKey: "e_hamilton_gibson", label: "Gibson 连接体系构建（VANTAGE）", owner: "王工", config: "50°C 等温组装 60 min", x: 900, y: 0 },
       { key: "n5", type: "manual", templateKey: "m_transform", label: "感受态转化（DH5α）", owner: "李工", config: "热激 42°C 45 s", x: 1200, y: 0 },
-      { key: "n6", type: "manual", label: "涂布平板（Amp+）", owner: "李工", x: 1500, y: 0 },
+      { key: "n6", type: "manual", label: "涂布平板（Kan+）", owner: "李工", x: 1500, y: 0 },
       { key: "n7", type: "equipment", templateKey: "e_incubate", label: "平板培养（37°C，16 h）", owner: "李工", x: 1800, y: 0 },
-      { key: "n8", type: "manual", templateKey: "m_pick_clone", label: "挑取单克隆（×8）", owner: "李工", x: 1800, y: 260 },
-      { key: "n9", type: "equipment", templateKey: "e_seq", label: "Sanger 测序", owner: "张工", x: 1500, y: 260 },
+      { key: "n8", type: "equipment", templateKey: "e_biomek_colony", label: "挑菌接种 96 深孔板（Biomek i7）", owner: "李工", x: 1800, y: 260 },
+      { key: "n9", type: "equipment", templateKey: "e_mgi_g400", label: "插入片段扩增子测序（MGI G400）", owner: "张工", x: 1500, y: 260 },
       { key: "n10", type: "data", templateKey: "p_seq_align", label: "序列比对分析", owner: "张工", x: 1200, y: 260 },
       { key: "n11", type: "decision", templateKey: "d_seq_match", label: "测序正确？", x: 900, y: 250 },
       { key: "n12", type: "equipment", templateKey: "e_incubate", label: "摇菌培养（37°C，220 rpm）", owner: "李工", x: 600, y: 260 },
       { key: "n13", type: "manual", templateKey: "m_plasmid_prep", label: "质粒抽提（Miniprep）", owner: "李工", x: 300, y: 260 },
+      { key: "n16", type: "equipment", templateKey: "e_ont_minion", label: "质粒全长验证测序（ONT MinION）", owner: "张工", x: 150, y: 440 },
       { key: "n14", type: "data", templateKey: "p_archive", label: "阳性克隆归档", owner: "张工", x: 0, y: 260 },
       { key: "n15", type: "manual", label: "失败排查 · 重新挑菌", owner: "李工", config: "检查连接效率 / 感受态效率，扩大挑菌数量", x: 900, y: 500 },
     ],
@@ -667,7 +877,8 @@ export const SUBFLOW_TEMPLATES: Record<string, SubflowTemplate> = {
       { from: "n11", to: "n12", sourceHandle: "yes", label: "是" },
       { from: "n11", to: "n15", sourceHandle: "no", label: "否" },
       { from: "n12", to: "n13" },
-      { from: "n13", to: "n14" },
+      { from: "n13", to: "n16" },
+      { from: "n16", to: "n14" },
     ],
   },
 };

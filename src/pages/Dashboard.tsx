@@ -20,6 +20,7 @@ import {
 import { Link, useNavigate } from "react-router";
 import { ALERT_LABELS, fmtDate, sampleAlert, timeAgo, SAMPLE_TYPES } from "@/lib/labels";
 import { useI18n } from "@/i18n";
+import CommandDeck from "@/components/command/CommandDeck";
 import {
   BarChart,
   Bar,
@@ -82,6 +83,9 @@ export default function Dashboard() {
           </p>
         </div>
       </div>
+
+      {/* 超级指令入口：脱离 GUI 的会话式指令下发 */}
+      <CommandDeck />
 
       {/* 预警条 */}
       {stats && (stats.expired > 0 || stats.lowStock > 0) && (

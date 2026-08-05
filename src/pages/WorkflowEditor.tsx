@@ -24,7 +24,9 @@ import {
   FLOW_NODE_STATUS,
   WORKFLOW_STATUS,
   EQUIP_PARAM_SCHEMAS,
+  INSTRUMENT_PROFILES,
   TIMER_UNITS,
+  type InstrumentProfile,
   type NodeTemplate,
   type FlowNodeStatus,
   type NodeParams,
@@ -54,6 +56,10 @@ import {
   ChevronRight,
   Network,
   Workflow,
+  FileCode2,
+  LayoutGrid,
+  ListOrdered,
+  Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { setCopilotContext } from "@/lib/copilotContext";
@@ -771,6 +777,12 @@ function NodeInspector({
       )}
       {node.data.nodeType === "equipment" &&
         node.data.templateKey &&
+        INSTRUMENT_PROFILES[node.data.templateKey] && (
+          <InstrumentCard profile={INSTRUMENT_PROFILES[node.data.templateKey]} />
+        )}
+      {node.data.nodeType === "equipment" &&
+        node.data.templateKey &&
+        !INSTRUMENT_PROFILES[node.data.templateKey] &&
         EQUIP_PARAM_SCHEMAS[node.data.templateKey] && (
           <div className="space-y-2">
             <Label>{t("方法 / 参数")}</Label>
@@ -888,6 +900,88 @@ function NodeInspector({
       <Button variant="destructive" size="sm" className="w-full" onClick={onDelete}>
         <Trash2 className="h-3.5 w-3.5 mr-1" /> {t("删除节点")}
       </Button>
+    </div>
+  );
+}
+
+/** 具体仪器指令卡：厂商型号 / 方法脚本 / 台面板位 / 运行参数 / 自动步骤 */
+function InstrumentCard({ profile }: { profile: InstrumentProfile }) {
+  const { t, lang } = useI18n();
+  const bi = (b: { zh: string; en: string }) => (lang === "en" ? b.en : b.zh);
+  return (
+    <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50/50 p-3">
+      <div className="flex items-center gap-2">
+        <span className="flex h-7 w-7 items-center justify-center rounded-md bg-sky-600 text-[10px] font-bold text-white">
+          {profile.vendor.slice(0, 2).toUpperCase()}
+        </span>
+        <div className="min-w-0">
+          <div className="text-xs font-semibold text-sky-900">
+            {profile.vendor} {profile.model}
+          </div>
+          <div className="text-[10px] text-sky-600">{profile.software}</div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1.5 rounded-md bg-white/80 border border-sky-100 px-2 py-1.5">
+        <FileCode2 className="h-3.5 w-3.5 text-sky-600 shrink-0" />
+        <div className="min-w-0">
+          <div className="text-[10px] text-slate-500">{t("方法脚本文件")}</div>
+          <div className="text-[11px] font-mono text-slate-800 truncate">{profile.methodFile}</div>
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-1 flex items-center gap-1 text-[11px] font-medium text-slate-600">
+          <LayoutGrid className="h-3 w-3 text-sky-600" /> {t("台面板位 / 上机配置")}
+        </div>
+        <div className="overflow-hidden rounded-md border border-sky-100 bg-white/80">
+          {profile.deckLayout.map((d) => (
+            <div key={d.pos} className="grid grid-cols-[44px_1fr] gap-x-2 border-b border-sky-50 px-2 py-1 last:border-0">
+              <span className="font-mono text-[10px] font-semibold text-sky-700 pt-px">{d.pos}</span>
+              <span className="text-[10px] text-slate-700 leading-snug">
+                <b className="font-medium">{bi(d.labware)}</b>
+                <span className="text-slate-400"> · </span>
+                {bi(d.content)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-1 flex items-center gap-1 text-[11px] font-medium text-slate-600">
+          <Cog className="h-3 w-3 text-sky-600" /> {t("关键运行参数")}
+        </div>
+        <div className="grid grid-cols-2 gap-1">
+          {profile.params.map((p) => (
+            <div key={p.label.zh} className="rounded-md border border-sky-100 bg-white/80 px-2 py-1">
+              <div className="text-[9px] text-slate-500">{bi(p.label)}</div>
+              <div className="text-[10px] font-medium text-slate-800">{p.value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-1 flex items-center gap-1 text-[11px] font-medium text-slate-600">
+          <ListOrdered className="h-3 w-3 text-sky-600" /> {t("自动运行步骤")}
+        </div>
+        <ol className="space-y-1">
+          {profile.steps.map((s, i) => (
+            <li key={i} className="flex gap-1.5 text-[10px] text-slate-700 leading-snug">
+              <span className="mt-px flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-sky-100 text-[8px] font-bold text-sky-700">
+                {i + 1}
+              </span>
+              {bi(s)}
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      <div className="flex gap-1.5 rounded-md bg-amber-50 border border-amber-100 px-2 py-1.5">
+        <Info className="h-3 w-3 text-amber-600 shrink-0 mt-px" />
+        <span className="text-[10px] text-amber-800 leading-snug">{bi(profile.tips)}</span>
+      </div>
     </div>
   );
 }

@@ -18,7 +18,7 @@ const OWNER_EN: Record<string, string> = {
   公共: "Shared",
   演示用户: "Demo User",
 };
-function trForLang(s: string, lang?: string): string {
+export function trForLang(s: string, lang?: string): string {
   if (lang !== "en" || !s) return s;
   return en[s] ?? OWNER_EN[s] ?? s;
 }
@@ -76,7 +76,7 @@ function hasCycle(nodeKeys: string[], edges: { sourceKey: string; targetKey: str
   return visited !== nodeKeys.length;
 }
 
-async function instantiateTemplate(workflowId: number, templateKey: string, lang?: string) {
+export async function instantiateTemplate(workflowId: number, templateKey: string, lang?: string) {
   const tpl = WORKFLOW_TEMPLATES.find((t) => t.key === templateKey);
   if (!tpl) return;
   const db = getDb();
