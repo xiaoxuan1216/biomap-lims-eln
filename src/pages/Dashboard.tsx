@@ -16,11 +16,11 @@ import {
   Sparkles,
   FlaskConical,
   Gauge,
+  Bot,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { ALERT_LABELS, fmtDate, sampleAlert, timeAgo, SAMPLE_TYPES } from "@/lib/labels";
 import { useI18n } from "@/i18n";
-import CommandDeck from "@/components/command/CommandDeck";
 import {
   BarChart,
   Bar,
@@ -84,8 +84,22 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 超级指令入口：脱离 GUI 的会话式指令下发 */}
-      <CommandDeck />
+      {/* Lab Agent 入口卡：会话式指令已独立为专属工作台 */}
+      <Link
+        to="/lab-agent"
+        className="group flex items-center gap-4 rounded-xl border border-slate-200 bg-gradient-to-r from-slate-900 to-slate-800 px-5 py-4 shadow-sm transition hover:border-teal-500/40"
+      >
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-500/20">
+          <Bot className="h-5 w-5 text-teal-300" />
+        </span>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-white">Lab Agent</div>
+          <div className="mt-0.5 truncate text-[12px] text-slate-400">
+            {t("用自然语言查库存 / 预约 / 流程进度，一键创建业务流 —— 已进入独立工作台")}
+          </div>
+        </div>
+        <ArrowRight className="ml-auto h-4 w-4 shrink-0 text-slate-500 transition group-hover:translate-x-0.5 group-hover:text-teal-300" />
+      </Link>
 
       {/* 预警条 */}
       {stats && (stats.expired > 0 || stats.lowStock > 0) && (

@@ -25,6 +25,9 @@ const SAMPLE_TYPES = [
   "protein",
   "virus",
   "tissue",
+  "buffer",
+  "enzyme",
+  "competent_cell",
   "other",
 ] as const;
 

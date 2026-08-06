@@ -24,6 +24,7 @@ import {
   X,
   Network,
   MonitorCog,
+  Bot,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -39,6 +40,7 @@ const NAV_GROUPS = [
     label: "工作台",
     items: [
       { icon: LayoutDashboard, label: "仪表盘", path: "/" },
+      { icon: Bot, label: "Lab Agent", path: "/lab-agent" },
       { icon: History, label: "活动日志", path: "/activity" },
     ],
   },

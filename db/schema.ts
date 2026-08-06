@@ -68,6 +68,9 @@ export const experiments = mysqlTable(
       .default("planning")
       .notNull(),
     content: longtext("content"),
+    /** 来源业务流 + 节点（项目 → 业务流 → 节点 → ELN 条目 四级执行链） */
+    workflowId: bigint("workflowId", { mode: "number", unsigned: true }),
+    nodeKey: varchar("nodeKey", { length: 64 }),
     signedById: bigint("signedById", { mode: "number", unsigned: true }),
     signedByName: varchar("signedByName", { length: 255 }),
     signedAt: timestamp("signedAt"),
@@ -134,6 +137,9 @@ export const samples = mysqlTable(
       "protein",
       "virus",
       "tissue",
+      "buffer",
+      "enzyme",
+      "competent_cell",
       "other",
     ])
       .default("other")

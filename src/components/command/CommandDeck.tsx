@@ -21,7 +21,7 @@ interface ChatMsg {
 
 const STORAGE_KEY = "biomap-command-history";
 
-export default function CommandDeck() {
+export default function CommandDeck({ fullHeight = false }: { fullHeight?: boolean }) {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
   const [input, setInput] = useState("");
@@ -76,7 +76,13 @@ export default function CommandDeck() {
         : [];
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <div
+      className={
+        fullHeight
+          ? "flex h-full min-h-0 flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden"
+          : "rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden"
+      }
+    >
       {/* 头部 */}
       <div className="flex items-center gap-2.5 border-b border-slate-100 bg-gradient-to-r from-slate-900 to-slate-800 px-4 py-3">
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-500/20">
@@ -101,7 +107,14 @@ export default function CommandDeck() {
 
       {/* 会话区 */}
       {(msgs.length > 0 || exec.isPending) && (
-        <div ref={scrollRef} className="max-h-72 overflow-y-auto px-4 py-3 space-y-3 bg-slate-50/60">
+        <div
+          ref={scrollRef}
+          className={
+            fullHeight
+              ? "min-h-0 flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-slate-50/60"
+              : "max-h-72 overflow-y-auto px-4 py-3 space-y-3 bg-slate-50/60"
+          }
+        >
           {msgs.map((m, i) =>
             m.role === "user" ? (
               <div key={i} className="flex justify-end">

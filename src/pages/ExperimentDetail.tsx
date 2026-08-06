@@ -35,6 +35,7 @@ import {
   CheckCircle2,
   CloudUpload,
   Unlock,
+  Network,
 } from "lucide-react";
 import BlockEditor from "@/components/eln/BlockEditor";
 import { EXP_STATUS, PROJECT_COLORS, fmtDate, fmtDateTime, parseBlocks, type ElnBlock } from "@/lib/labels";
@@ -215,6 +216,17 @@ export default function ExperimentDetail() {
               className={`text-xs px-2 py-1 rounded-md ${pc.soft} hover:opacity-80`}
             >
               {exp.project.name}
+            </Link>
+          )}
+          {exp.sourceWorkflow && (
+            <Link
+              to={`/workflows/${exp.sourceWorkflow.id}`}
+              className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-slate-100 text-slate-600 hover:bg-teal-50 hover:text-teal-700"
+              title={t("打开来源业务流")}
+            >
+              <Network className="h-3 w-3" />
+              {exp.sourceWorkflow.name}
+              {exp.sourceNodeLabel ? ` / ${t("节点")}「${exp.sourceNodeLabel}」` : ""}
             </Link>
           )}
           <span className="ml-auto text-xs text-muted-foreground flex items-center gap-1.5">

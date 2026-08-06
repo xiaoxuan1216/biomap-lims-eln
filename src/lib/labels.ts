@@ -30,6 +30,9 @@ export const SAMPLE_TYPE_LIST = [
   "protein",
   "virus",
   "tissue",
+  "buffer",
+  "enzyme",
+  "competent_cell",
   "other",
 ] as const;
 export type SampleType = (typeof SAMPLE_TYPE_LIST)[number];
@@ -44,8 +47,14 @@ export const SAMPLE_TYPES: Record<string, { label: string; cls: string }> = {
   protein: { label: "蛋白/因子", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   virus: { label: "病毒载体", cls: "bg-rose-50 text-rose-700 border-rose-200" },
   tissue: { label: "组织", cls: "bg-amber-50 text-amber-700 border-amber-200" },
+  buffer: { label: "缓冲液", cls: "bg-sky-50 text-sky-700 border-sky-200" },
+  enzyme: { label: "工具酶", cls: "bg-lime-50 text-lime-700 border-lime-200" },
+  competent_cell: { label: "感受态细胞", cls: "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200" },
   other: { label: "其他", cls: "bg-slate-100 text-slate-600 border-slate-200" },
 };
+
+/** 实验室耗材类型（库存管理中可按耗材维度筛选） */
+export const CONSUMABLE_TYPES = ["buffer", "enzyme", "competent_cell", "reagent", "chemical"] as const;
 
 export const LOCATION_TYPES: Record<string, string> = {
   lab: "实验区",

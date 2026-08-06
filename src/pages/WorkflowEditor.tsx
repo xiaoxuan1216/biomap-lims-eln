@@ -60,6 +60,11 @@ import {
   LayoutGrid,
   ListOrdered,
   Info,
+  PanelLeftOpen,
+  PanelLeftClose,
+  PanelRightOpen,
+  PanelRightClose,
+  NotebookPen,
 } from "lucide-react";
 import { toast } from "sonner";
 import { setCopilotContext } from "@/lib/copilotContext";
@@ -113,6 +118,19 @@ function EditorInner({ id }: { id: number }) {
   const [wfDesc, setWfDesc] = useState("");
   const [wfStatus, setWfStatus] = useState("draft");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  /* 左右工具栏唤出/隐藏（持久化），让 DAG 画布占满空间 */
+  const [leftOpen, setLeftOpen] = useState(() => localStorage.getItem("biomap-flow-left") !== "0");
+  const [rightOpen, setRightOpen] = useState(() => localStorage.getItem("biomap-flow-right") !== "0");
+  const toggleLeft = () =>
+    setLeftOpen((v) => {
+      localStorage.setItem("biomap-flow-left", v ? "0" : "1");
+      return !v;
+    });
+  const toggleRight = () =>
+    setRightOpen((v) => {
+      localStorage.setItem("biomap-flow-right", v ? "0" : "1");
+      return !v;
+    });
   const loadedFor = useRef<number | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -472,9 +490,25 @@ function EditorInner({ id }: { id: number }) {
       </div>
 
       <div className="flex min-h-0 flex-1 gap-3">
-        {/* 左侧：节点调色板 */}
+        {/* 左侧：节点调色板（可隐藏） */}
+        {!leftOpen && (
+          <button
+            onClick={toggleLeft}
+            title={t("唤出节点库")}
+            className="flex w-8 shrink-0 flex-col items-center gap-2 rounded-xl border bg-white pt-3 text-slate-400 hover:text-teal-600"
+          >
+            <PanelLeftOpen className="h-4 w-4" />
+            <span className="text-[10px] [writing-mode:vertical-rl]">{t("节点库")}</span>
+          </button>
+        )}
+        {leftOpen && (
         <div className="w-60 shrink-0 overflow-y-auto rounded-xl border bg-white p-3">
-          <div className="mb-2 text-xs font-semibold text-slate-500">{t("节点组（拖入画布或点击添加）")}</div>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500">{t("节点组（拖入画布或点击添加）")}</span>
+            <button onClick={toggleLeft} title={t("隐藏节点库")} className="text-slate-400 hover:text-teal-600">
+              <PanelLeftClose className="h-4 w-4" />
+            </button>
+          </div>
           {NODE_PALETTE.map((g) => {
             const GIcon = GROUP_ICONS[g.type];
             const meta = FLOW_NODE_TYPES[g.type];
@@ -508,6 +542,7 @@ function EditorInner({ id }: { id: number }) {
             );
           })}
         </div>
+        )}
 
         {/* 中间：DAG 画布 */}
         <div ref={canvasRef} className="min-w-0 flex-1 overflow-hidden rounded-xl border bg-slate-50">
@@ -532,6 +567,11 @@ function EditorInner({ id }: { id: number }) {
             onSelectionChange={({ nodes: sn, edges: se }) => {
               setSelNodeId(sn[0]?.id ?? null);
               setSelEdgeId(sn.length ? null : (se[0]?.id ?? null));
+              if (sn[0] || (!sn.length && se[0])) {
+                /* 选中节点/连线时自动唤出右侧属性面板 */
+                localStorage.setItem("biomap-flow-right", "1");
+                setRightOpen(true);
+              }
             }}
             onPaneClick={() => {
               setSelNodeId(null);
@@ -547,12 +587,30 @@ function EditorInner({ id }: { id: number }) {
           </ReactFlow>
         </div>
 
-        {/* 右侧：属性面板 */}
+        {/* 右侧：属性面板（可隐藏） */}
+        {!rightOpen && (
+          <button
+            onClick={toggleRight}
+            title={t("唤出属性面板")}
+            className="flex w-8 shrink-0 flex-col items-center gap-2 rounded-xl border bg-white pt-3 text-slate-400 hover:text-teal-600"
+          >
+            <PanelRightOpen className="h-4 w-4" />
+            <span className="text-[10px] [writing-mode:vertical-rl]">{t("属性面板")}</span>
+          </button>
+        )}
+        {rightOpen && (
         <div className="w-72 shrink-0 overflow-y-auto rounded-xl border bg-white p-4">
+          <div className="mb-3 flex justify-end">
+            <button onClick={toggleRight} title={t("隐藏属性面板")} className="text-slate-400 hover:text-teal-600">
+              <PanelRightClose className="h-4 w-4" />
+            </button>
+          </div>
           {selNode ? (
             <NodeInspector
               node={selNode}
               equipList={equipList ?? []}
+              workflowId={id}
+              dirty={dirty}
               onPatch={(p) => patchNode(selNode.id, p)}
               onDelete={() => deleteNode(selNode.id)}
               onStatus={(s) => {
@@ -623,6 +681,7 @@ function EditorInner({ id }: { id: number }) {
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );
@@ -693,10 +752,79 @@ function TimerParams({ node, onPatch }: { node: RFNode; onPatch: (p: Partial<Flo
   );
 }
 
+/** 节点 ↔ ELN 关联区（手工 / 设备节点）：业务流 → 节点 → ELN 条目 */
+function NodeElnSection({ workflowId, nodeKey, dirty }: { workflowId: number; nodeKey: string; dirty: boolean }) {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  const utils = trpc.useUtils();
+  const { data: elns } = trpc.experiment.forNode.useQuery({ workflowId, nodeKey });
+  const createMut = trpc.experiment.createForNode.useMutation({
+    onSuccess: (r) => {
+      utils.experiment.forNode.invalidate({ workflowId, nodeKey });
+      toast.success(t("已创建关联 ELN：{code}", { code: r.code }));
+      navigate(`/experiments/${r.id}`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const STATUS_CLS: Record<string, string> = {
+    planning: "bg-slate-100 text-slate-600",
+    in_progress: "bg-sky-100 text-sky-700",
+    completed: "bg-emerald-100 text-emerald-700",
+    signed: "bg-violet-100 text-violet-700",
+  };
+  const STATUS_LABEL: Record<string, string> = {
+    planning: "计划中", in_progress: "进行中", completed: "已完成", signed: "已签署",
+  };
+  return (
+    <div className="space-y-1.5 border-t pt-3">
+      <Label className="flex items-center gap-1">
+        <NotebookPen className="h-3.5 w-3.5 text-teal-600" /> {t("关联 ELN 记录")}
+      </Label>
+      {elns && elns.length > 0 && (
+        <div className="space-y-1">
+          {elns.map((e) => (
+            <button
+              key={e.id}
+              onClick={() => navigate(`/experiments/${e.id}`)}
+              className="flex w-full items-center gap-2 rounded-md border border-slate-200 px-2 py-1.5 text-left text-xs hover:border-teal-300 hover:bg-teal-50"
+            >
+              <span className="font-mono text-[10px] text-slate-500">{e.code}</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${STATUS_CLS[e.status] ?? ""}`}>
+                {t(STATUS_LABEL[e.status] ?? e.status)}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      <Button
+        size="sm"
+        variant="outline"
+        className="w-full border-teal-200 text-teal-700 hover:bg-teal-50"
+        disabled={createMut.isPending}
+        onClick={() => {
+          if (dirty) {
+            toast.warning(t("流程图有未保存更改，请先保存再创建 ELN"));
+            return;
+          }
+          createMut.mutate({ workflowId, nodeKey });
+        }}
+      >
+        <NotebookPen className="h-3.5 w-3.5 mr-1" />
+        {createMut.isPending ? t("创建中…") : elns && elns.length > 0 ? t("再建一条 ELN") : t("为本节点创建 ELN")}
+      </Button>
+      <p className="text-[11px] text-muted-foreground">
+        {t("节点的执行过程与原始数据记入 ELN；ELN 详情可回链到本节点")}
+      </p>
+    </div>
+  );
+}
+
 /** 节点属性面板 */
 function NodeInspector({
   node,
   equipList,
+  workflowId,
+  dirty,
   onPatch,
   onDelete,
   onStatus,
@@ -706,6 +834,8 @@ function NodeInspector({
 }: {
   node: RFNode;
   equipList: { id: number; name: string; model: string | null; status: string }[];
+  workflowId: number;
+  dirty: boolean;
   onPatch: (p: Partial<FlowNodeData>) => void;
   onDelete: () => void;
   onStatus: (s: FlowNodeStatus) => void;
@@ -860,6 +990,10 @@ function NodeInspector({
           })}
         </div>
       </div>
+      {/* 关联 ELN：手工 / 设备节点挂接执行记录 */}
+      {(node.data.nodeType === "manual" || node.data.nodeType === "equipment") && (
+        <NodeElnSection workflowId={workflowId} nodeKey={node.id} dirty={dirty} />
+      )}
       {/* 子流程：穿透到物理执行层子 DAG */}
       <div className="space-y-1.5 border-t pt-3">
         <Label className="flex items-center gap-1">

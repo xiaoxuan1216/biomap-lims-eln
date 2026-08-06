@@ -9,6 +9,8 @@ import {
   projects,
   samples,
   stockTransactions,
+  workflowNodes,
+  workflows,
 } from "@db/schema";
 import { logActivity, nextExperimentCode } from "./queries/labHelpers";
 
@@ -89,9 +91,24 @@ export const experimentRouter = createRouter({
       .leftJoin(samples, eq(experimentSamples.sampleId, samples.id))
       .where(eq(experimentSamples.experimentId, input.id))
       .orderBy(desc(experimentSamples.createdAt));
+    /* 来源业务流 / 节点（若该 ELN 由 BioFlow 节点创建） */
+    let sourceWorkflow: { id: number; name: string } | null = null;
+    let sourceNodeLabel: string | null = null;
+    if (exp.workflowId) {
+      const wf = await db.query.workflows.findFirst({ where: eq(workflows.id, exp.workflowId) });
+      if (wf) sourceWorkflow = { id: wf.id, name: wf.name };
+      if (exp.nodeKey) {
+        const node = await db.query.workflowNodes.findFirst({
+          where: and(eq(workflowNodes.workflowId, exp.workflowId), eq(workflowNodes.nodeKey, exp.nodeKey)),
+        });
+        sourceNodeLabel = node?.label ?? exp.nodeKey;
+      }
+    }
     return {
       ...exp,
       project,
+      sourceWorkflow,
+      sourceNodeLabel,
       usedSamples: usage.map((u) => ({
         ...u.usage,
         sampleName: u.sampleName,
@@ -100,6 +117,82 @@ export const experimentRouter = createRouter({
       })),
     };
   }),
+
+  /** 某业务流节点下关联的 ELN 条目 */
+  forNode: authedQuery
+    .input(z.object({ workflowId: z.number(), nodeKey: z.string().min(1) }))
+    .query(async ({ input }) => {
+      const db = getDb();
+      return db
+        .select({
+          id: experiments.id,
+          code: experiments.code,
+          title: experiments.title,
+          status: experiments.status,
+          updatedAt: experiments.updatedAt,
+        })
+        .from(experiments)
+        .where(and(eq(experiments.workflowId, input.workflowId), eq(experiments.nodeKey, input.nodeKey)))
+        .orderBy(desc(experiments.updatedAt));
+    }),
+
+  /** 从业务流节点一键创建关联 ELN（项目 → 业务流 → 节点 → ELN 四级链） */
+  createForNode: authedQuery
+    .input(z.object({ workflowId: z.number(), nodeKey: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      const wf = await db.query.workflows.findFirst({ where: eq(workflows.id, input.workflowId) });
+      if (!wf) throw new TRPCError({ code: "NOT_FOUND", message: "业务流不存在" });
+      const node = await db.query.workflowNodes.findFirst({
+        where: and(eq(workflowNodes.workflowId, input.workflowId), eq(workflowNodes.nodeKey, input.nodeKey)),
+      });
+      if (!node) throw new TRPCError({ code: "NOT_FOUND", message: "节点不存在，请先保存流程图" });
+
+      /* 无项目归属的业务流 → 归入系统项目「BioFlow 执行记录」 */
+      let projectId = wf.projectId;
+      if (!projectId) {
+        const SYSTEM_PROJECT = "BioFlow 执行记录";
+        let sp = await db.query.projects.findFirst({ where: eq(projects.name, SYSTEM_PROJECT) });
+        if (!sp) {
+          await db.insert(projects).values({
+            name: SYSTEM_PROJECT,
+            description: "由 BioFlow 节点自动创建的 ELN 执行记录汇总（系统项目）",
+            color: "slate",
+            status: "active",
+            createdById: ctx.user.id,
+          });
+          sp = await db.query.projects.findFirst({ where: eq(projects.name, SYSTEM_PROJECT) });
+        }
+        projectId = sp!.id;
+      }
+
+      const code = await nextExperimentCode();
+      const title = `${wf.name} · ${node.label}`;
+      const [{ id }] = await db
+        .insert(experiments)
+        .values({
+          code,
+          projectId,
+          title,
+          objective: `本记录由 BioFlow 业务流「${wf.name}」节点「${node.label}」创建，用于记录该节点的执行过程、原始数据与结论。`,
+          content: DEFAULT_CONTENT,
+          status: "planning",
+          workflowId: wf.id,
+          nodeKey: node.nodeKey,
+          createdById: ctx.user.id,
+          createdByName: ctx.user.name ?? null,
+        })
+        .$returningId();
+      await logActivity({
+        userName: ctx.user.name,
+        action: "创建了实验",
+        entityType: "experiment",
+        entityId: id,
+        entityName: `${code} ${title}`,
+        detail: `来源：业务流「${wf.name}」节点「${node.label}」`,
+      });
+      return { id, code };
+    }),
 
   create: authedQuery
     .input(

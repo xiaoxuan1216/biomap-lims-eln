@@ -17,6 +17,7 @@ import Workflows from "@/pages/Workflows";
 import WorkflowEditor from "@/pages/WorkflowEditor";
 import ActivityLog from "@/pages/ActivityLog";
 import SearchResults from "@/pages/SearchResults";
+import LabAgent from "@/pages/LabAgent";
 import Login from "@/pages/Login";
 import NotFound from "@/pages/NotFound";
 
@@ -30,6 +31,7 @@ export default function App() {
           <AppLayout>
             <Routes>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/lab-agent" element={<LabAgent />} />
               <Route path="/projects" element={<Projects />} />
               <Route path="/projects/:id" element={<ProjectDetail />} />
               <Route path="/experiments" element={<Experiments />} />

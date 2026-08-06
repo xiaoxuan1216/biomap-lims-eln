@@ -52,6 +52,7 @@ import {
   Scissors,
   Sparkles,
   ArrowRight,
+  Wrench,
 } from "lucide-react";
 import {
   SEQ_TYPES,
@@ -61,6 +62,7 @@ import {
   reverseComplement,
 } from "@/lib/labels";
 import { CircularMap, LinearMap } from "@/components/seqmap/PlasmidMap";
+import SeqTools from "@/components/seqmap/SeqTools";
 import { setCopilotContext } from "@/lib/copilotContext";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n";
@@ -325,6 +327,9 @@ export default function Sequences() {
                     <TabsTrigger value="analysis" className="gap-1">
                       <Sparkles className="h-3 w-3" /> {t("分析")}
                     </TabsTrigger>
+                    <TabsTrigger value="tools" className="gap-1">
+                      <Wrench className="h-3 w-3" /> {t("工具")}
+                    </TabsTrigger>
                   </TabsList>
 
                   {/* 图谱 */}
@@ -549,6 +554,14 @@ export default function Sequences() {
                     ) : (
                       <p className="text-sm text-muted-foreground py-8 text-center">{t("分析中…")}</p>
                     )}
+                  </TabsContent>
+
+                  {/* 工具：密码子优化 / 酶切位点 / Gibson 组装 */}
+                  <TabsContent value="tools" className="mt-4">
+                    <SeqTools
+                      key={selected.id}
+                      seq={{ id: selected.id, name: selected.name, type: selected.type, text: selected.sequence }}
+                    />
                   </TabsContent>
                 </Tabs>
               </CardContent>
