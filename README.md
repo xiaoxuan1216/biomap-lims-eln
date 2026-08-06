@@ -1,73 +1,33 @@
-# React + TypeScript + Vite
+# BioMap OS
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+一体化 LIMS · ELN 实验室操作系统 —— **One Suite, No Data Silos**。
 
-Currently, two official plugins are available:
+面向合成生物学与抗体研发实验室，把项目管理、实验记录（ELN）、业务流程编排（BioFlow DAG）、
+序列设计（SnapGene 级工具）、样本/耗材库存、存储位置、设备机时统一在一个数据模型之上，
+并以 Lab Agent / Copilot 提供自然语言操作入口。
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 快速开始
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+cp .env.example .env     # 填写 DATABASE_URL、Kimi OAuth 等配置
+npm run build
+PORT=3100 npm start      # 首次启动自动建表并写入演示数据
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 给 AI / 外部系统的入口
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+| 入口 | 用途 | 文档 |
+| --- | --- | --- |
+| `AGENTS.md` | AI 编程助手开发本项目的说明书 | 仓库根目录 |
+| REST `/api/v1` | 外部系统/脚本读写核心数据（Bearer Token） | `docs/api.md` |
+| MCP Server | Claude 等 AI Agent 直接挂载为工具集 | `mcp/` |
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## 文档
+
+- 产品需求文档（PRD）：`BioMap_OS_产品需求文档_PRD.docx`（发行包附件）
+- 版本验收记录：`verifier/README.md`（索引）及 `verifier/v<N>/acceptance.md`
+
+## 许可
+
+内部项目，保留所有权利。

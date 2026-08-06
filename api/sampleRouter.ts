@@ -14,6 +14,7 @@ import {
   storageLocations,
 } from "@db/schema";
 import { logActivity, nextSampleSku } from "./queries/labHelpers";
+import { buildLineage } from "./queries/lineage";
 
 const SAMPLE_TYPES = [
   "cell_line",
@@ -126,80 +127,9 @@ export const sampleRouter = createRouter({
   lineage: authedQuery
     .input(z.object({ id: z.number(), kind: z.enum(["sample", "sequence"]).default("sample") }))
     .query(async ({ input }) => {
-      const db = getDb();
-      type Key = string;
-      const key = (kind: string, id: number): Key => `${kind}:${id}`;
-      const visited = new Set<Key>();
-      const nodeMap = new Map<Key, Record<string, unknown>>();
-      const edgesOut: { childKey: Key; parentKey: Key; relation: string; note: string | null }[] = [];
-
-      const loadNode = async (kind: "sample" | "sequence", id: number, depth: number) => {
-        const k = key(kind, id);
-        if (visited.has(k) || depth > 8) return;
-        visited.add(k);
-        if (kind === "sample") {
-          const s = await db.query.samples.findFirst({ where: eq(samples.id, id) });
-          if (!s) return;
-          let seq: { id: number; name: string; type: string; len: number; pdbId: string | null; description: string | null } | null = null;
-          if (s.sequenceId) {
-            const q = await db.query.sequences.findFirst({ where: eq(sequences.id, s.sequenceId) });
-            if (q) {
-              const feats = await db.select().from(sequenceFeatures).where(eq(sequenceFeatures.sequenceId, q.id));
-              seq = {
-                id: q.id, name: q.name, type: q.type, len: q.sequence.length,
-                pdbId: q.pdbId, description: q.description, text: q.sequence,
-                features: feats.map((f) => ({ name: f.name, type: f.type, start: f.start, end: f.end, strand: f.strand, color: f.color, note: f.note })),
-              };
-            }
-          }
-          nodeMap.set(k, {
-            key: k, kind, id, depth,
-            name: s.name, sampleType: s.type, sku: s.sku,
-            quantity: s.quantity, unit: s.unit, expiryDate: s.expiryDate,
-            sequence: seq,
-          });
-        } else {
-          const q = await db.query.sequences.findFirst({ where: eq(sequences.id, id) });
-          if (!q) return;
-          const feats = await db
-            .select()
-            .from(sequenceFeatures)
-            .where(eq(sequenceFeatures.sequenceId, id));
-          nodeMap.set(k, {
-            key: k, kind, id, depth,
-            name: q.name, seqType: q.type, len: q.sequence.length,
-            pdbId: q.pdbId, description: q.description, text: q.sequence,
-            features: feats.map((f) => ({
-              name: f.name, type: f.type, start: f.start, end: f.end, strand: f.strand, color: f.color, note: f.note,
-            })),
-          });
-        }
-        /* 继续向上 */
-        const ups = await db
-          .select()
-          .from(lineageEdges)
-          .where(and(eq(lineageEdges.childKind, kind), eq(lineageEdges.childId, id)));
-        for (const e of ups) {
-          edgesOut.push({ childKey: k, parentKey: key(e.parentKind, e.parentId), relation: e.relation, note: e.note });
-          await loadNode(e.parentKind, e.parentId, depth + 1);
-        }
-        /* 样本的分子定义序列也作为上游节点挂出 */
-        if (kind === "sample") {
-          const node = nodeMap.get(k) as { sequence?: { id: number } } | undefined;
-          if (node?.sequence) {
-            edgesOut.push({ childKey: k, parentKey: key("sequence", node.sequence.id), relation: "defined_by", note: null });
-            await loadNode("sequence", node.sequence.id, depth + 1);
-          }
-        }
-      };
-
-      await loadNode(input.kind, input.id, 0);
-      if (!visited.size) throw new TRPCError({ code: "NOT_FOUND", message: "样本不存在" });
-      return {
-        root: key(input.kind, input.id),
-        nodes: [...nodeMap.values()],
-        edges: edgesOut,
-      };
+      const result = await buildLineage(input.kind, input.id);
+      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "样本不存在" });
+      return result;
     }),
 
   create: authedQuery.input(sampleInput).mutation(async ({ ctx, input }) => {

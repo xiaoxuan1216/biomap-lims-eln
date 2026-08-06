@@ -9,3 +9,4 @@
 | v6 | 节点↔ELN 联动 / 面板折叠 / Lab Agent 独立页 / 序列工具（密码子优化·酶切·Gibson）/ 耗材追踪 | verifier/v6/acceptance.md | verifier/runs/v6-acceptance.log | 7d3f0a9 |
 
 > 注：v2/v3 的验收文档在版本快照回滚中随工作区一起被覆盖丢失；对应功能回归已在 v4 验收中顺带覆盖（样本详情、质粒图谱组件复用、双语渲染均正常）。
+| v7 | 开放 REST API（/api/v1，Bearer Token）+ MCP Server（16 工具）+ AGENTS.md/README/API 文档 | （见 runs/v7-openapi.log） | verifier/runs/v7-openapi.log | 待保存 |

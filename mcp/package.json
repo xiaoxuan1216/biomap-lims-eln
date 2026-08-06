@@ -1,0 +1,14 @@
+{
+  "name": "biomap-os-mcp",
+  "version": "1.0.0",
+  "description": "BioMap OS MCP Server — 让 Claude 等 AI Agent 直接查询/操作实验室 LIMS+ELN 数据",
+  "type": "module",
+  "main": "index.js",
+  "bin": { "biomap-mcp": "index.js" },
+  "scripts": { "start": "node index.js" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "zod": "^3.25.0"
+  },
+  "engines": { "node": ">=18" }
+}

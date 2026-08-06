@@ -8,11 +8,14 @@ import { env } from "./lib/env";
 import { createOAuthCallbackHandler } from "./kimi/auth";
 import { Paths } from "@contracts/constants";
 import { ensureSchemaAndSeed } from "./queries/ensureSchema";
+import { v1App } from "./v1";
 
 const app = new Hono<{ Bindings: HttpBindings }>();
 
 app.use(bodyLimit({ maxSize: 50 * 1024 * 1024 }));
 app.get(Paths.oauthCallback, createOAuthCallbackHandler());
+/* 开放 REST API（Bearer Token 鉴权，供外部系统与 AI Agent 调用） */
+app.route("/api/v1", v1App);
 app.use("/api/trpc/*", async (c) => {
   return fetchRequestHandler({
     endpoint: "/api/trpc",
