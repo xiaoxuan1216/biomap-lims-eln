@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
+import type { inferRouterOutputs } from "@trpc/server";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -69,10 +70,12 @@ import {
 import { toast } from "sonner";
 import { setCopilotContext } from "@/lib/copilotContext";
 import { useI18n } from "@/i18n";
+import type { AppRouter } from "../../api/router";
 
 const nodeTypes = { flowNode: FlowNode };
 const GROUP_ICONS = { manual: Hand, equipment: Cog, decision: GitBranch, data: Database, timer: Clock } as const;
 const TEAM_SUGGESTIONS = ["演示用户", "张工", "王工", "陈研究员", "赵工"];
+type WorkflowDetail = NonNullable<inferRouterOutputs<AppRouter>["workflow"]["byId"]>;
 
 /** 在既有边上新增 source→target 是否会成环（从 target 沿边 DFS 能否回到 source） */
 function wouldCycle(edges: Edge[], source: string, target: string): boolean {
@@ -101,22 +104,65 @@ function parseParams(raw: string | null): NodeParams | null {
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-function EditorInner({ id }: { id: number }) {
+function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const rf = useReactFlow();
-  const { data: wf } = trpc.workflow.byId.useQuery({ id });
   const { data: equipList } = trpc.equipment.list.useQuery();
 
-  const [nodes, setNodesRaw, onNodesChangeRaw] = useNodesState<RFNode>([]);
-  const [edges, setEdgesRaw, onEdgesChangeRaw] = useEdgesState<Edge>([]);
+  const initialNodes = useMemo<RFNode[]>(
+    () =>
+      wf.nodes.map((n) => ({
+        id: n.nodeKey,
+        type: "flowNode" as const,
+        position: { x: n.posX, y: n.posY },
+        data: {
+          label: n.label,
+          nodeType: n.type,
+          templateKey: n.templateKey,
+          owner: n.owner,
+          equipmentId: n.equipmentId,
+          config: n.config,
+          params: parseParams(n.params),
+          status: n.status,
+          dbId: n.id,
+          childWorkflowId: n.childWorkflowId,
+          subflowName: n.childWorkflowId ? (wf.subflows?.[n.childWorkflowId]?.name ?? null) : null,
+          subflowProgress: n.childWorkflowId
+            ? (() => {
+                const subflow = wf.subflows?.[n.childWorkflowId];
+                return subflow
+                  ? t("{done}/{total}", { done: subflow.doneCount, total: subflow.nodeCount })
+                  : null;
+              })()
+            : null,
+        },
+      })),
+    [t, wf],
+  );
+  const initialEdges = useMemo<Edge[]>(
+    () =>
+      wf.edges.map((e) => ({
+        id: e.edgeKey,
+        source: e.sourceKey,
+        target: e.targetKey,
+        sourceHandle: e.sourceHandle ?? undefined,
+        label: e.label ?? undefined,
+        type: "smoothstep",
+        markerEnd: { type: MarkerType.ArrowClosed },
+      })),
+    [wf],
+  );
+
+  const [nodes, setNodesRaw, onNodesChangeRaw] = useNodesState<RFNode>(initialNodes);
+  const [edges, setEdgesRaw, onEdgesChangeRaw] = useEdgesState<Edge>(initialEdges);
   const [dirty, setDirty] = useState(false);
   const [selNodeId, setSelNodeId] = useState<string | null>(null);
   const [selEdgeId, setSelEdgeId] = useState<string | null>(null);
-  const [wfName, setWfName] = useState("");
-  const [wfDesc, setWfDesc] = useState("");
-  const [wfStatus, setWfStatus] = useState("draft");
+  const [wfName, setWfName] = useState(wf.name);
+  const [wfDesc, setWfDesc] = useState(wf.description ?? "");
+  const [wfStatus, setWfStatus] = useState<string>(wf.status);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   /* 左右工具栏唤出/隐藏（持久化），让 DAG 画布占满空间 */
   const [leftOpen, setLeftOpen] = useState(() => localStorage.getItem("biomap-flow-left") !== "0");
@@ -131,7 +177,6 @@ function EditorInner({ id }: { id: number }) {
       localStorage.setItem("biomap-flow-right", v ? "0" : "1");
       return !v;
     });
-  const loadedFor = useRef<number | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
 
   const equipName = useMemo(() => {
@@ -155,84 +200,40 @@ function EditorInner({ id }: { id: number }) {
     [setEdgesRaw],
   );
 
-  // 初次加载：DB → 画布
-  useEffect(() => {
-    if (!wf || loadedFor.current === wf.id) return;
-    loadedFor.current = wf.id;
-    setWfName(wf.name);
-    setWfDesc(wf.description ?? "");
-    setWfStatus(wf.status);
-    setNodesRaw(
-      wf.nodes.map((n) => ({
-        id: n.nodeKey,
-        type: "flowNode" as const,
-        position: { x: n.posX, y: n.posY },
-        data: {
-          label: n.label,
-          nodeType: n.type,
-          templateKey: n.templateKey,
-          owner: n.owner,
-          equipmentId: n.equipmentId,
-          config: n.config,
-          params: parseParams(n.params),
-          status: n.status,
-          dbId: n.id,
-          childWorkflowId: n.childWorkflowId,
-          subflowName: n.childWorkflowId ? (wf.subflows?.[n.childWorkflowId]?.name ?? null) : null,
-          subflowProgress: n.childWorkflowId
-            ? (() => {
-                const s = wf.subflows?.[n.childWorkflowId!];
-                return s ? t("{done}/{total}", { done: s.doneCount, total: s.nodeCount }) : null;
-              })()
-            : null,
-        },
-      })),
-    );
-    setEdgesRaw(
-      wf.edges.map((e) => ({
-        id: e.edgeKey,
-        source: e.sourceKey,
-        target: e.targetKey,
-        sourceHandle: e.sourceHandle ?? undefined,
-        label: e.label ?? undefined,
-        type: "smoothstep",
-        markerEnd: { type: MarkerType.ArrowClosed },
-      })),
-    );
-    setDirty(false);
-    // 用已知节点坐标手动计算视口（不依赖节点测量时序）
-    if (wf.nodes.length) {
-      setTimeout(() => {
-        const el = canvasRef.current;
-        if (!el) return;
-        const NODE_W = 230;
-        const NODE_H = 130;
-        const xs = wf.nodes.map((n) => n.posX);
-        const ys = wf.nodes.map((n) => n.posY);
-        const minX = Math.min(...xs) - 60;
-        const maxX = Math.max(...xs) + NODE_W + 90; // 判断节点右侧有「是/否」标签
-        const minY = Math.min(...ys) - 50;
-        const maxY = Math.max(...ys) + NODE_H + 50;
-        const w = el.clientWidth;
-        const h = el.clientHeight;
-        const zoom = Math.min(w / (maxX - minX), h / (maxY - minY), 0.9);
-        const cx = (minX + maxX) / 2;
-        const cy = (minY + maxY) / 2;
-        rf.setViewport({ x: w / 2 - cx * zoom, y: h / 2 - cy * zoom, zoom });
-      }, 80);
-    }
-  }, [wf, setNodesRaw, setEdgesRaw, rf, t]);
+  const displayNodes = useMemo(
+    () =>
+      nodes.map((node) => {
+        const equipmentName = node.data.equipmentId ? equipName.get(node.data.equipmentId) : undefined;
+        return equipmentName && node.data.equipmentName !== equipmentName
+          ? { ...node, data: { ...node.data, equipmentName } }
+          : node;
+      }),
+    [equipName, nodes],
+  );
 
-  // 设备名称映射进节点数据
+  // 用已知节点坐标设置初始视口（不依赖节点测量时序）
   useEffect(() => {
-    setNodesRaw((ns) =>
-      ns.map((n) =>
-        n.data.equipmentId && !n.data.equipmentName && equipName.has(n.data.equipmentId)
-          ? { ...n, data: { ...n.data, equipmentName: equipName.get(n.data.equipmentId) } }
-          : n,
-      ),
-    );
-  }, [equipName, setNodesRaw]);
+    if (!wf.nodes.length) return;
+    const timer = window.setTimeout(() => {
+      const el = canvasRef.current;
+      if (!el) return;
+      const NODE_W = 230;
+      const NODE_H = 130;
+      const xs = wf.nodes.map((n) => n.posX);
+      const ys = wf.nodes.map((n) => n.posY);
+      const minX = Math.min(...xs) - 60;
+      const maxX = Math.max(...xs) + NODE_W + 90; // 判断节点右侧有「是/否」标签
+      const minY = Math.min(...ys) - 50;
+      const maxY = Math.max(...ys) + NODE_H + 50;
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      const zoom = Math.min(w / (maxX - minX), h / (maxY - minY), 0.9);
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      rf.setViewport({ x: w / 2 - cx * zoom, y: h / 2 - cy * zoom, zoom });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [rf, wf]);
 
   // Copilot 上下文
   useEffect(() => {
@@ -419,7 +420,7 @@ function EditorInner({ id }: { id: number }) {
     );
   };
 
-  const selNode = nodes.find((n) => n.id === selNodeId) ?? null;
+  const selNode = displayNodes.find((n) => n.id === selNodeId) ?? null;
   const selEdge = edges.find((e) => e.id === selEdgeId) ?? null;
   const stMeta = WORKFLOW_STATUS[wfStatus] ?? WORKFLOW_STATUS.draft;
 
@@ -547,7 +548,7 @@ function EditorInner({ id }: { id: number }) {
         {/* 中间：DAG 画布 */}
         <div ref={canvasRef} className="min-w-0 flex-1 overflow-hidden rounded-xl border bg-slate-50">
           <ReactFlow
-            nodes={nodes}
+            nodes={displayNodes}
             edges={edges}
             nodeTypes={nodeTypes}
             onNodesChange={(cs) => {
@@ -625,7 +626,7 @@ function EditorInner({ id }: { id: number }) {
             <div className="space-y-4">
               <div className="text-sm font-semibold">{t("连线属性")}</div>
               <div className="text-xs text-muted-foreground">
-                {nodes.find((n) => n.id === selEdge.source)?.data.label} → {nodes.find((n) => n.id === selEdge.target)?.data.label}
+                {displayNodes.find((n) => n.id === selEdge.source)?.data.label} → {displayNodes.find((n) => n.id === selEdge.target)?.data.label}
               </div>
               <div className="space-y-1.5">
                 <Label>{t("分支 / 条件标签")}</Label>
@@ -1125,7 +1126,25 @@ export default function WorkflowEditor() {
   const numId = Number(id);
   return (
     <ReactFlowProvider>
-      <EditorInner id={numId} />
+      <WorkflowEditorLoader id={numId} />
     </ReactFlowProvider>
   );
+}
+
+function WorkflowEditorLoader({ id }: { id: number }) {
+  const { t } = useI18n();
+  const { data: wf, error } = trpc.workflow.byId.useQuery({ id });
+
+  if (error) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
+        {t("流程加载失败")}：{error.message}
+      </div>
+    );
+  }
+  if (!wf) {
+    return <div className="p-6 text-sm text-muted-foreground">{t("正在加载流程…")}</div>;
+  }
+
+  return <EditorInner key={wf.id} id={id} wf={wf} />;
 }
