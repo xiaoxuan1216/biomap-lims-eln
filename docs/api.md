@@ -11,19 +11,22 @@
 Authorization: Bearer <token>
 ```
 
-令牌在服务端环境变量 `API_TOKENS` 中配置，格式 `名称:令牌`，逗号分隔：
+令牌在服务端环境变量 `API_TOKENS` 中配置，格式 `名称:至少24位令牌:权限`，逗号分隔。权限只能是 `read` 或 `write`；`write` 同时包含读取能力：
 
 ```bash
-API_TOKENS="claude:sk-biomap-xxxx,n8n:sk-biomap-yyyy"
+API_TOKENS="reporter:replace-with-a-long-random-token:read,n8n:replace-with-another-long-random-token:write"
 ```
 
 **未配置 `API_TOKENS` 时所有 /api/v1 请求一律 401（默认关闭）。**
+旧的两段式配置不会被接受，以免升级后意外保留写权限。所有令牌共享默认的每分钟 120 请求频控。
 
 ## 2. 通用约定
 
 - 响应统一 JSON：成功 `{ "data": ... }`；失败 `{ "error", "hint?" }` + HTTP 状态码
 - 列表参数：`limit`（默认 100，上限见各端点）、`search`、`type`/`status` 过滤
 - 时间字段为 ISO 8601；数量为数值（最多 3 位小数）
+- 所有 POST 端点要求 `write` 令牌；`read` 令牌调用会返回 403
+- 库存写入应携带唯一的 `Idempotency-Key` 请求头；网络重试使用相同值
 
 ## 3. 端点一览
 
@@ -66,6 +69,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/
 
 # 耗材出库（消耗 1 支 Q5 聚合酶）
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 7b941f14-16ec-4a04-b373-2a7502872320" \
   -d '{"delta":-1,"reason":"consume","note":"EXP-0015 使用"}' \
   $BASE/api/v1/samples/349699/transactions
 ```

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { asc, desc, eq, like } from "drizzle-orm";
-import { createRouter, authedQuery } from "./middleware";
+import { adminQuery, authedQuery, createRouter, writeQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import { sequenceFeatures, sequences } from "@db/schema";
 import { logActivity } from "./queries/labHelpers";
@@ -12,6 +12,7 @@ import {
   findRestrictionSites,
   gcContent,
   uniqueCutters,
+  normalizeSequenceInput,
 } from "./queries/bioUtils";
 
 export const sequenceRouter = createRouter({
@@ -42,7 +43,7 @@ export const sequenceRouter = createRouter({
   }),
 
   /** 添加特性注释 */
-  addFeature: authedQuery
+  addFeature: writeQuery
     .input(
       z.object({
         sequenceId: z.number(),
@@ -87,7 +88,7 @@ export const sequenceRouter = createRouter({
       return { id };
     }),
 
-  updateFeature: authedQuery
+  updateFeature: writeQuery
     .input(
       z.object({
         id: z.number(),
@@ -119,7 +120,7 @@ export const sequenceRouter = createRouter({
       return { ok: true };
     }),
 
-  deleteFeature: authedQuery
+  deleteFeature: writeQuery
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       await getDb().delete(sequenceFeatures).where(eq(sequenceFeatures.id, input.id));
@@ -127,7 +128,7 @@ export const sequenceRouter = createRouter({
     }),
 
   /** 自动注释：扫描常见启动子/标签/酶切位点等元件 */
-  autoAnnotate: authedQuery
+  autoAnnotate: writeQuery
     .input(z.object({ sequenceId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
@@ -192,7 +193,7 @@ export const sequenceRouter = createRouter({
       };
     }),
 
-  create: authedQuery
+  create: writeQuery
     .input(
       z.object({
         name: z.string().min(1, "序列名称不能为空").max(255),
@@ -202,7 +203,15 @@ export const sequenceRouter = createRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const cleaned = input.sequence.replace(/[^A-Za-z]/g, "").toUpperCase();
+      let cleaned: string;
+      try {
+        cleaned = normalizeSequenceInput(input.sequence, input.type);
+      } catch (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: error instanceof Error ? error.message : "序列格式无效",
+        });
+      }
       const [{ id }] = await getDb()
         .insert(sequences)
         .values({
@@ -223,7 +232,7 @@ export const sequenceRouter = createRouter({
       return { id };
     }),
 
-  update: authedQuery
+  update: writeQuery
     .input(
       z.object({
         id: z.number(),
@@ -237,7 +246,7 @@ export const sequenceRouter = createRouter({
       return { ok: true };
     }),
 
-  delete: authedQuery.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+  delete: adminQuery.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const seq = await getDb().query.sequences.findFirst({
       where: eq(sequences.id, input.id),
     });

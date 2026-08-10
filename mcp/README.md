@@ -16,7 +16,7 @@ npm install
 | 变量 | 说明 |
 | --- | --- |
 | `BIOMAP_BASE_URL` | BioMap OS 服务地址，默认 `http://localhost:3100` |
-| `BIOMAP_API_TOKEN` | `/api/v1` 的 Bearer Token（服务端 `API_TOKENS` 中配置，必填） |
+| `BIOMAP_API_TOKEN` | `/api/v1` 的 Bearer Token（服务端 `API_TOKENS` 中配置，必填；只查询请使用 `read`） |
 
 ## Claude Desktop 挂载
 
@@ -46,4 +46,4 @@ npm install
 - 其他：`list_equipment` `get_equipment_bookings` `list_projects` `list_activities`
 
 写操作（`add_stock_transaction` / `create_experiment`）与 Web 端共用一致性与审计链路，
-操作者记为 `api:<令牌名>`。
+操作者记为 `api:<令牌名>`。只有 `write` 令牌能够调用写接口；库存工具应为每次用户意图生成一次幂等键，重试时复用该键。将写工具暴露给 Agent 时，应在宿主侧保留人工确认。

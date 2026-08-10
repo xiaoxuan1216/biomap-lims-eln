@@ -244,7 +244,7 @@ export async function seed() {
     return r.id;
   };
 
-  const sPlasmid1 = await smp({
+  await smp({
     sku: "SMP-0001", name: "pLenti-CD19-CAR-4G 质粒", type: "plasmid", quantity: 25, unit: "µg",
     alertThreshold: 10, locationId: box1.id, boxRow: 1, boxCol: 1, projectId: p1.id,
     expiryDate: daysFromNow(400), notes: "第四代 CAR，含 4-1BB + CD28 共刺激域",

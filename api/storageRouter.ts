@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { asc, eq, and, ne } from "drizzle-orm";
-import { createRouter, authedQuery } from "./middleware";
+import { adminQuery, authedQuery, createRouter, writeQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import { samples, storageLocations } from "@db/schema";
 import { logActivity } from "./queries/labHelpers";
@@ -25,7 +25,7 @@ export const storageRouter = createRouter({
     }));
   }),
 
-  create: authedQuery
+  create: writeQuery
     .input(
       z.object({
         name: z.string().min(1, "名称不能为空").max(255),
@@ -65,7 +65,7 @@ export const storageRouter = createRouter({
       return { id };
     }),
 
-  update: authedQuery
+  update: writeQuery
     .input(
       z.object({
         id: z.number(),
@@ -86,7 +86,7 @@ export const storageRouter = createRouter({
       return { ok: true };
     }),
 
-  delete: authedQuery.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+  delete: adminQuery.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const children = await db
       .select({ id: storageLocations.id })
@@ -149,7 +149,7 @@ export const storageRouter = createRouter({
     }),
 
   /** 将样本放入冻存盒指定格子 */
-  placeSample: authedQuery
+  placeSample: writeQuery
     .input(
       z.object({
         sampleId: z.number(),
@@ -206,7 +206,7 @@ export const storageRouter = createRouter({
     }),
 
   /** 移出冻存盒 */
-  removePlacement: authedQuery
+  removePlacement: writeQuery
     .input(z.object({ sampleId: z.number() }))
     .mutation(async ({ input }) => {
       await getDb()

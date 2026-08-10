@@ -26,14 +26,15 @@ import {
   MonitorCog,
   Bot,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthLayoutSkeleton } from "../AuthLayoutSkeleton";
-import Copilot from "../copilot/Copilot";
 import { useI18n } from "@/i18n";
 import { LanguageSwitcher } from "@/i18n/LanguageSwitcher";
+
+const Copilot = lazy(() => import("../copilot/Copilot"));
 
 const NAV_GROUPS = [
   {
@@ -246,7 +247,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </main>
       </div>
       <Toaster richColors position="top-right" />
-      <Copilot />
+      <Suspense fallback={null}>
+        <Copilot />
+      </Suspense>
     </div>
   );
 }

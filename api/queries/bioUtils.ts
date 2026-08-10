@@ -6,6 +6,42 @@ const COMPLEMENT: Record<string, string> = {
   B: "V", V: "B", D: "H", H: "D",
 };
 
+export type BioSequenceType = "dna" | "rna" | "protein";
+
+const SEQUENCE_ALPHABETS: Record<BioSequenceType, RegExp> = {
+  dna: /^[ACGTRYSWKMBDHVN]+$/,
+  rna: /^[ACGURYSWKMBDHVN]+$/,
+  protein: /^[ACDEFGHIKLMNPQRSTVWYBXZJUO*]+$/,
+};
+
+/** 清理空白/编号与单条 FASTA 标题，但绝不静默吞掉非法字母。 */
+export function normalizeSequenceInput(raw: string, type: BioSequenceType): string {
+  const lines = raw.trim().split(/\r?\n/);
+  const fastaHeaders = lines.filter((line) => line.trimStart().startsWith(">"));
+  if (fastaHeaders.length > 1) {
+    throw new Error("一次只能导入一条 FASTA 序列");
+  }
+  const sequence = lines
+    .filter((line) => !line.trimStart().startsWith(">"))
+    .join("")
+    .replace(/[\s\d]/g, "")
+    .toUpperCase();
+  if (!sequence) throw new Error("序列内容不能为空");
+  if (sequence.length > 5_000_000) throw new Error("单条序列不能超过 5,000,000 个字符");
+  if (!SEQUENCE_ALPHABETS[type].test(sequence)) {
+    throw new Error(`${type.toUpperCase()} 序列包含不支持的字符`);
+  }
+  return sequence;
+}
+
+export function normalizeUnambiguousDna(raw: string, label = "DNA 序列"): string {
+  const sequence = raw.replace(/\s/g, "").toUpperCase();
+  if (!sequence || !/^[ACGT]+$/.test(sequence)) {
+    throw new Error(`${label}只能包含 A/C/G/T`);
+  }
+  return sequence;
+}
+
 export function reverseComplement(seq: string): string {
   return seq
     .toUpperCase()
@@ -247,9 +283,10 @@ export function designGibsonPrimers(
   armLength = 25,
   annealLength = 20,
 ): { forward: GibsonPrimer; reverse: GibsonPrimer } {
-  const ins = insertSeq.toUpperCase();
-  const vl = vectorLeftArm.toUpperCase().slice(-armLength);
-  const vr = vectorRightArm.toUpperCase().slice(0, armLength);
+  const ins = normalizeUnambiguousDna(insertSeq, "插入片段");
+  const vl = normalizeUnambiguousDna(vectorLeftArm, "载体左臂").slice(-armLength);
+  const vr = normalizeUnambiguousDna(vectorRightArm, "载体右臂").slice(0, armLength);
+  if (ins.length < annealLength) throw new Error("插入片段短于设定的退火区长度");
 
   const fwdAnneal = ins.slice(0, annealLength);
   const revAnneal = reverseComplement(ins.slice(-annealLength));

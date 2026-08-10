@@ -97,7 +97,7 @@ function ColoredSeq({ seq }: { seq: string }) {
 export default function Sequences() {
   const { t } = useI18n();
   const utils = trpc.useUtils();
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
   const [search, setSearch] = useState("");
   const { data: sequences, isLoading } = trpc.sequence.list.useQuery({
     search: search || undefined,
@@ -113,15 +113,6 @@ export default function Sequences() {
     { sequenceId: selectedId! },
     { enabled: selectedId !== null },
   );
-
-  useEffect(() => {
-    const focus = params.get("focus");
-    if (focus) {
-      setSelectedId(Number(focus));
-      params.delete("focus");
-      setParams(params, { replace: true });
-    }
-  }, [params, setParams]);
 
   // Copilot 上下文
   useEffect(() => {

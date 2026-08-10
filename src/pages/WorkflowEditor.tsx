@@ -221,7 +221,7 @@ function EditorInner({ id }: { id: number }) {
         rf.setViewport({ x: w / 2 - cx * zoom, y: h / 2 - cy * zoom, zoom });
       }, 80);
     }
-  }, [wf, setNodesRaw, setEdgesRaw, rf]);
+  }, [wf, setNodesRaw, setEdgesRaw, rf, t]);
 
   // 设备名称映射进节点数据
   useEffect(() => {
@@ -331,7 +331,7 @@ function EditorInner({ id }: { id: number }) {
         ),
       );
     },
-    [edges, nodes, setEdges],
+    [edges, nodes, setEdges, t],
   );
 
   const deleteNode = useCallback(
@@ -532,7 +532,7 @@ function EditorInner({ id }: { id: number }) {
                       onDragStart={(e) => e.dataTransfer.setData("application/biomap-node", JSON.stringify(tpl))}
                       onClick={() => addNodeFromTemplate(tpl)}
                       className="ml-4 cursor-grab rounded-md border border-transparent px-2 py-1.5 text-xs text-slate-700 hover:border-slate-200 hover:bg-slate-50 active:cursor-grabbing"
-                      title={t(tpl.description)}
+                      title={t(tpl.description ?? "")}
                     >
                       <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ background: meta.color }} />
                       {t(tpl.label)}

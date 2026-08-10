@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import { and, eq, gte, isNotNull, like, lte, lt, sql } from "drizzle-orm";
 import { createRouter, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
@@ -19,7 +20,29 @@ import {
   gcContent,
   tmEstimate,
   uniqueCutters,
+  normalizeUnambiguousDna,
 } from "./queries/bioUtils";
+import { logActivity } from "./queries/labHelpers";
+import {
+  completeLabQuestion,
+  isModelConfigured,
+  ModelUnavailableError,
+} from "./services/modelClient";
+
+const MODEL_REQUESTS_PER_HOUR = 20;
+const modelUsage = new Map<number, { startedAt: number; count: number }>();
+
+function consumeModelQuota(userId: number): boolean {
+  const now = Date.now();
+  const usage = modelUsage.get(userId);
+  if (!usage || now - usage.startedAt >= 60 * 60 * 1000) {
+    modelUsage.set(userId, { startedAt: now, count: 1 });
+    return true;
+  }
+  if (usage.count >= MODEL_REQUESTS_PER_HOUR) return false;
+  usage.count += 1;
+  return true;
+}
 
 // ─── Copilot 协议模板 ───────────────────────────────────────────────────
 interface ElnBlockOut {
@@ -289,10 +312,10 @@ export const aiRouter = createRouter({
           .optional(),
       }),
     )
-    .mutation(async ({ input }) => {
-      try {
+    .mutation(async ({ ctx, input }) => {
       const en = input.lang === "en";
       const R = (zh: string, enText: string) => (en ? enText : zh);
+      try {
       const dateLocale = en ? "en-US" : "zh-CN";
       const db = getDb();
       const msg = input.message;
@@ -665,11 +688,61 @@ export const aiRouter = createRouter({
         };
       }
 
-      // ── 兜底：能力清单 ──
+      // ── 开放式问题：可选 Kimi 模型（只读、限频、无自动工具执行） ──
+      if (isModelConfigured()) {
+        if (!consumeModelQuota(ctx.user.id)) {
+          return {
+            reply: R(
+              "开放式模型问答已达到每小时限额，请稍后再试。确定性库存、设备和流程查询仍可继续使用。",
+              "The hourly model-answer quota has been reached. Deterministic inventory, equipment, and workflow queries remain available.",
+            ),
+            actions,
+          };
+        }
+        try {
+          const [[projectCount], [experimentCount], [sampleCount], [workflowCount]] = await Promise.all([
+            db.select({ count: sql<number>`COUNT(*)` }).from(projects),
+            db.select({ count: sql<number>`COUNT(*)` }).from(experiments),
+            db.select({ count: sql<number>`COUNT(*)` }).from(samples),
+            db.select({ count: sql<number>`COUNT(*)` }).from(workflows),
+          ]);
+          const reply = await completeLabQuestion({
+            message: input.message,
+            language: en ? "en" : "zh",
+            contextSummary: JSON.stringify({
+              page: input.context?.page ?? null,
+              entityType: input.context?.entityType ?? null,
+              entityId: input.context?.entityId ?? null,
+              counts: {
+                projects: Number(projectCount?.count ?? 0),
+                experiments: Number(experimentCount?.count ?? 0),
+                samples: Number(sampleCount?.count ?? 0),
+                workflows: Number(workflowCount?.count ?? 0),
+              },
+            }),
+          });
+          const promptHash = createHash("sha256").update(input.message).digest("hex");
+          await logActivity({
+            userId: ctx.user.id,
+            userName: ctx.user.name,
+            source: "web",
+            action: "调用了只读 AI 助手",
+            entityType: input.context?.entityType ?? "assistant",
+            entityId: input.context?.entityId,
+            detail: `model=${process.env.KIMI_MODEL ?? "kimi-k2.6"}; promptHash=${promptHash}; responseChars=${reply.length}`,
+          });
+          return { reply, actions, mode: "model" as const };
+        } catch (error) {
+          if (!(error instanceof ModelUnavailableError)) throw error;
+          console.warn("[ai.chat] Kimi model unavailable, using deterministic fallback:", error.message);
+        }
+      }
+
+      // ── 兜底：确定性能力清单 ──
       return {
         reply: R(
-          `我是 BioMap OS Copilot，你的合成生物学实验助手 🧬\n\n我目前可以：\n\n📊 **实验室问答** —「哪些样本快过期了」「流式细胞仪今天有预约吗」「实验室现在什么情况」\n🧬 **序列分析** — 在序列页打开我，自动给出 GC%、ORF、酶切位点分析\n📋 **方案生成** — 说出「Gibson 方案」「qPCR 步骤」等，生成标准 Protocol 并插入实验记录\n🔧 **设计建议** — Gibson 引物设计、载体构建路线选择、Pipeline（含抗体研发）推荐并可一键创建整套 DAG 流程\n\n试试对我说：「帮我分析这条序列」或「生成 Gibson 组装方案」`,
-          `I'm BioMap OS Copilot, your synthetic-biology lab assistant 🧬\n\nI can:\n\n📊 **Answer lab questions** — "which samples expire soon", "any bookings on the flow cytometer today", "how is the lab doing"\n🧬 **Analyze sequences** — open me on a sequence page for GC%, ORF, and restriction-site analysis\n📋 **Generate protocols** — say "Gibson protocol" or "qPCR steps" to get a standard protocol inserted into your experiment record\n🔧 **Design advice** — Gibson primer design, vector-construction route selection, and pipeline recommendations (incl. antibody R&D) with one-click DAG creation\n\nTry: "analyze this sequence" or "generate a Gibson protocol"`),
+          `我是 BioMap OS 的确定性实验助手 🧬\n\n我可以查询样本效期与库存、设备预约、流程进度，执行序列基础分析，并生成供人工复核的协议草稿。当前未配置开放式模型问答；实验参数请始终以已验证 SOP、试剂说明书和设备方法为准。`,
+          `I'm BioMap OS's deterministic lab assistant 🧬\n\nI can query sample expiry and inventory, equipment bookings, and workflow progress; run basic sequence analysis; and draft protocols for human review. Open-ended model Q&A is not configured. Always verify experimental parameters against validated SOPs and reagent/equipment instructions.`),
         actions: [
           { label: R("序列库", "Sequence Library"), url: "/sequences" },
           { label: R("BioFlow 工作流", "BioFlow"), url: "/workflows" },
@@ -715,13 +788,18 @@ export const aiRouter = createRouter({
         where: eq(sequences.id, input.insertSequenceId),
       });
       if (!seq) return { error: "插入片段序列不存在" };
-      const result = designGibsonPrimers(
-        seq.sequence,
-        input.vectorLeftArm,
-        input.vectorRightArm,
-        input.armLength,
-        input.annealLength,
-      );
+      let result: ReturnType<typeof designGibsonPrimers>;
+      try {
+        result = designGibsonPrimers(
+          seq.sequence,
+          input.vectorLeftArm,
+          input.vectorRightArm,
+          input.armLength,
+          input.annealLength,
+        );
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : "序列格式无效" };
+      }
       return {
         insertName: seq.name,
         ...result,
@@ -730,10 +808,15 @@ export const aiRouter = createRouter({
     }),
 
   /** 引物 Tm 速算 */
-  tm: authedQuery.input(z.object({ primer: z.string().min(4) })).query(({ input }) => ({
-    primer: input.primer.toUpperCase(),
-    length: input.primer.length,
-    tm: tmEstimate(input.primer),
-    gc: gcContent(input.primer),
-  })),
+  tm: authedQuery.input(z.object({ primer: z.string().min(4).max(200) })).query(({ input }) => {
+    const primer = normalizeUnambiguousDna(input.primer, "引物");
+    return {
+      primer,
+      length: primer.length,
+      tm: tmEstimate(primer),
+      gc: gcContent(primer),
+      method: primer.length < 14 ? "Wallace" : "empirical",
+      disclaimer: "估算值仅供设计初筛；请使用与缓冲液、盐浓度和仪器方法匹配的验证模型复核。",
+    };
+  }),
 });

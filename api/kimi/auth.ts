@@ -1,19 +1,70 @@
 import type { Context } from "hono";
-import { setCookie } from "hono/cookie";
+import { deleteCookie, setCookie } from "hono/cookie";
 import * as jose from "jose";
 import * as cookie from "cookie";
+import { createHash, randomBytes } from "node:crypto";
 import { env } from "../lib/env";
 import { getSessionCookieOptions } from "../lib/cookies";
-import { Session } from "@contracts/constants";
+import { Paths, Session } from "@contracts/constants";
 import { Errors } from "@contracts/errors";
 import { signSessionToken, verifySessionToken } from "./session";
 import { users as kimiUsers } from "./platform";
 import { findUserByUnionId, upsertUser } from "../queries/users";
 import type { TokenResponse } from "./types";
 
+const OAUTH_COOKIE_NAME = "biomap_oauth";
+const OAUTH_STATE_TTL_SECONDS = 10 * 60;
+const textEncoder = new TextEncoder();
+
+type OAuthStatePayload = {
+  state: string;
+  verifier: string;
+  redirectUri: string;
+};
+
+function publicBaseUrl(c: Context): string {
+  return env.publicBaseUrl || new URL(c.req.url).origin;
+}
+
+function toBase64Url(value: Buffer): string {
+  return value.toString("base64url");
+}
+
+async function signOAuthState(payload: OAuthStatePayload): Promise<string> {
+  return new jose.SignJWT(payload)
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuer("biomap-os")
+    .setAudience("biomap-oauth")
+    .setIssuedAt()
+    .setExpirationTime(`${OAUTH_STATE_TTL_SECONDS} seconds`)
+    .sign(textEncoder.encode(env.sessionSecret));
+}
+
+async function verifyOAuthState(token: string): Promise<OAuthStatePayload> {
+  const { payload } = await jose.jwtVerify(
+    token,
+    textEncoder.encode(env.sessionSecret),
+    {
+      algorithms: ["HS256"],
+      issuer: "biomap-os",
+      audience: "biomap-oauth",
+    },
+  );
+  const { state, verifier, redirectUri } = payload;
+  if (
+    typeof state !== "string" ||
+    typeof verifier !== "string" ||
+    typeof redirectUri !== "string"
+  ) {
+    throw new Error("Invalid OAuth state payload");
+  }
+  return { state, verifier, redirectUri };
+}
+
 async function exchangeAuthCode(
   code: string,
   redirectUri: string,
+  codeVerifier?: string,
 ): Promise<TokenResponse> {
   const body = new URLSearchParams({
     grant_type: "authorization_code",
@@ -22,6 +73,9 @@ async function exchangeAuthCode(
     redirect_uri: redirectUri,
     client_secret: env.appSecret,
   });
+  if (codeVerifier) {
+    body.set("code_verifier", codeVerifier);
+  }
 
   const resp = await fetch(`${env.kimiAuthUrl}/api/oauth/token`, {
     method: "POST",
@@ -50,6 +104,9 @@ async function verifyAccessToken(
   if (!userId) {
     throw new Error("user_id missing from access token");
   }
+  if (clientId !== env.appId) {
+    throw new Error("access token was issued to a different client");
+  }
   return { userId, clientId };
 }
 
@@ -71,6 +128,34 @@ export async function authenticateRequest(headers: Headers) {
   return user;
 }
 
+export function createOAuthLoginHandler() {
+  return async (c: Context) => {
+    const redirectUri = `${publicBaseUrl(c)}${Paths.oauthCallback}`;
+    const state = toBase64Url(randomBytes(32));
+    const verifier = toBase64Url(randomBytes(48));
+    const challenge = toBase64Url(
+      createHash("sha256").update(verifier).digest(),
+    );
+    const stateToken = await signOAuthState({ state, verifier, redirectUri });
+
+    setCookie(c, OAUTH_COOKIE_NAME, stateToken, {
+      ...getSessionCookieOptions(c.req.raw.headers),
+      maxAge: OAUTH_STATE_TTL_SECONDS,
+    });
+
+    const authorizeUrl = new URL(`${env.kimiAuthUrl}/api/oauth/authorize`);
+    authorizeUrl.searchParams.set("client_id", env.appId);
+    authorizeUrl.searchParams.set("redirect_uri", redirectUri);
+    authorizeUrl.searchParams.set("response_type", "code");
+    authorizeUrl.searchParams.set("scope", "profile");
+    authorizeUrl.searchParams.set("state", state);
+    authorizeUrl.searchParams.set("code_challenge", challenge);
+    authorizeUrl.searchParams.set("code_challenge_method", "S256");
+
+    return c.redirect(authorizeUrl.toString(), 302);
+  };
+}
+
 export function createOAuthCallbackHandler() {
   return async (c: Context) => {
     const code = c.req.query("code");
@@ -79,6 +164,7 @@ export function createOAuthCallbackHandler() {
     const errorDescription = c.req.query("error_description");
 
     if (error) {
+      deleteCookie(c, OAUTH_COOKIE_NAME, { path: "/" });
       if (error === "access_denied") {
         return c.redirect("/", 302);
       }
@@ -93,8 +179,26 @@ export function createOAuthCallbackHandler() {
     }
 
     try {
-      const redirectUri = atob(state);
-      const tokenResp = await exchangeAuthCode(code, redirectUri);
+      const cookies = cookie.parse(c.req.header("cookie") || "");
+      const stateToken = cookies[OAUTH_COOKIE_NAME];
+      if (!stateToken) {
+        return c.json({ error: "OAuth state cookie is missing" }, 400);
+      }
+
+      const oauthState = await verifyOAuthState(stateToken);
+      const expectedRedirectUri = `${publicBaseUrl(c)}${Paths.oauthCallback}`;
+      if (
+        oauthState.state !== state ||
+        oauthState.redirectUri !== expectedRedirectUri
+      ) {
+        return c.json({ error: "OAuth state validation failed" }, 400);
+      }
+
+      const tokenResp = await exchangeAuthCode(
+        code,
+        oauthState.redirectUri,
+        oauthState.verifier,
+      );
       const { userId } = await verifyAccessToken(tokenResp.access_token);
       const userProfile = await kimiUsers.getProfile(tokenResp.access_token);
       if (!userProfile) {
@@ -118,11 +222,13 @@ export function createOAuthCallbackHandler() {
         ...cookieOpts,
         maxAge: Session.maxAgeMs / 1000,
       });
+      deleteCookie(c, OAUTH_COOKIE_NAME, { path: "/" });
 
       return c.redirect("/", 302);
     } catch (error) {
       console.error("[OAuth] Callback failed", error);
-      return c.json({ error: "OAuth callback failed" }, 500);
+      deleteCookie(c, OAUTH_COOKIE_NAME, { path: "/" });
+      return c.json({ error: "OAuth callback failed" }, 400);
     }
   };
 }

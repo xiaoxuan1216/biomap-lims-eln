@@ -102,7 +102,10 @@ export default function SampleLineage() {
   const { data, isLoading } = trpc.sample.lineage.useQuery({ id: sampleId, kind: "sample" });
   const [seqDialog, setSeqDialog] = useState<LineageNode | null>(null);
 
-  const nodes = (data?.nodes ?? []) as LineageNode[];
+  const nodes = useMemo(
+    () => (data?.nodes ?? []) as unknown as LineageNode[],
+    [data?.nodes],
+  );
   const edges = (data?.edges ?? []) as LineageEdge[];
   const root = nodes.find((n) => n.key === data?.root);
 

@@ -1,21 +1,26 @@
 import { useEffect, useRef, useState } from "react";
-import * as $3Dmol from "3dmol";
 import { Loader2 } from "lucide-react";
+import type { GLViewer } from "3dmol";
 
 /** 蛋白三级结构面板（3Dmol.js + 本地 PDB 文件） */
 export function StructureView({ pdbId }: { pdbId: string }) {
+  return <StructureViewContent key={pdbId} pdbId={pdbId} />;
+}
+
+function StructureViewContent({ pdbId }: { pdbId: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    let viewer: $3Dmol.GLViewer | null = null;
-    setLoading(true);
-    setError(false);
+    let viewer: GLViewer | null = null;
     (async () => {
       try {
-        const res = await fetch(`/pdb/${pdbId.toLowerCase()}.pdb`);
+        const [$3Dmol, res] = await Promise.all([
+          import("3dmol"),
+          fetch(`/pdb/${pdbId.toLowerCase()}.pdb`),
+        ]);
         if (!res.ok) throw new Error("pdb not found");
         const pdb = await res.text();
         if (cancelled || !ref.current) return;

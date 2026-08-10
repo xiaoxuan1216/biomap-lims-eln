@@ -14,7 +14,7 @@ export default function LabAgent() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Lab Agent</h1>
           <p className="text-sm text-muted-foreground">
-            {t("实验室智能体 · 用自然语言查询库存、预约、流程进度，并一键创建业务流")}
+            {t("实验室指令台 · 用自然语言执行可验证查询；写操作需明确确认")}
           </p>
         </div>
       </div>

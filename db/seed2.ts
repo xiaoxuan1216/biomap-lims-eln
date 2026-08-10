@@ -5,7 +5,6 @@ import {
   equipment,
   equipmentBookings,
   equipmentMaintenance,
-  projects,
 } from "./schema";
 import { sql } from "drizzle-orm";
 

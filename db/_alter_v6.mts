@@ -1,7 +1,7 @@
 import { getDb } from "../api/queries/connection";
 import { sql } from "drizzle-orm";
 const db = getDb();
-const cols = (await db.execute(sql`SHOW COLUMNS FROM experiments`))[0] as any[];
+const cols = (await db.execute(sql`SHOW COLUMNS FROM experiments`))[0] as unknown as any[];
 const names = cols.map((c) => c.Field);
 if (!names.includes("workflowId")) {
   await db.execute(sql`ALTER TABLE experiments ADD COLUMN workflowId BIGINT UNSIGNED NULL AFTER content`);

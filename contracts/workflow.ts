@@ -715,9 +715,9 @@ export function nodeParamSummary(
   nodeType: FlowNodeType,
   templateKey: string | null | undefined,
   params: NodeParams | null | undefined,
-  t?: (key: string, vars?: Record<string, unknown>) => string,
+  t?: (key: string, vars?: Record<string, string | number>) => string,
 ): string {
-  const tr = (key: string, vars?: Record<string, unknown>) => (t ? t(key, vars) : key);
+  const tr = (key: string, vars?: Record<string, string | number>) => (t ? t(key, vars) : key);
   if (nodeType === "timer") {
     if (!params) return "";
     if (params.mode === "scheduled" && params.datetime) return tr("{time} 开始", { time: params.datetime });

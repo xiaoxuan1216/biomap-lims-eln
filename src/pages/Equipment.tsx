@@ -62,6 +62,9 @@ export default function Equipment() {
   const [category, setCategory] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [calibrationCutoff] = useState(() =>
+    new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+  );
 
   const { data: equipment, isLoading } = trpc.equipment.list.useQuery({
     category: category === "all" ? undefined : (category as "analytical"),
@@ -140,8 +143,7 @@ export default function Equipment() {
                 const Icon = CATEGORY_ICONS[e.category] ?? MonitorCog;
                 const calDue =
                   e.nextCalibrationDate &&
-                  e.nextCalibrationDate <=
-                    new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
+                  e.nextCalibrationDate <= calibrationCutoff;
                 return (
                   <Card
                     key={e.id}

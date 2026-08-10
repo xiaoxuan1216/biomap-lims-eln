@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { and, desc, eq, gte, isNotNull, isNull, like, lte, or, sql } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
+import { and, eq, gte, isNotNull, isNull, like, lte, or, sql } from "drizzle-orm";
 import { createRouter, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import {
@@ -219,6 +220,12 @@ export const commandRouter = createRouter({
 
       /* ── 从模板创建业务流 ── */
       if (/(创建|新建|create|new|发起).*(流程|业务流|workflow|pipeline)/i.test(norm)) {
+        if (ctx.user.role === "viewer") {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "只读用户不能创建业务流",
+          });
+        }
         const findTpl = () => {
           const kwMap: [RegExp, string][] = [
             [/重组|recombinant/i, ""],

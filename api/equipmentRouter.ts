@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, gte, lt } from "drizzle-orm";
-import { createRouter, authedQuery } from "./middleware";
+import { adminQuery, authedQuery, createRouter, writeQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import { equipment, equipmentBookings, equipmentMaintenance } from "@db/schema";
-import { logActivity } from "./queries/labHelpers";
+import { appendActivity, logActivity } from "./queries/labHelpers";
 
 const CATEGORIES = ["analytical", "execution", "automation", "support"] as const;
 const STATUSES = ["available", "in_use", "maintenance", "fault"] as const;
@@ -82,7 +82,7 @@ export const equipmentRouter = createRouter({
     return { ...eqp, bookings, maintenance };
   }),
 
-  create: authedQuery.input(equipmentInput).mutation(async ({ ctx, input }) => {
+  create: adminQuery.input(equipmentInput).mutation(async ({ ctx, input }) => {
     const [{ id }] = await getDb()
       .insert(equipment)
       .values({ ...input, nextCalibrationDate: input.nextCalibrationDate ?? null })
@@ -97,7 +97,7 @@ export const equipmentRouter = createRouter({
     return { id };
   }),
 
-  update: authedQuery
+  update: adminQuery
     .input(
       z.object({
         id: z.number(),
@@ -131,7 +131,7 @@ export const equipmentRouter = createRouter({
       return { ok: true };
     }),
 
-  delete: authedQuery.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+  delete: adminQuery.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const eqp = await db.query.equipment.findFirst({ where: eq(equipment.id, input.id) });
     await db.delete(equipmentBookings).where(eq(equipmentBookings.equipmentId, input.id));
@@ -148,7 +148,7 @@ export const equipmentRouter = createRouter({
   }),
 
   /** 预约设备（冲突检测） */
-  book: authedQuery
+  book: writeQuery
     .input(
       z.object({
         equipmentId: z.number(),
@@ -159,60 +159,69 @@ export const equipmentRouter = createRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
-      const eqp = await db.query.equipment.findFirst({
-        where: eq(equipment.id, input.equipmentId),
-      });
-      if (!eqp) throw new TRPCError({ code: "NOT_FOUND", message: "设备不存在" });
-      if (eqp.status === "maintenance" || eqp.status === "fault") {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: `设备当前${eqp.status === "fault" ? "故障" : "维护中"}，不可预约`,
-        });
-      }
       if (input.endTime <= input.startTime) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "结束时间必须晚于开始时间" });
       }
-      // 冲突检测：已有 active 预约时间段重叠
-      const conflicts = await db
-        .select()
-        .from(equipmentBookings)
-        .where(
-          and(
-            eq(equipmentBookings.equipmentId, input.equipmentId),
-            eq(equipmentBookings.status, "active"),
-            lt(equipmentBookings.startTime, input.endTime),
-            gte(equipmentBookings.endTime, input.startTime),
-          ),
-        );
-      if (conflicts.length > 0) {
-        const c = conflicts[0];
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: `时段冲突：${c.userName} 已预约 ${c.startTime.toLocaleString("zh-CN")} — ${c.endTime.toLocaleString("zh-CN")}`,
-        });
+      if (input.endTime.getTime() - input.startTime.getTime() > 7 * 24 * 60 * 60 * 1000) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "单次预约不能超过 7 天" });
       }
-      const [{ id }] = await db
-        .insert(equipmentBookings)
-        .values({
-          equipmentId: input.equipmentId,
-          userName: ctx.user.name ?? "未知用户",
-          purpose: input.purpose ?? null,
-          startTime: input.startTime,
-          endTime: input.endTime,
-        })
-        .$returningId();
-      await logActivity({
-        userName: ctx.user.name,
-        action: "预约了设备",
-        entityType: "equipment",
-        entityId: input.equipmentId,
-        entityName: eqp.name,
-        detail: `${input.startTime.toLocaleString("zh-CN")} — ${input.endTime.toLocaleString("zh-CN")}`,
+      return db.transaction(async (tx) => {
+        // 锁定设备主记录，使同一设备的“检查冲突 + 写入预约”串行化。
+        const [eqp] = await tx
+          .select()
+          .from(equipment)
+          .where(eq(equipment.id, input.equipmentId))
+          .limit(1)
+          .for("update");
+        if (!eqp) throw new TRPCError({ code: "NOT_FOUND", message: "设备不存在" });
+        if (eqp.status === "maintenance" || eqp.status === "fault") {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `设备当前${eqp.status === "fault" ? "故障" : "维护中"}，不可预约`,
+          });
+        }
+        const conflicts = await tx
+          .select()
+          .from(equipmentBookings)
+          .where(
+            and(
+              eq(equipmentBookings.equipmentId, input.equipmentId),
+              eq(equipmentBookings.status, "active"),
+              lt(equipmentBookings.startTime, input.endTime),
+              gte(equipmentBookings.endTime, input.startTime),
+            ),
+          );
+        if (conflicts.length > 0) {
+          const conflict = conflicts[0];
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `时段冲突：${conflict.userName} 已预约 ${conflict.startTime.toLocaleString("zh-CN")} — ${conflict.endTime.toLocaleString("zh-CN")}`,
+          });
+        }
+        const [{ id }] = await tx
+          .insert(equipmentBookings)
+          .values({
+            equipmentId: input.equipmentId,
+            userName: ctx.user.name ?? "未知用户",
+            purpose: input.purpose ?? null,
+            startTime: input.startTime,
+            endTime: input.endTime,
+          })
+          .$returningId();
+        await appendActivity(tx, {
+          userId: ctx.user.id,
+          userName: ctx.user.name,
+          action: "预约了设备",
+          entityType: "equipment",
+          entityId: input.equipmentId,
+          entityName: eqp.name,
+          detail: `${input.startTime.toLocaleString("zh-CN")} — ${input.endTime.toLocaleString("zh-CN")}`,
+        });
+        return { id };
       });
-      return { id };
     }),
 
-  cancelBooking: authedQuery
+  cancelBooking: writeQuery
     .input(z.object({ bookingId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
@@ -234,7 +243,7 @@ export const equipmentRouter = createRouter({
     }),
 
   /** 登记维护/校准记录 */
-  addMaintenance: authedQuery
+  addMaintenance: adminQuery
     .input(
       z.object({
         equipmentId: z.number(),

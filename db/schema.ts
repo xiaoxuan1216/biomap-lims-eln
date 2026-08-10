@@ -11,6 +11,7 @@ import {
   decimal,
   date,
   index,
+  uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
@@ -19,7 +20,9 @@ export const users = mysqlTable("users", {
   name: varchar("name", { length: 255 }),
   email: varchar("email", { length: 320 }),
   avatar: text("avatar"),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: mysqlEnum("role", ["viewer", "user", "reviewer", "admin"])
+    .default("user")
+    .notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt")
     .defaultNow()
@@ -68,6 +71,11 @@ export const experiments = mysqlTable(
       .default("planning")
       .notNull(),
     content: longtext("content"),
+    revision: int("revision").default(0).notNull(),
+    currentRevisionId: bigint("currentRevisionId", { mode: "number", unsigned: true }),
+    contentHash: varchar("contentHash", { length: 64 }),
+    /** 已签署记录不能解锁；修订以新记录追加，并指向原记录。 */
+    amendsExperimentId: bigint("amendsExperimentId", { mode: "number", unsigned: true }),
     /** 来源业务流 + 节点（项目 → 业务流 → 节点 → ELN 条目 四级执行链） */
     workflowId: bigint("workflowId", { mode: "number", unsigned: true }),
     nodeKey: varchar("nodeKey", { length: 64 }),
@@ -85,6 +93,7 @@ export const experiments = mysqlTable(
   (table) => ({
     projectIdx: index("exp_project_idx").on(table.projectId),
     statusIdx: index("exp_status_idx").on(table.status),
+    amendmentUnique: uniqueIndex("exp_amendment_unique").on(table.amendsExperimentId),
   }),
 );
 
@@ -104,6 +113,54 @@ export const experimentSamples = mysqlTable("experiment_samples", {
 });
 
 export type ExperimentSample = typeof experimentSamples.$inferSelect;
+
+// ─── ELN 不可变版本与电子签名 ───────────────────────────────────────────
+export const experimentRevisions = mysqlTable(
+  "experiment_revisions",
+  {
+    id: serial("id").primaryKey(),
+    experimentId: bigint("experimentId", { mode: "number", unsigned: true }).notNull(),
+    revision: int("revision").notNull(),
+    snapshot: longtext("snapshot").notNull(),
+    contentHash: varchar("contentHash", { length: 64 }).notNull(),
+    changeReason: varchar("changeReason", { length: 500 }).notNull(),
+    createdById: bigint("createdById", { mode: "number", unsigned: true }),
+    createdByName: varchar("createdByName", { length: 255 }),
+    createdAt: timestamp("createdAt", { fsp: 3 }).defaultNow().notNull(),
+  },
+  (table) => ({
+    experimentRevisionUnique: uniqueIndex("eln_revision_unique").on(
+      table.experimentId,
+      table.revision,
+    ),
+    hashIdx: index("eln_revision_hash_idx").on(table.contentHash),
+  }),
+);
+
+export const experimentSignatures = mysqlTable(
+  "experiment_signatures",
+  {
+    id: serial("id").primaryKey(),
+    experimentId: bigint("experimentId", { mode: "number", unsigned: true }).notNull(),
+    revisionId: bigint("revisionId", { mode: "number", unsigned: true }).notNull(),
+    revision: int("revision").notNull(),
+    contentHash: varchar("contentHash", { length: 64 }).notNull(),
+    meaning: mysqlEnum("meaning", ["reviewed_and_approved", "legacy_import"]).notNull(),
+    statement: varchar("statement", { length: 500 }).notNull(),
+    signedById: bigint("signedById", { mode: "number", unsigned: true }),
+    signedByName: varchar("signedByName", { length: 255 }),
+    signedAt: timestamp("signedAt", { fsp: 3 }).defaultNow().notNull(),
+  },
+  (table) => ({
+    experimentUnique: uniqueIndex("eln_signature_experiment_unique").on(
+      table.experimentId,
+    ),
+    revisionUnique: uniqueIndex("eln_signature_revision_unique").on(table.revisionId),
+  }),
+);
+
+export type ExperimentRevision = typeof experimentRevisions.$inferSelect;
+export type ExperimentSignature = typeof experimentSignatures.$inferSelect;
 
 // ─── 存储位置（树形：实验室→冰箱→层架→冻存盒）──────────────────────────
 export const storageLocations = mysqlTable("storage_locations", {
@@ -168,25 +225,42 @@ export const samples = mysqlTable(
       .defaultNow()
       .notNull()
       .$onUpdate(() => new Date()),
+    archivedAt: timestamp("archivedAt"),
   },
   (table) => ({
     typeIdx: index("sample_type_idx").on(table.type),
     locationIdx: index("sample_location_idx").on(table.locationId),
+    boxPositionUnique: uniqueIndex("sample_box_position_unique").on(
+      table.locationId,
+      table.boxRow,
+      table.boxCol,
+    ),
   }),
 );
 
 export type Sample = typeof samples.$inferSelect;
 
 // ─── 库存流水 ───────────────────────────────────────────────────────────
-export const stockTransactions = mysqlTable("stock_transactions", {
-  id: serial("id").primaryKey(),
-  sampleId: bigint("sampleId", { mode: "number", unsigned: true }).notNull(),
-  delta: decimal("delta", { precision: 14, scale: 3, mode: "number" }).notNull(),
-  reason: mysqlEnum("reason", ["restock", "consume", "adjust", "dispose"]).notNull(),
-  note: varchar("note", { length: 500 }),
-  userName: varchar("userName", { length: 255 }),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+export const stockTransactions = mysqlTable(
+  "stock_transactions",
+  {
+    id: serial("id").primaryKey(),
+    sampleId: bigint("sampleId", { mode: "number", unsigned: true }).notNull(),
+    delta: decimal("delta", { precision: 14, scale: 3, mode: "number" }).notNull(),
+    quantityBefore: decimal("quantityBefore", { precision: 14, scale: 3, mode: "number" }),
+    quantityAfter: decimal("quantityAfter", { precision: 14, scale: 3, mode: "number" }),
+    reason: mysqlEnum("reason", ["restock", "consume", "adjust", "dispose"]).notNull(),
+    note: varchar("note", { length: 500 }),
+    userId: bigint("userId", { mode: "number", unsigned: true }),
+    userName: varchar("userName", { length: 255 }),
+    idempotencyKey: varchar("idempotencyKey", { length: 128 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    sampleCreatedIdx: index("stock_sample_created_idx").on(table.sampleId, table.createdAt),
+    idempotencyUnique: uniqueIndex("stock_idempotency_unique").on(table.idempotencyKey),
+  }),
+);
 
 export type StockTransaction = typeof stockTransactions.$inferSelect;
 
@@ -335,19 +409,41 @@ export const activities = mysqlTable(
   {
     id: serial("id").primaryKey(),
     userName: varchar("userName", { length: 255 }),
+    userId: bigint("userId", { mode: "number", unsigned: true }),
+    source: varchar("source", { length: 30 }).default("web").notNull(),
     action: varchar("action", { length: 50 }).notNull(),
     entityType: varchar("entityType", { length: 30 }).notNull(),
     entityId: bigint("entityId", { mode: "number", unsigned: true }),
     entityName: varchar("entityName", { length: 255 }),
     detail: text("detail"),
-    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    beforeJson: longtext("beforeJson"),
+    afterJson: longtext("afterJson"),
+    reason: varchar("reason", { length: 500 }),
+    previousHash: varchar("previousHash", { length: 64 }),
+    hash: varchar("hash", { length: 64 }),
+    createdAt: timestamp("createdAt", { fsp: 3 }).defaultNow().notNull(),
   },
   (table) => ({
     createdIdx: index("activity_created_idx").on(table.createdAt),
+    entityIdx: index("activity_entity_idx").on(table.entityType, table.entityId),
   }),
 );
 
 export type Activity = typeof activities.$inferSelect;
+
+/** 单行锁，保证活动日志哈希链在并发写入时仍然保持线性。 */
+export const auditState = mysqlTable("audit_state", {
+  id: int("id").primaryKey(),
+  lastHash: varchar("lastHash", { length: 64 }),
+  updatedAt: timestamp("updatedAt", { fsp: 3 }).defaultNow().notNull(),
+});
+
+/** 并发安全的人类可读编号分配器（EXP-/SMP-）。 */
+export const systemCounters = mysqlTable("system_counters", {
+  key: varchar("key", { length: 64 }).primaryKey(),
+  value: bigint("value", { mode: "number", unsigned: true }).notNull().default(0),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
 
 // ─── 样本全生命周期追溯（谱系图）：样本 / 序列混合 DAG ─────────────────
 /** 边方向：child ← parent（child 由 parent 衍生），如 纯化蛋白 ←纯化自← 表达菌液 */
@@ -418,6 +514,10 @@ export const workflowNodes = mysqlTable(
   },
   (table) => ({
     wfIdx: index("wfnode_wf_idx").on(table.workflowId),
+    workflowNodeUnique: uniqueIndex("wfnode_workflow_key_unique").on(
+      table.workflowId,
+      table.nodeKey,
+    ),
   }),
 );
 
@@ -437,6 +537,10 @@ export const workflowEdges = mysqlTable(
   },
   (table) => ({
     wfIdx: index("wfedge_wf_idx").on(table.workflowId),
+    workflowEdgeUnique: uniqueIndex("wfedge_workflow_key_unique").on(
+      table.workflowId,
+      table.edgeKey,
+    ),
   }),
 );
 

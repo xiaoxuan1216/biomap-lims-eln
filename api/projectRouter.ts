@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
-import { createRouter, authedQuery } from "./middleware";
+import { adminQuery, authedQuery, createRouter, writeQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import { activities, experiments, projects, samples, workflowNodes, workflows } from "@db/schema";
 import { logActivity } from "./queries/labHelpers";
@@ -53,7 +53,7 @@ export const projectRouter = createRouter({
     return { ...project, experiments: exps, samples: smps };
   }),
 
-  create: authedQuery.input(projectInput).mutation(async ({ ctx, input }) => {
+  create: writeQuery.input(projectInput).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const [{ id }] = await db
       .insert(projects)
@@ -69,7 +69,7 @@ export const projectRouter = createRouter({
     return { id };
   }),
 
-  update: authedQuery
+  update: writeQuery
     .input(z.object({ id: z.number() }).merge(projectInput.partial()))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
@@ -84,7 +84,7 @@ export const projectRouter = createRouter({
       return { ok: true };
     }),
 
-  delete: authedQuery.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+  delete: adminQuery.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const expCount = await db
       .select({ id: experiments.id })

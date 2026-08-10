@@ -42,7 +42,7 @@ async function rebuildSubflow(wfId: number, parentWfId: number, lang: "zh" | "en
       posX: n.x,
       posY: n.y,
       /* 演示进度：前 7 个节点完成（出库→纯化定量），第 8 个转运进行中 */
-      status: i < 7 ? "done" : i === 7 ? "in_progress" : "pending",
+      status: i < 7 ? "done" as const : i === 7 ? "in_progress" as const : "pending" as const,
     })),
   );
   await db.insert(workflowEdges).values(

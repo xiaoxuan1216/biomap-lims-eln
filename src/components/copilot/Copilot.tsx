@@ -147,7 +147,7 @@ export default function Copilot() {
             })) as Parameters<typeof insertBlocksToExperiment>[0],
           );
           if (ok) {
-            toast.success(t("「{label}」方案已插入实验记录", { label: data.label }));
+            toast.success(t("「{label}」方案已插入实验记录", { label: data.label ?? "" }));
             setOpen(false);
           } else {
             toast.error(t("插入失败：请在实验详情页使用该功能"));
@@ -212,7 +212,10 @@ export default function Copilot() {
           {messages.length === 0 && (
             <div className="space-y-4">
               <div className="rounded-2xl rounded-tl-sm bg-slate-100 px-4 py-3 text-sm text-slate-700">
-                {t("你好！我是 BioMap OS Copilot 🧬 我可以帮你查询实验室数据、分析序列、生成实验方案，还能推荐并一键创建合成生物学 DAG 流程。")}
+                {t("你好！我是 BioMap OS Copilot 🧬 我会优先使用可验证的系统查询；配置 Kimi API 后，也能回答开放式问题。所有写操作都需要你明确点击确认。")}
+              </div>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                {t("AI 输出仅供研究参考，可能出错。关键实验参数必须对照已验证 SOP、试剂说明书和设备方法复核。")}
               </div>
               <div className="space-y-2">
                 <div className="text-xs text-muted-foreground font-medium px-1">{t("试试这些：")}</div>

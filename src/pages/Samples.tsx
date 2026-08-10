@@ -319,7 +319,7 @@ export default function Samples() {
             {selectedLocation?.type === "box" && (
               <>
                 <div className="space-y-2">
-                  <Label>{t("盒内行（1-{rows}）", { rows: selectedLocation.rows })}</Label>
+                  <Label>{t("盒内行（1-{rows}）", { rows: selectedLocation.rows ?? 0 })}</Label>
                   <Input
                     type="number"
                     min="1"
@@ -329,7 +329,7 @@ export default function Samples() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>{t("盒内列（1-{cols}）", { cols: selectedLocation.cols })}</Label>
+                  <Label>{t("盒内列（1-{cols}）", { cols: selectedLocation.cols ?? 0 })}</Label>
                   <Input
                     type="number"
                     min="1"
