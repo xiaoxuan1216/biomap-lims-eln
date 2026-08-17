@@ -4,15 +4,17 @@
 
 面向合成生物学与抗体研发实验室，把项目管理、实验记录（ELN）、业务流程编排（BioFlow DAG）、
 序列设计（SnapGene 级工具）、样本/耗材库存、存储位置、设备机时统一在一个数据模型之上，
-并以 Lab Agent / Copilot 提供自然语言操作入口。
+并把 CRO / CDMO 外部委托的需求、送样、执行、交付与验收接入 BioFlow，
+同时以 Lab Agent / Copilot 提供自然语言操作入口。
 
 ## 快速开始
 
 ```bash
 npm install
-cp .env.example .env     # 填写数据库、OAuth、会话密钥和公开地址
+cp .env.example .env     # 填写数据库、BioMap 登录账号、会话密钥和公开地址
 npm run verify           # 规范、测试、类型检查与生产构建
 PORT=3100 npm start      # 启动前自动执行版本化迁移；迁移失败则拒绝启动
+npx tsx db/_seed_external_orders.mts  # 可选：写入外部委托演示数据（幂等）
 ```
 
 ## 给 AI / 外部系统的入口

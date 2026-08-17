@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, like, or } from "drizzle-orm";
+import { and, desc, eq, inArray, like, or } from "drizzle-orm";
 import {
   adminQuery,
   authedQuery,
@@ -10,12 +10,17 @@ import {
 } from "./middleware";
 import { getDb } from "./queries/connection";
 import {
+  externalOrderExperiments,
+  externalOrderItems,
+  externalOrders,
+  externalResults,
   experimentRevisions,
   experimentSamples,
   experimentSignatures,
   experiments,
   projects,
   samples,
+  serviceProviders,
   workflowNodes,
   workflows,
 } from "@db/schema";
@@ -155,6 +160,28 @@ export const experimentRouter = createRouter({
       where: eq(experiments.amendsExperimentId, exp.id),
       columns: { id: true, code: true, title: true, status: true },
     });
+    const externalLinks = await db
+      .select({
+        link: externalOrderExperiments,
+        order: externalOrders,
+        itemName: externalOrderItems.name,
+        providerName: serviceProviders.name,
+      })
+      .from(externalOrderExperiments)
+      .innerJoin(externalOrders, eq(externalOrderExperiments.orderId, externalOrders.id))
+      .leftJoin(externalOrderItems, eq(externalOrderExperiments.orderItemId, externalOrderItems.id))
+      .leftJoin(serviceProviders, eq(externalOrders.providerId, serviceProviders.id))
+      .where(eq(externalOrderExperiments.experimentId, input.id))
+      .orderBy(desc(externalOrderExperiments.createdAt));
+    const externalOrderIds = [...new Set(externalLinks.map((row) => row.order.id))];
+    const linkedResults = externalOrderIds.length
+      ? await db
+          .select({ result: externalResults, sampleName: samples.name, sampleSku: samples.sku })
+          .from(externalResults)
+          .leftJoin(samples, eq(externalResults.sampleId, samples.id))
+          .where(inArray(externalResults.orderId, externalOrderIds))
+          .orderBy(desc(externalResults.createdAt))
+      : [];
     return {
       ...exp,
       project,
@@ -163,6 +190,14 @@ export const experimentRouter = createRouter({
       integrity,
       original,
       amendment: amendment ?? null,
+      externalWork: externalLinks.map(({ link, order, ...meta }) => ({
+        ...link,
+        order,
+        ...meta,
+        results: linkedResults
+          .filter((row) => row.result.orderId === order.id && (!link.orderItemId || row.result.orderItemId === link.orderItemId))
+          .map(({ result, ...sampleMeta }) => ({ ...result, ...sampleMeta })),
+      })),
       usedSamples: usage.map((u) => ({
         ...u.usage,
         sampleName: u.sampleName,

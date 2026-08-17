@@ -21,6 +21,8 @@ const WorkflowEditor = lazy(() => import("@/pages/WorkflowEditor"));
 const ActivityLog = lazy(() => import("@/pages/ActivityLog"));
 const SearchResults = lazy(() => import("@/pages/SearchResults"));
 const LabAgent = lazy(() => import("@/pages/LabAgent"));
+const ExternalOrders = lazy(() => import("@/pages/ExternalOrders"));
+const ExternalOrderDetail = lazy(() => import("@/pages/ExternalOrderDetail"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 
 function PageFallback() {
@@ -53,6 +55,8 @@ export default function App() {
                 <Route path="/equipment/:id" element={<EquipmentDetail />} />
                 <Route path="/workflows" element={<Workflows />} />
                 <Route path="/workflows/:id" element={<WorkflowEditor />} />
+                <Route path="/external-orders" element={<ExternalOrders />} />
+                <Route path="/external-orders/:id" element={<ExternalOrderDetail />} />
                 <Route path="/activity" element={<ActivityLog />} />
                 <Route path="/search" element={<SearchResults />} />
                 <Route path="*" element={<NotFound />} />

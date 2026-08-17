@@ -66,6 +66,7 @@ import {
   PanelRightOpen,
   PanelRightClose,
   NotebookPen,
+  Handshake,
 } from "lucide-react";
 import { toast } from "sonner";
 import { setCopilotContext } from "@/lib/copilotContext";
@@ -73,7 +74,7 @@ import { useI18n } from "@/i18n";
 import type { AppRouter } from "../../api/router";
 
 const nodeTypes = { flowNode: FlowNode };
-const GROUP_ICONS = { manual: Hand, equipment: Cog, decision: GitBranch, data: Database, timer: Clock } as const;
+const GROUP_ICONS = { manual: Hand, equipment: Cog, decision: GitBranch, data: Database, timer: Clock, external: Handshake } as const;
 const TEAM_SUGGESTIONS = ["演示用户", "张工", "王工", "陈研究员", "赵工"];
 type WorkflowDetail = NonNullable<inferRouterOutputs<AppRouter>["workflow"]["byId"]>;
 
@@ -110,6 +111,9 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
   const utils = trpc.useUtils();
   const rf = useReactFlow();
   const { data: equipList } = trpc.equipment.list.useQuery();
+  const { data: externalItems } = trpc.externalOrder.itemOptions.useQuery({
+    projectId: wf.projectId ?? undefined,
+  });
 
   const initialNodes = useMemo<RFNode[]>(
     () =>
@@ -123,6 +127,8 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
           templateKey: n.templateKey,
           owner: n.owner,
           equipmentId: n.equipmentId,
+          externalOrderItemId: n.externalOrderItemId,
+          externalOrder: n.externalOrder,
           config: n.config,
           params: parseParams(n.params),
           status: n.status,
@@ -268,6 +274,8 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
             owner: tpl.defaultOwner ?? null,
             equipmentId: null,
             equipmentName: null,
+            externalOrderItemId: null,
+            externalOrder: null,
             config: tpl.description ?? null,
             params:
               tpl.type === "equipment" && EQUIP_PARAM_SCHEMAS[tpl.key]
@@ -392,6 +400,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
           label: n.data.label,
           owner: n.data.owner,
           equipmentId: n.data.equipmentId,
+          externalOrderItemId: n.data.externalOrderItemId,
           config: n.data.config,
           params:
             n.data.params && Object.keys(n.data.params).length
@@ -610,6 +619,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
             <NodeInspector
               node={selNode}
               equipList={equipList ?? []}
+              externalItems={externalItems ?? []}
               workflowId={id}
               dirty={dirty}
               onPatch={(p) => patchNode(selNode.id, p)}
@@ -824,6 +834,7 @@ function NodeElnSection({ workflowId, nodeKey, dirty }: { workflowId: number; no
 function NodeInspector({
   node,
   equipList,
+  externalItems,
   workflowId,
   dirty,
   onPatch,
@@ -835,6 +846,17 @@ function NodeInspector({
 }: {
   node: RFNode;
   equipList: { id: number; name: string; model: string | null; status: string }[];
+  externalItems: {
+    id: number;
+    name: string;
+    status: string;
+    orderId: number;
+    orderNo: string;
+    orderTitle: string;
+    projectId: number;
+    projectName: string | null;
+    providerName: string | null;
+  }[];
   workflowId: number;
   dirty: boolean;
   onPatch: (p: Partial<FlowNodeData>) => void;
@@ -845,6 +867,7 @@ function NodeInspector({
   creatingSubflow: boolean;
 }) {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const meta = FLOW_NODE_TYPES[node.data.nodeType];
   return (
     <div className="space-y-4">
@@ -904,6 +927,60 @@ function NodeInspector({
             </SelectContent>
           </Select>
           <p className="text-[11px] text-muted-foreground">{t("绑定后可在设备管理中预约该机时")}</p>
+        </div>
+      )}
+      {node.data.nodeType === "external" && (
+        <div className="space-y-1.5">
+          <Label>{t("关联外部委托明细")}</Label>
+          <Select
+            value={node.data.externalOrderItemId ? String(node.data.externalOrderItemId) : "none"}
+            onValueChange={(value) => {
+              if (value === "none") {
+                onPatch({ externalOrderItemId: null, externalOrder: null });
+                return;
+              }
+              const item = externalItems.find((option) => option.id === Number(value));
+              onPatch({
+                externalOrderItemId: Number(value),
+                externalOrder: item
+                  ? {
+                      itemId: item.id,
+                      itemName: item.name,
+                      itemStatus: item.status,
+                      orderId: item.orderId,
+                      orderNo: item.orderNo,
+                      orderTitle: item.orderTitle,
+                      providerName: item.providerName,
+                    }
+                  : null,
+              });
+            }}
+          >
+            <SelectTrigger><SelectValue placeholder={t("选择委托明细")} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">{t("暂不关联")}</SelectItem>
+              {externalItems.map((item) => (
+                <SelectItem key={item.id} value={String(item.id)}>
+                  {item.orderNo} · {item.providerName ?? "—"} · {item.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {node.data.externalOrder ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full border-pink-200 text-pink-700 hover:bg-pink-50"
+              onClick={() => navigate(`/external-orders/${node.data.externalOrder!.orderId}`)}
+            >
+              <Handshake className="mr-1 h-3.5 w-3.5" />
+              {t("打开委托单")} · {node.data.externalOrder.orderNo}
+            </Button>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              {t("先在“外部委托”页面建立委托，再将具体服务项关联到本节点")}
+            </p>
+          )}
         </div>
       )}
       {node.data.nodeType === "equipment" &&

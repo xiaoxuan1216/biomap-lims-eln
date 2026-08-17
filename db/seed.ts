@@ -1,11 +1,16 @@
 import { getDb } from "../api/queries/connection";
+import { eq } from "drizzle-orm";
 import {
   projects,
   experiments,
+  experimentRevisions,
+  experimentSignatures,
   experimentSamples,
+  lineageEdges,
   samples,
   storageLocations,
   stockTransactions,
+  sequenceFeatures,
   sequences,
   activities,
 } from "./schema";
@@ -21,12 +26,16 @@ export async function seed() {
   console.log("Seeding database...");
 
   // 清空业务表（幂等种子）
+  await db.delete(experimentSignatures);
+  await db.delete(experimentRevisions);
   await db.delete(experimentSamples);
   await db.delete(stockTransactions);
+  await db.delete(lineageEdges);
   await db.delete(experiments);
   await db.delete(samples);
   await db.delete(storageLocations);
   await db.delete(projects);
+  await db.delete(sequenceFeatures);
   await db.delete(sequences);
   await db.delete(activities);
 
@@ -318,13 +327,20 @@ export async function seed() {
     },
   ]);
   await db.insert(stockTransactions).values([
-    { sampleId: sCell1, delta: -1, reason: "consume", note: "实验 EXP-0001 消耗：复苏 1 支用于转导", userName: "演示用户" },
-    { sampleId: sAb1, delta: -15, reason: "consume", note: "实验 EXP-0001 消耗：流式染色", userName: "演示用户" },
+    { sampleId: sCell1, delta: -1, quantityBefore: 5, quantityAfter: 4, reason: "consume", note: "实验 EXP-0001 消耗：复苏 1 支用于转导", userName: "演示用户" },
+    { sampleId: sAb1, delta: -15, quantityBefore: 50, quantityAfter: 35, reason: "consume", note: "实验 EXP-0001 消耗：流式染色", userName: "演示用户" },
   ]);
+  await db.update(samples).set({ quantity: 4 }).where(eq(samples.id, sCell1));
+  await db.update(samples).set({ quantity: 35 }).where(eq(samples.id, sAb1));
   await db.insert(experimentSamples).values({
     experimentId: e2.id, sampleId: sPrimer, amountUsed: 2,
     note: "qPCR 检测", createdByName: "演示用户",
   });
+  await db.insert(stockTransactions).values({
+    sampleId: sPrimer, delta: -2, quantityBefore: 20, quantityAfter: 18,
+    reason: "consume", note: "实验 EXP-0002 消耗：qPCR 检测", userName: "演示用户",
+  });
+  await db.update(samples).set({ quantity: 18 }).where(eq(samples.id, sPrimer));
 
   // ─── 序列库 ───
   await db.insert(sequences).values([

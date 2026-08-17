@@ -5,10 +5,12 @@ import { getDb } from "./queries/connection";
 import {
   activities,
   experiments,
+  externalOrders,
   projects,
   samples,
   sequences,
   storageLocations,
+  serviceProviders,
 } from "@db/schema";
 
 function datePlus(days: number): string {
@@ -169,6 +171,33 @@ export const dashboardRouter = createRouter({
         .from(storageLocations)
         .where(like(storageLocations.name, q))
         .limit(10);
-      return { experiments: exps, samples: smps, projects: projs, sequences: seqs, locations: locs };
+      const outsourced = await db
+        .select({
+          id: externalOrders.id,
+          orderNo: externalOrders.orderNo,
+          title: externalOrders.title,
+          commercialStatus: externalOrders.commercialStatus,
+          executionStatus: externalOrders.executionStatus,
+          qualityStatus: externalOrders.qualityStatus,
+          providerName: serviceProviders.name,
+        })
+        .from(externalOrders)
+        .leftJoin(serviceProviders, eq(externalOrders.providerId, serviceProviders.id))
+        .where(
+          or(
+            like(externalOrders.orderNo, q),
+            like(externalOrders.title, q),
+            like(serviceProviders.name, q),
+          ),
+        )
+        .limit(20);
+      return {
+        experiments: exps,
+        samples: smps,
+        projects: projs,
+        sequences: seqs,
+        locations: locs,
+        externalOrders: outsourced,
+      };
     }),
 });

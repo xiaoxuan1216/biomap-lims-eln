@@ -11,6 +11,7 @@ import { aiRouter } from "./aiRouter";
 import { workflowRouter } from "./workflowRouter";
 import { commandRouter } from "./commandRouter";
 import { adminRouter } from "./adminRouter";
+import { externalOrderRouter } from "./externalOrderRouter";
 
 export const appRouter = createRouter({
   ping: publicQuery.query(() => ({ ok: true, ts: Date.now() })),
@@ -26,6 +27,7 @@ export const appRouter = createRouter({
   workflow: workflowRouter,
   command: commandRouter,
   admin: adminRouter,
+  externalOrder: externalOrderRouter,
 });
 
 export type AppRouter = typeof appRouter;

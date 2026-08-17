@@ -3,7 +3,13 @@ import { samples, stockTransactions } from "@db/schema";
 import { appendActivity, type DatabaseTransaction } from "../queries/labHelpers";
 import { getDb } from "../queries/connection";
 
-export type InventoryReason = "restock" | "consume" | "adjust" | "dispose";
+export type InventoryReason =
+  | "restock"
+  | "consume"
+  | "adjust"
+  | "dispose"
+  | "transfer_out"
+  | "transfer_in";
 
 export class InventoryError extends Error {
   public readonly kind: "not_found" | "invalid" | "insufficient";
@@ -50,11 +56,11 @@ export function validateInventoryChange(
   if (Math.abs(rounded) > 1_000_000_000) {
     throw new InventoryError("invalid", "单次库存变化量超出允许范围");
   }
-  if (reason === "restock" && rounded < 0) {
-    throw new InventoryError("invalid", "入库数量必须为正数");
+  if ((reason === "restock" || reason === "transfer_in") && rounded < 0) {
+    throw new InventoryError("invalid", "入库或转入数量必须为正数");
   }
-  if ((reason === "consume" || reason === "dispose") && rounded > 0) {
-    throw new InventoryError("invalid", "消耗或废弃数量必须为负数");
+  if ((reason === "consume" || reason === "dispose" || reason === "transfer_out") && rounded > 0) {
+    throw new InventoryError("invalid", "消耗、废弃或转出数量必须为负数");
   }
   return rounded;
 }

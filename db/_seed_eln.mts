@@ -61,6 +61,21 @@ if (!exp) {
 console.log("experiment id:", exp!.id, "blocks:", E.blocks.length);
 
 /* ── 3. 样本消耗（先撤旧账，保持一致性） ── */
+const resolvedConsumptions = [] as {
+  sample: typeof samples.$inferSelect;
+  amount: number;
+  note: string;
+}[];
+for (const c of D.consume as { sampleId?: number; sampleName?: string; amount: number; note: string }[]) {
+  const sample = c.sampleName
+    ? await db.query.samples.findFirst({ where: eq(samples.name, c.sampleName) })
+    : c.sampleId
+      ? await db.query.samples.findFirst({ where: eq(samples.id, c.sampleId) })
+      : undefined;
+  if (!sample) throw new Error(`sample not found: ${c.sampleName ?? c.sampleId}`);
+  resolvedConsumptions.push({ sample, amount: c.amount, note: c.note });
+}
+
 const oldCons = await db.query.experimentSamples.findMany({
   where: eq(experimentSamples.experimentId, exp!.id),
 });
@@ -76,29 +91,30 @@ for (const c of oldCons) {
 }
 await db.delete(experimentSamples).where(eq(experimentSamples.experimentId, exp!.id));
 
-for (const c of D.consume as { sampleId: number; amount: number; note: string }[]) {
-  const s = await db.query.samples.findFirst({ where: eq(samples.id, c.sampleId) });
-  if (!s) throw new Error(`sample ${c.sampleId} not found`);
+for (const c of resolvedConsumptions) {
+  const s = c.sample;
   await db.insert(experimentSamples).values({
     experimentId: exp!.id,
-    sampleId: c.sampleId,
+    sampleId: s.id,
     amountUsed: c.amount,
     note: c.note,
     createdByName: E.createdByName,
   });
   await db.insert(stockTransactions).values({
-    sampleId: c.sampleId,
+    sampleId: s.id,
     delta: -c.amount,
     reason: "consume",
     note: `Consumed by ${E.code}: ${c.note}`,
     userName: E.createdByName,
   });
   await db.update(samples).set({ quantity: s.quantity - c.amount }).where(eq(samples.id, s.id));
-  console.log(`consumed sample ${c.sampleId} x${c.amount} (${s.quantity} -> ${s.quantity - c.amount})`);
+  console.log(`consumed sample ${s.id} x${c.amount} (${s.quantity} -> ${s.quantity - c.amount})`);
 }
 
 /* ── 4. 关联 v3 演示业务流到本项目/实验（仅未关联时） ── */
-const wf = await db.query.workflows.findFirst({ where: eq(workflows.id, D.linkWorkflowId) });
+const wf = D.linkWorkflowName
+  ? await db.query.workflows.findFirst({ where: eq(workflows.name, D.linkWorkflowName) })
+  : await db.query.workflows.findFirst({ where: eq(workflows.id, D.linkWorkflowId) });
 if (wf && !wf.projectId && !wf.experimentId) {
   await db
     .update(workflows)
@@ -111,7 +127,9 @@ if (wf && !wf.projectId && !wf.experimentId) {
 
 /* ── 5. 活动日志（幂等：按 action+entityName+createdAt 去重） ── */
 for (const a of D.activities as any[]) {
-  const entityId = a.entityId ?? exp!.id;
+  const entityId = a.entityType === "sample"
+    ? resolvedConsumptions[0]?.sample.id ?? null
+    : a.entityId ?? exp!.id;
   const entityName = a.entityName ?? `${E.code} ${E.title}`;
   const exist = await db.query.activities.findFirst({
     where: and(

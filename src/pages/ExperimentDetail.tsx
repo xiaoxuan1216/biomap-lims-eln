@@ -37,12 +37,17 @@ import {
   Network,
   AlertTriangle,
   History,
+  Building2,
 } from "lucide-react";
 import BlockEditor from "@/components/eln/BlockEditor";
 import { EXP_STATUS, PROJECT_COLORS, fmtDate, fmtDateTime, parseBlocks, type ElnBlock } from "@/lib/labels";
 import { setCopilotContext, registerInsertHandler } from "@/lib/copilotContext";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n";
+import {
+  EXTERNAL_EXPERIMENT_RELATIONS,
+  EXTERNAL_RESULT_REVIEW,
+} from "@contracts/externalOrder";
 
 export default function ExperimentDetail() {
   const { t } = useI18n();
@@ -393,6 +398,45 @@ export default function ExperimentDetail() {
                     ? t("实验完成后可复核签署。签署不可撤销；后续更正必须创建追加修订。")
                     : t("实验完成后需由复核人或管理员签署。")}
                 </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 样本消耗 */}
+          {exp.externalWork.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Building2 className="h-4 w-4 text-pink-600" />
+                  {t("外部委托与 CRO 结果")}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {exp.externalWork.map((work) => (
+                  <div key={work.id} className="rounded-lg border p-3 text-sm">
+                    <Link to={`/external-orders/${work.orderId}`} className="font-medium text-teal-700 hover:underline">
+                      {work.order.orderNo} · {work.order.title}
+                    </Link>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {work.providerName} · {t(EXTERNAL_EXPERIMENT_RELATIONS[work.relation])}
+                      {work.itemName ? ` · ${work.itemName}` : ""}
+                    </div>
+                    {work.results.length > 0 && (
+                      <div className="mt-3 space-y-2 border-t pt-2">
+                        {work.results.map((result) => (
+                          <div key={result.id} className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="font-medium">{result.metric}：{result.valueText}{result.unit ? ` ${result.unit}` : ""}</div>
+                              {result.sampleSku && <Link to={`/samples/${result.sampleId}`} className="text-xs text-teal-700 hover:underline">{result.sampleSku} · {result.sampleName}</Link>}
+                            </div>
+                            <Badge variant="outline" className={EXTERNAL_RESULT_REVIEW[result.reviewStatus].cls}>{t(EXTERNAL_RESULT_REVIEW[result.reviewStatus].label)}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <p className="text-xs text-muted-foreground">{t("外部结果作为关联数据展示，不会改写已签署的 ELN 内容快照。")}</p>
               </CardContent>
             </Card>
           )}

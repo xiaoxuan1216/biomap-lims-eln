@@ -9,9 +9,11 @@ import {
   Dna,
   Snowflake,
   SearchX,
+  Handshake,
 } from "lucide-react";
 import { EXP_STATUS, LOCATION_TYPES, SAMPLE_TYPES, SEQ_TYPES } from "@/lib/labels";
 import { useI18n } from "@/i18n";
+import { externalOrderStage } from "@contracts/externalOrder";
 
 export default function SearchResults() {
   const { t } = useI18n();
@@ -27,7 +29,8 @@ export default function SearchResults() {
     (data?.samples.length ?? 0) +
     (data?.projects.length ?? 0) +
     (data?.sequences.length ?? 0) +
-    (data?.locations.length ?? 0);
+    (data?.locations.length ?? 0) +
+    (data?.externalOrders.length ?? 0);
 
   return (
     <div className="space-y-6">
@@ -79,6 +82,23 @@ export default function SearchResults() {
             {data.projects.map((p) => (
               <ResultLink key={p.id} to={`/projects/${p.id}`} main={p.name} />
             ))}
+          </ResultCard>
+        )}
+
+        {!!data?.externalOrders.length && (
+          <ResultCard icon={Handshake} title={t("外部委托（{n}）", { n: data.externalOrders.length })}>
+            {data.externalOrders.map((order) => {
+              const stage = externalOrderStage(order);
+              return (
+                <ResultLink
+                  key={order.id}
+                  to={`/external-orders/${order.id}`}
+                  main={`${order.orderNo} ${order.title}`}
+                  sub={order.providerName ?? undefined}
+                  right={<Badge variant="outline" className={stage.cls}>{t(stage.label)}</Badge>}
+                />
+              );
+            })}
           </ResultCard>
         )}
 

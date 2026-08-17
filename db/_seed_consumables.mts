@@ -26,8 +26,15 @@ async function ensureBox(name: string, parentId: number): Promise<number> {
   console.log("BOX created:", name, id);
   return id;
 }
-const SHELF_M80 = 5; // 1 号冰箱 · 第 2 层（-80°C）
-const FRIDGE_4C = 4; // 4°C 冷藏柜
+const shelfM80 = await db.query.storageLocations.findFirst({
+  where: eq(storageLocations.name, "1 号冰箱 · 第 2 层"),
+});
+const fridge4C = await db.query.storageLocations.findFirst({
+  where: eq(storageLocations.name, "4°C 冷藏柜"),
+});
+if (!shelfM80 || !fridge4C) throw new Error("base storage locations are missing");
+const SHELF_M80 = shelfM80.id;
+const FRIDGE_4C = fridge4C.id;
 const enzymeBox = await ensureBox("工具酶盒", SHELF_M80);
 const compBox = await ensureBox("感受态细胞盒", SHELF_M80);
 

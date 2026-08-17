@@ -3,10 +3,10 @@
 ## 必需配置
 
 - `DATABASE_URL`：独立 MySQL/TiDB 数据库账号，限制到本应用数据库。
-- `APP_ID` / `APP_SECRET`、`KIMI_AUTH_URL` / `KIMI_OPEN_URL`：Kimi OAuth 登录配置。
-- `SESSION_SECRET`：至少 32 字节的独立随机值，不与 OAuth 密钥复用。
-- `PUBLIC_BASE_URL`：生产环境必须是 HTTPS 的公开根地址，且 OAuth 回调必须登记为 `<PUBLIC_BASE_URL>/api/oauth/callback`。
-- `OWNER_UNION_ID`：首位管理员；其他角色由管理员接口分配。
+- `BIOMAP_AUTH_USERNAME` / `BIOMAP_AUTH_PASSWORD`：BioMap OS 原生管理员账号与强密码；密码仅保存在服务端密密配置中，不写入仓库或前端。
+- `BIOMAP_AUTH_DISPLAY_NAME`：可选，登录后显示的管理员姓名。
+- `SESSION_SECRET`：至少 32 字节的独立随机值，不与登录密码复用。
+- `PUBLIC_BASE_URL`：生产环境必须是 HTTPS 的公开根地址。
 - `API_TOKENS`：可选，格式见 `docs/api.md`；不配置即关闭开放 API。
 
 可选的开放式模型问答使用 `KIMI_API_KEY`、`KIMI_API_BASE_URL` 和 `KIMI_MODEL`。默认 `KIMI_ALLOW_LAB_CONTEXT=false`，不会自动把实验室摘要发送给模型；只有部署方完成数据出境与保密评估后才应开启。
@@ -24,7 +24,7 @@
 ## 运维控制
 
 - TLS 在可信反向代理终止，并保留 `Secure`/`HttpOnly`/`SameSite=Lax` Cookie。
-- 定期轮换会话密钥、OAuth 密钥和 API 令牌；轮换 `SESSION_SECRET` 会使现有会话失效。
+- 定期轮换登录密码、会话密钥和 API 令牌；轮换 `SESSION_SECRET` 会使现有会话失效。
 - 定期备份并做恢复演练；数据库备份、对象附件与应用版本应使用同一恢复点。
 - 定期由管理员运行审计链校验，发现断链或签名哈希异常时停止更改并保全证据。
 - AI 输出仅供研究参考，关键参数必须按已验证 SOP 和仪器/试剂方法复核。

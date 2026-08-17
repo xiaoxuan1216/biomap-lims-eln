@@ -25,6 +25,7 @@ import {
   Network,
   MonitorCog,
   Bot,
+  Handshake,
 } from "lucide-react";
 import { lazy, Suspense, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -51,6 +52,7 @@ const NAV_GROUPS = [
       { icon: FolderKanban, label: "项目管理", path: "/projects" },
       { icon: NotebookPen, label: "实验记录本", path: "/experiments" },
       { icon: Network, label: "BioFlow 工作流", path: "/workflows" },
+      { icon: Handshake, label: "外部委托", path: "/external-orders" },
       { icon: Dna, label: "序列库", path: "/sequences" },
     ],
   },

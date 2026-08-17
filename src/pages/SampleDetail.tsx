@@ -51,6 +51,7 @@ import {
   Pencil,
   PackageX,
   GitBranch,
+  Truck,
 } from "lucide-react";
 import {
   ALERT_LABELS,
@@ -64,6 +65,12 @@ import {
 } from "@/lib/labels";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n";
+import {
+  CUSTODY_EVENT_LABELS,
+  EXTERNAL_RESULT_REVIEW,
+  SAMPLE_DIRECTIONS,
+  SHIPMENT_STATUS,
+} from "@contracts/externalOrder";
 
 export default function SampleDetail() {
   const { t } = useI18n();
@@ -268,6 +275,9 @@ export default function SampleDetail() {
                 <TabsTrigger value="usage" className="gap-1.5">
                   <NotebookPen className="h-3.5 w-3.5" /> {t("实验使用")} ({sample.experimentUsage.length})
                 </TabsTrigger>
+                <TabsTrigger value="external" className="gap-1.5">
+                  <Truck className="h-3.5 w-3.5" /> {t("外部委托记录")} ({sample.externalShipments.length})
+                </TabsTrigger>
               </TabsList>
             </CardHeader>
             <CardContent className="pt-4">
@@ -344,6 +354,17 @@ export default function SampleDetail() {
                     )}
                   </TableBody>
                 </Table>
+              </TabsContent>
+              <TabsContent value="external" className="mt-0 space-y-5">
+                <Table>
+                  <TableHeader><TableRow><TableHead>{t("委托")}</TableHead><TableHead>{t("服务商")}</TableHead><TableHead>{t("方向 / 数量")}</TableHead><TableHead>{t("交接状态")}</TableHead><TableHead>{t("关联服务项目")}</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {sample.externalShipments.map((shipment) => <TableRow key={shipment.id} className="cursor-pointer" onClick={() => navigate(`/external-orders/${shipment.orderId}`)}><TableCell><div className="font-mono text-xs text-teal-700">{shipment.orderNo}</div><div className="font-medium">{shipment.orderTitle}</div></TableCell><TableCell>{shipment.providerName ?? "—"}</TableCell><TableCell><Badge variant="outline">{t(SAMPLE_DIRECTIONS[shipment.direction])}</Badge><div className="mt-1 text-xs">{shipment.amount} {shipment.unit}</div></TableCell><TableCell><Badge variant="outline" className={SHIPMENT_STATUS[shipment.shipmentStatus].cls}>{t(SHIPMENT_STATUS[shipment.shipmentStatus].label)}</Badge></TableCell><TableCell>{shipment.itemName ?? t("整个委托")}</TableCell></TableRow>)}
+                    {!sample.externalShipments.length && <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">{t("该样本尚无外部委托记录")}</TableCell></TableRow>}
+                  </TableBody>
+                </Table>
+                {sample.externalResults.length > 0 && <div><div className="mb-2 text-sm font-semibold">{t("CRO 结构化结果")}</div><div className="grid gap-2 sm:grid-cols-2">{sample.externalResults.map((result) => <Link key={result.id} to={`/external-orders/${result.orderId}`} className="rounded-lg border p-3 hover:border-teal-300"><div className="flex items-center justify-between gap-2"><span className="font-medium">{result.metric}</span><Badge variant="outline" className={EXTERNAL_RESULT_REVIEW[result.reviewStatus].cls}>{t(EXTERNAL_RESULT_REVIEW[result.reviewStatus].label)}</Badge></div><div className="mt-1 text-lg font-semibold text-teal-700">{result.valueText}{result.unit ? ` ${result.unit}` : ""}</div><div className="mt-1 text-xs text-muted-foreground">{result.providerName} · {result.orderNo}</div></Link>)}</div></div>}
+                {sample.custodyEvents.length > 0 && <div><div className="mb-2 text-sm font-semibold">{t("样本交接时间线")}</div><div className="space-y-2">{sample.custodyEvents.map((event) => <div key={event.id} className="flex items-start gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm"><div className="mt-1.5 h-2 w-2 rounded-full bg-sky-500" /><div className="flex-1"><div>{t(CUSTODY_EVENT_LABELS[event.eventType])} · {event.amount} {event.unit}</div><div className="text-xs text-muted-foreground">{fmtDateTime(event.createdAt)} · {event.createdByName ?? t("系统")}{event.trackingNo ? ` · ${event.trackingNo}` : ""}</div></div></div>)}</div></div>}
               </TabsContent>
             </CardContent>
           </Tabs>

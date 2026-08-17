@@ -1,7 +1,7 @@
 // 业务流 DAG 共享契约：节点类型、节点调色板（预存节点组）、预置业务流模板
 // 前后端共用（前端编辑器 / 后端模板实例化与校验）
 
-export type FlowNodeType = "manual" | "equipment" | "decision" | "data" | "timer";
+export type FlowNodeType = "manual" | "equipment" | "decision" | "data" | "timer" | "external";
 
 export const FLOW_NODE_TYPES: Record<
   FlowNodeType,
@@ -24,6 +24,12 @@ export const FLOW_NODE_TYPES: Record<
     color: "#6366f1",
     bg: "#eef2ff",
     description: "由指定设备执行的任务，可绑定设备台账",
+  },
+  external: {
+    label: "外部委托",
+    color: "#ec4899",
+    bg: "#fdf2f8",
+    description: "由 CRO、CDMO 或第三方平台执行，可关联外部委托单",
   },
   decision: {
     label: "逻辑判断",
@@ -151,6 +157,17 @@ export const NODE_PALETTE: NodeGroup[] = [
       { key: "d_enrich", type: "decision", label: "淘选是否富集？", description: "产出 / 投入比判断" },
       { key: "d_stability_ok", type: "decision", label: "稳定性是否达标？", description: "Tm / 聚集体阈值判断" },
       { key: "d_custom", type: "decision", label: "自定义判断", description: "自定义分支条件" },
+    ],
+  },
+  {
+    key: "external",
+    label: "外部委托",
+    type: "external",
+    items: [
+      { key: "x_cro_assay", type: "external", label: "CRO 实验委托", description: "委托外部 CRO 执行实验并回收数据与报告" },
+      { key: "x_third_party_test", type: "external", label: "第三方检测", description: "委托第三方实验室完成检测或质量分析" },
+      { key: "x_animal_study", type: "external", label: "动物实验委托", description: "委托动物实验平台执行体内研究" },
+      { key: "x_sequencing", type: "external", label: "外部测序服务", description: "送样至外部平台完成测序及数据交付" },
     ],
   },
   {

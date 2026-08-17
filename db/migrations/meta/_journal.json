@@ -15,6 +15,41 @@
       "when": 1786017578634,
       "tag": "0001_gigantic_scarlet_witch",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1786944275871,
+      "tag": "0002_gorgeous_falcon",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1786948059768,
+      "tag": "0003_lonely_titania",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1786948131416,
+      "tag": "0004_lean_chimera",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1786948386624,
+      "tag": "0005_secret_aqueduct",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1786950044274,
+      "tag": "0006_rapid_songbird",
+      "breakpoints": true
     }
   ]
 }

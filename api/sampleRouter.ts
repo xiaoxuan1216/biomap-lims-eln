@@ -4,11 +4,17 @@ import { and, asc, desc, eq, isNull, like, or } from "drizzle-orm";
 import { adminQuery, authedQuery, createRouter, writeQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import {
+  externalOrderItems,
+  externalOrders,
+  externalOrderSamples,
+  externalResults,
+  externalSampleCustodyEvents,
   experimentSamples,
   projects,
   samples,
   stockTransactions,
   storageLocations,
+  serviceProviders,
 } from "@db/schema";
 import { appendActivity, nextSampleSku } from "./queries/labHelpers";
 import { buildLineage } from "./queries/lineage";
@@ -135,7 +141,49 @@ export const sampleRouter = createRouter({
       .where(eq(experimentSamples.sampleId, input.id))
       .orderBy(desc(experimentSamples.createdAt))
       .limit(50);
-    return { ...sample, location, project, transactions: txs, experimentUsage: usage };
+    const externalShipments = await db
+      .select({
+        shipment: externalOrderSamples,
+        orderNo: externalOrders.orderNo,
+        orderTitle: externalOrders.title,
+        orderQualityStatus: externalOrders.qualityStatus,
+        itemName: externalOrderItems.name,
+        providerName: serviceProviders.name,
+      })
+      .from(externalOrderSamples)
+      .innerJoin(externalOrders, eq(externalOrderSamples.orderId, externalOrders.id))
+      .leftJoin(externalOrderItems, eq(externalOrderSamples.orderItemId, externalOrderItems.id))
+      .leftJoin(serviceProviders, eq(externalOrders.providerId, serviceProviders.id))
+      .where(eq(externalOrderSamples.sampleId, input.id))
+      .orderBy(desc(externalOrderSamples.createdAt));
+    const custodyEvents = await db
+      .select()
+      .from(externalSampleCustodyEvents)
+      .where(eq(externalSampleCustodyEvents.sampleId, input.id))
+      .orderBy(desc(externalSampleCustodyEvents.createdAt))
+      .limit(100);
+    const structuredResults = await db
+      .select({
+        result: externalResults,
+        orderNo: externalOrders.orderNo,
+        orderTitle: externalOrders.title,
+        providerName: serviceProviders.name,
+      })
+      .from(externalResults)
+      .innerJoin(externalOrders, eq(externalResults.orderId, externalOrders.id))
+      .leftJoin(serviceProviders, eq(externalOrders.providerId, serviceProviders.id))
+      .where(eq(externalResults.sampleId, input.id))
+      .orderBy(desc(externalResults.createdAt));
+    return {
+      ...sample,
+      location,
+      project,
+      transactions: txs,
+      experimentUsage: usage,
+      externalShipments: externalShipments.map(({ shipment, ...meta }) => ({ ...shipment, ...meta })),
+      custodyEvents,
+      externalResults: structuredResults.map(({ result, ...meta }) => ({ ...result, ...meta })),
+    };
   }),
 
   /** 样本全生命周期追溯：自该样本向上（祖先方向）遍历谱系 DAG
@@ -269,19 +317,29 @@ export const sampleRouter = createRouter({
       }
     }),
 
-  /** 样本下拉选项（实验登记消耗用） */
-  options: authedQuery.query(async () => {
-    return getDb()
-      .select({
-        id: samples.id,
-        name: samples.name,
-        sku: samples.sku,
-        quantity: samples.quantity,
-        unit: samples.unit,
-      })
-      .from(samples)
-      .where(isNull(samples.archivedAt))
-      .orderBy(asc(samples.name))
-      .limit(500);
-  }),
+  /** 样本下拉选项（实验登记消耗、外部委托送样用） */
+  options: authedQuery
+    .input(z.object({ projectId: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      const conditions = [isNull(samples.archivedAt)];
+      if (input?.projectId) {
+        conditions.push(
+          or(eq(samples.projectId, input.projectId), isNull(samples.projectId))!
+        );
+      }
+      return getDb()
+        .select({
+          id: samples.id,
+          name: samples.name,
+          sku: samples.sku,
+          type: samples.type,
+          projectId: samples.projectId,
+          quantity: samples.quantity,
+          unit: samples.unit,
+        })
+        .from(samples)
+        .where(and(...conditions)!)
+        .orderBy(asc(samples.name))
+        .limit(500);
+    }),
 });

@@ -6,7 +6,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { getDb } from "../api/queries/connection";
-import { lineageEdges, samples, sequenceFeatures, sequences } from "./schema";
+import { lineageEdges, samples, sequenceFeatures, sequences, stockTransactions } from "./schema";
 import { nextSampleSku } from "../api/queries/labHelpers";
 
 const db = getDb();
@@ -56,12 +56,27 @@ for (const s of L.samples) {
   let id: number;
   if (exist) {
     id = exist.id;
-    await db.update(samples).set({ sequenceId: seqId, notes: s.notes, quantity: s.quantity, unit: s.unit, type: s.type }).where(eq(samples.id, id));
+    await db.update(samples).set({ sequenceId: seqId, notes: s.notes, unit: s.unit, type: s.type }).where(eq(samples.id, id));
   } else {
     const [{ id: nid }] = await db.insert(samples)
       .values({ sku: await nextSampleSku(), name: s.name, type: s.type, quantity: s.quantity, unit: s.unit, sequenceId: seqId, notes: s.notes, createdByName: "演示用户" })
       .$returningId();
     id = nid;
+  }
+  const initialNote = "初始入库（生命周期演示）";
+  const initialTx = await db.query.stockTransactions.findFirst({
+    where: and(eq(stockTransactions.sampleId, id), eq(stockTransactions.note, initialNote)),
+  });
+  if (!initialTx) {
+    await db.insert(stockTransactions).values({
+      sampleId: id,
+      delta: s.quantity,
+      quantityBefore: 0,
+      quantityAfter: s.quantity,
+      reason: "restock",
+      note: initialNote,
+      userName: "演示用户",
+    });
   }
   sampIdByKey.set(s.key, id);
   console.log(`sample: ${s.name} -> ${id}`);

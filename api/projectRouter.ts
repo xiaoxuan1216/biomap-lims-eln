@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
 import { adminQuery, authedQuery, createRouter, writeQuery } from "./middleware";
 import { getDb } from "./queries/connection";
-import { activities, experiments, projects, samples, workflowNodes, workflows } from "@db/schema";
+import { activities, experiments, externalOrders, projects, samples, workflowNodes, workflows } from "@db/schema";
 import { logActivity } from "./queries/labHelpers";
 
 const projectInput = z.object({
@@ -97,6 +97,17 @@ export const projectRouter = createRouter({
         message: "项目下仍有实验记录，无法删除。请先删除或转移实验。",
       });
     }
+    const externalOrderCount = await db
+      .select({ id: externalOrders.id })
+      .from(externalOrders)
+      .where(eq(externalOrders.projectId, input.id))
+      .limit(1);
+    if (externalOrderCount.length > 0) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: "项目下仍有外部委托，无法删除。请先完成或迁移相关委托。",
+      });
+    }
     await db.update(samples).set({ projectId: null }).where(eq(samples.projectId, input.id));
     await db.delete(projects).where(eq(projects.id, input.id));
     await logActivity({
@@ -156,6 +167,12 @@ export const projectRouter = createRouter({
       .from(experiments)
       .where(eq(experiments.projectId, input.id));
     const expIds = expRows.map((e) => e.id);
+    const externalOrderIds = (
+      await db
+        .select({ id: externalOrders.id })
+        .from(externalOrders)
+        .where(eq(externalOrders.projectId, input.id))
+    ).map((order) => order.id);
     const expByStatus: Record<string, number> = {};
     for (const e of expRows) expByStatus[e.status] = (expByStatus[e.status] ?? 0) + 1;
 
@@ -166,6 +183,9 @@ export const projectRouter = createRouter({
         : []),
       ...(wfIds.length
         ? [and(eq(activities.entityType, "workflow"), inArray(activities.entityId, wfIds))]
+        : []),
+      ...(externalOrderIds.length
+        ? [and(eq(activities.entityType, "external_order"), inArray(activities.entityId, externalOrderIds))]
         : []),
     ];
     const recentActs = await db

@@ -3,7 +3,15 @@ import { TRPCError } from "@trpc/server";
 import { asc, eq, inArray } from "drizzle-orm";
 import { adminQuery, authedQuery, createRouter, writeQuery } from "./middleware";
 import { getDb } from "./queries/connection";
-import { workflows, workflowNodes, workflowEdges, projects } from "@db/schema";
+import {
+  externalOrderItems,
+  externalOrders,
+  projects,
+  serviceProviders,
+  workflows,
+  workflowEdges,
+  workflowNodes,
+} from "@db/schema";
 import { appendActivity, logActivity } from "./queries/labHelpers";
 import { WORKFLOW_TEMPLATES, SUBFLOW_TEMPLATES, templateScenario } from "@contracts/workflow";
 import { en } from "@/i18n/en";
@@ -29,7 +37,7 @@ function trParams(params: Record<string, string | number> | undefined, lang?: st
   return out;
 }
 
-const NODE_TYPES = ["manual", "equipment", "decision", "data", "timer"] as const;
+const NODE_TYPES = ["manual", "equipment", "decision", "data", "timer", "external"] as const;
 const NODE_STATUS = ["pending", "in_progress", "done", "skipped"] as const;
 
 const nodeInput = z.object({
@@ -39,6 +47,7 @@ const nodeInput = z.object({
   label: z.string().min(1).max(255),
   owner: z.string().max(255).nullish(),
   equipmentId: z.number().nullish(),
+  externalOrderItemId: z.number().nullish(),
   config: z.string().nullish(),
   params: z.string().nullish(),
   posX: z.number(),
@@ -141,6 +150,26 @@ export const workflowRouter = createRouter({
       const p = await db.query.projects.findFirst({ where: eq(projects.id, wf.projectId) });
       projectName = p?.name ?? null;
     }
+    const externalItemIds = [...new Set(nodes.map((node) => node.externalOrderItemId).filter(Boolean))] as number[];
+    const externalRows = externalItemIds.length
+      ? await db
+          .select({
+            itemId: externalOrderItems.id,
+            itemName: externalOrderItems.name,
+            itemStatus: externalOrderItems.status,
+            orderId: externalOrders.id,
+            orderNo: externalOrders.orderNo,
+            orderTitle: externalOrders.title,
+            expectedDeliveryDate: externalOrders.expectedDeliveryDate,
+            providerName: serviceProviders.name,
+          })
+          .from(externalOrderItems)
+          .innerJoin(externalOrders, eq(externalOrderItems.orderId, externalOrders.id))
+          .innerJoin(serviceProviders, eq(externalOrders.providerId, serviceProviders.id))
+          .where(inArray(externalOrderItems.id, externalItemIds))
+      : [];
+    const externalByItem = new Map(externalRows.map((row) => [row.itemId, row]));
+
     // 子流程摘要：节点 → 子业务流（名称 / 进度）
     const childIds = [...new Set(nodes.map((n) => n.childWorkflowId).filter(Boolean))] as number[];
     const subflows: Record<number, { id: number; name: string; nodeCount: number; doneCount: number }> = {};
@@ -168,7 +197,17 @@ export const workflowRouter = createRouter({
         : null;
       if (pw) parent = { workflowId: pw.id, workflowName: pw.name, nodeLabel: pn?.label ?? null };
     }
-    return { ...wf, projectName, nodes, edges, subflows, parent };
+    return {
+      ...wf,
+      projectName,
+      nodes: nodes.map((node) => ({
+        ...node,
+        externalOrder: node.externalOrderItemId ? externalByItem.get(node.externalOrderItemId) ?? null : null,
+      })),
+      edges,
+      subflows,
+      parent,
+    };
   }),
 
   /** 创建子流程：在指定节点下挂接一张物理执行层子 DAG（可按子流程模板预填） */
@@ -373,6 +412,7 @@ export const workflowRouter = createRouter({
             label: node.label,
             owner: node.owner || null,
             equipmentId: node.equipmentId ?? null,
+            externalOrderItemId: node.externalOrderItemId ?? null,
             config: node.config ?? null,
             params: node.params ?? null,
             posX: Math.round(node.posX),

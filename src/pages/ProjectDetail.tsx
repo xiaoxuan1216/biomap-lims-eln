@@ -37,6 +37,7 @@ import {
   Activity as ActivityIcon,
   GitBranch,
   Play,
+  Handshake,
 } from "lucide-react";
 import { EXP_STATUS, PROJECT_COLORS, PROJECT_STATUS, SAMPLE_TYPES, fmtDate, fmtDateTime } from "@/lib/labels";
 import { useState } from "react";
@@ -53,6 +54,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { FLOW_NODE_STATUS, WORKFLOW_STATUS, type FlowNodeStatus } from "@contracts/workflow";
+import { externalOrderStage } from "@contracts/externalOrder";
 
 /* 业务流节点状态条：一格一节点，颜色 = 状态 */
 function NodeStrip({ nodes }: { nodes: { id: number; label: string; status: string }[] }) {
@@ -140,6 +142,7 @@ export default function ProjectDetail() {
   const projectId = Number(id);
   const { data: project, isLoading } = trpc.project.byId.useQuery({ id: projectId });
   const { data: dash } = trpc.project.dashboard.useQuery({ id: projectId });
+  const { data: externalOrders } = trpc.externalOrder.list.useQuery({ projectId });
   const utils = trpc.useUtils();
   const [createOpen, setCreateOpen] = useState(false);
   const [wfOpen, setWfOpen] = useState<{ experimentId: number; title: string } | null>(null);
@@ -221,13 +224,14 @@ export default function ProjectDetail() {
       </div>
 
       {/* 项目仪表盘统计卡 */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         {[
           { label: t("实验任务"), value: project.experiments.length, icon: NotebookPen },
           { label: t("进行中实验"), value: activeExp, icon: Play },
           { label: t("业务流"), value: topWfs.length, icon: Workflow },
           { label: t("平均进度"), value: `${avgProgress}%`, icon: LayoutDashboard },
           { label: t("关联样本"), value: project.samples.length, icon: TestTubes },
+          { label: t("外部委托"), value: externalOrders?.length ?? 0, icon: Handshake },
         ].map((c) => (
           <Card key={c.label}>
             <CardContent className="p-4 flex items-center gap-3">
@@ -254,6 +258,9 @@ export default function ProjectDetail() {
           </TabsTrigger>
           <TabsTrigger value="samples" className="gap-1.5">
             <TestTubes className="h-3.5 w-3.5" /> {t("关联样本")} ({project.samples.length})
+          </TabsTrigger>
+          <TabsTrigger value="external" className="gap-1.5">
+            <Handshake className="h-3.5 w-3.5" /> {t("外部委托")} ({externalOrders?.length ?? 0})
           </TabsTrigger>
         </TabsList>
 
@@ -468,6 +475,48 @@ export default function ProjectDetail() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ── 外部委托 ── */}
+        <TabsContent value="external" className="mt-4">
+          {externalOrders?.length ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              {externalOrders.map((order) => {
+                const stage = externalOrderStage(order);
+                return (
+                  <Card
+                    key={order.id}
+                    className="cursor-pointer transition-colors hover:border-pink-300"
+                    onClick={() => navigate(`/external-orders/${order.id}`)}
+                  >
+                    <CardContent className="space-y-3 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-mono text-xs font-semibold text-teal-700">{order.orderNo}</div>
+                          <div className="mt-1 font-medium">{order.title}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">{order.providerName ?? "—"}</div>
+                        </div>
+                        <Badge variant="outline" className={stage.cls}>{t(stage.label)}</Badge>
+                      </div>
+                      <Progress value={stage.progress} className="h-1.5" />
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>{order.itemCount} {t("个服务项")}</span>
+                        <span>{t("预计交付")}：{fmtDate(order.expectedDeliveryDate)}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="flex flex-col items-center gap-3 py-12 text-sm text-muted-foreground">
+                <Handshake className="h-9 w-9 opacity-40" />
+                <span>{t("该项目暂无外部委托")}</span>
+                <Button size="sm" variant="outline" onClick={() => navigate("/external-orders")}>{t("前往外部委托")}</Button>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
 

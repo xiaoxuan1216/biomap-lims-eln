@@ -6,11 +6,6 @@ import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "./router";
 import { createContext } from "./context";
 import { env } from "./lib/env";
-import {
-  createOAuthCallbackHandler,
-  createOAuthLoginHandler,
-} from "./kimi/auth";
-import { Paths } from "@contracts/constants";
 import { migrateDatabase } from "./queries/migrate";
 import { v1App } from "./v1";
 import { isTrustedOrigin } from "./security/origin";
@@ -24,8 +19,6 @@ app.use(secureHeaders({
 }));
 app.use(bodyLimit({ maxSize: 5 * 1024 * 1024 }));
 app.get("/healthz", (c) => c.json({ ok: true }));
-app.get(Paths.oauthLogin, createOAuthLoginHandler());
-app.get(Paths.oauthCallback, createOAuthCallbackHandler());
 /* 开放 REST API（Bearer Token 鉴权，供外部系统与 AI Agent 调用） */
 app.route("/api/v1", v1App);
 app.use("/api/trpc/*", async (c) => {
