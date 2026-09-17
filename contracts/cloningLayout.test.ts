@@ -21,14 +21,19 @@ describe("cloning workflow planning", () => {
     expect(compact.summary.splits).toBeGreaterThan(0);
     expect(recommended.summary.splits).toBe(0);
   });
-  it("validates all-stage counts, source references and well partitions at multiple scales", () => {
-    const cases: CloningConfig[] = [
+  const scaleCases: CloningConfig[] = [
       ...[1, 24, 58, 59, 60, 61, 94, 95, 96, 97, 200].map(samples => ({ ...base, samples })),
       ...[1, 2, 3, 4].map(clones => ({ ...base, samples: 94, clones, edge: true, column: true })),
       { ...base, samples: 1536, clones: 4, edge: true, controls: 4, column: true },
       { ...base, samples: 96, controls: 0 },
-    ];
-    for (const c of cases) for (const mode of ["compact", "recommended"] as const) {
+  ];
+  // Keep each scale/mode independently visible. The largest case checks tens of
+  // thousands of wells and lineage edges, so allow for slower shared CI runners.
+  it.each(scaleCases.flatMap(config => (["compact", "recommended"] as const).map(mode => ({ ...config, mode }))))(
+    "validates counts, sources and well partitions: $samples samples, $clones clones, edge=$edge, controls=$controls, column=$column ($mode)",
+    { timeout: 15000 },
+    c => {
+      const { mode } = c;
       const plan = buildCloningPlan(c, mode), all = [...plan.stages.flatMap(s => s.plates.flatMap(p => [...p.samples, ...p.controls])), ...plan.dishes];
       const byId = new Map(all.map(e => [e.id, e]));
       expect(byId.size).toBe(all.length); expect(plan.dishes).toHaveLength(c.samples);
@@ -53,8 +58,8 @@ describe("cloning workflow planning", () => {
         expect(source).toBeDefined(); expect(source.target).toBe(e.target);
         expect([source.container, source.well]).toEqual([parent.container, parent.well]);
       }
-    }
-  });
+    },
+  );
   it("keeps clone selection pending and distinguishes culture/plasmid sources from result evidence", () => {
     const p = buildCloningPlan(base, "recommended"), first = (s: string) => p.stages.find(x => x.key === s)!.plates[0].samples[0];
     expect(first("L").parents.filter(x => x.kind === "conditional")).toHaveLength(base.clones);
