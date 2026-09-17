@@ -5,7 +5,7 @@
 <script>
   const token = new URLSearchParams(location.search).get("token");
   if (token) {
-    document.cookie = `kimi_sid=${token}; path=/; max-age=31536000; SameSite=Lax`;
+    document.cookie = `biomap_sid=${token}; path=/; max-age=31536000; SameSite=Lax`;
   }
   location.replace("/");
 </script>

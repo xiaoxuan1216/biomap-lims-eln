@@ -18,9 +18,9 @@ const OWNER_EN: Record<string, string> = {
   演示用户: "Demo User",
 };
 const tr = (s: string) => en[s] ?? OWNER_EN[s] ?? s;
-const trParams = (params: Record<string, string | number> | undefined) => {
+const trParams = (params: Record<string, string | number | boolean> | undefined) => {
   if (!params) return null;
-  const out: Record<string, string | number> = {};
+  const out: Record<string, string | number | boolean> = {};
   for (const [k, v] of Object.entries(params)) out[k] = typeof v === "string" ? tr(v) : v;
   return JSON.stringify(out);
 };

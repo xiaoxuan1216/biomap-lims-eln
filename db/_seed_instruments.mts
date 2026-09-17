@@ -1,10 +1,10 @@
 /**
  * 具体仪器 seed：Hamilton STAR V / VANTAGE、Biomek i7、ONT MinION Mk1B、MGI G400
- * 并把演示子流程（134271 zh / 134272 en）的对应节点升级为具体仪器节点 + 新增 ONT 全长验证节点
+ * 并把中英文演示子流程的对应节点升级为具体仪器节点 + 新增 ONT 全长验证节点
  */
 import { eq, and } from "drizzle-orm";
 import { getDb } from "../api/queries/connection";
-import { equipment, workflowNodes, workflowEdges } from "./schema";
+import { equipment, workflowNodes, workflowEdges, workflows } from "./schema";
 
 const db = getDb();
 
@@ -80,25 +80,26 @@ console.log("equipment ids:", { starV, starVEn, vantage, vantageEn, biomek, biom
 
 // ─── 2. 升级演示子流程节点为具体仪器 ───
 type Upd = { key: string; type: "equipment"; templateKey: string; label: string; equipmentId: number };
-async function upgrade(wfId: number, upds: Upd[], ontLabel: string, ontEquip: number) {
+async function upgrade(wfId: number, upds: Upd[], ontLabel: string, ontEquip: number, owner: string) {
   for (const u of upds) {
     await db
       .update(workflowNodes)
       .set({ type: u.type, templateKey: u.templateKey, label: u.label, equipmentId: u.equipmentId })
       .where(and(eq(workflowNodes.workflowId, wfId), eq(workflowNodes.nodeKey, u.key)));
   }
-  // 新增 n16 ONT 全长验证（幂等）
+  // 新增 ONT 全长验证（幂等；不用模板已有的 n16 键）
+  const ontNodeKey = "n_ont";
   const has = await db.query.workflowNodes.findFirst({
-    where: and(eq(workflowNodes.workflowId, wfId), eq(workflowNodes.nodeKey, "n16")),
+    where: and(eq(workflowNodes.workflowId, wfId), eq(workflowNodes.nodeKey, ontNodeKey)),
   });
   if (!has) {
     await db.insert(workflowNodes).values({
-      workflowId: wfId, nodeKey: "n16", type: "equipment", templateKey: "e_ont_minion",
-      label: ontLabel, owner: wfId === 134271 ? "张工" : "Zhang", equipmentId: ontEquip,
+      workflowId: wfId, nodeKey: ontNodeKey, type: "equipment", templateKey: "e_ont_minion",
+      label: ontLabel, owner, equipmentId: ontEquip,
       status: "pending", posX: 150, posY: 440,
     });
   }
-  // 边：n13→n14 改为 n13→n16→n14
+  // 边：n13→n14 改为 n13→ONT→n14
   const old = await db.query.workflowEdges.findFirst({
     where: and(
       eq(workflowEdges.workflowId, wfId),
@@ -109,15 +110,22 @@ async function upgrade(wfId: number, upds: Upd[], ontLabel: string, ontEquip: nu
   if (old) {
     await db.delete(workflowEdges).where(eq(workflowEdges.id, old.id));
     await db.insert(workflowEdges).values([
-      { workflowId: wfId, edgeKey: "e-n13-n16", sourceKey: "n13", targetKey: "n16" },
-      { workflowId: wfId, edgeKey: "e-n16-n14", sourceKey: "n16", targetKey: "n14" },
+      { workflowId: wfId, edgeKey: "e-n13-n-ont", sourceKey: "n13", targetKey: ontNodeKey },
+      { workflowId: wfId, edgeKey: "e-n-ont-n14", sourceKey: ontNodeKey, targetKey: "n14" },
     ]);
   }
   console.log("upgraded wf", wfId);
 }
 
+const zhParent = await db.query.workflows.findFirst({ where: eq(workflows.name, "重组抗体表达与表征 Pipeline") });
+const enParent = await db.query.workflows.findFirst({ where: eq(workflows.name, "Recombinant Antibody Expression & Characterization Pipeline") });
+if (!zhParent || !enParent) throw new Error("antibody parent workflows missing");
+const zhChild = await db.query.workflows.findFirst({ where: eq(workflows.parentWorkflowId, zhParent.id) });
+const enChild = await db.query.workflows.findFirst({ where: eq(workflows.parentWorkflowId, enParent.id) });
+if (!zhChild || !enChild) throw new Error("antibody child workflows missing");
+
 await upgrade(
-  134271,
+  zhChild.id,
   [
     { key: "n3", type: "equipment", templateKey: "e_hamilton_cleanup", label: "PCR 产物纯化定量（Hamilton STAR V）", equipmentId: starV },
     { key: "n4", type: "equipment", templateKey: "e_hamilton_gibson", label: "Gibson 连接体系构建（VANTAGE）", equipmentId: vantage },
@@ -126,9 +134,10 @@ await upgrade(
   ],
   "质粒全长验证测序（ONT MinION）",
   minion,
+  "张工",
 );
 await upgrade(
-  134272,
+  enChild.id,
   [
     { key: "n3", type: "equipment", templateKey: "e_hamilton_cleanup", label: "PCR Cleanup & Quant (Hamilton STAR V)", equipmentId: starVEn },
     { key: "n4", type: "equipment", templateKey: "e_hamilton_gibson", label: "Gibson Assembly Setup (VANTAGE)", equipmentId: vantageEn },
@@ -137,6 +146,7 @@ await upgrade(
   ],
   "Full-Length Plasmid Verification (ONT MinION)",
   minionEn,
+  "Zhang",
 );
 console.log("Done.");
 process.exit(0);

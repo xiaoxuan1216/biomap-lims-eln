@@ -1,6 +1,6 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { useNavigate } from "react-router";
-import { Hand, Cog, GitBranch, Database, User, MonitorCog, Clock, Workflow } from "lucide-react";
+import { Hand, Cog, GitBranch, Database, User, MonitorCog, Clock, Workflow, Handshake } from "lucide-react";
 import {
   FLOW_NODE_TYPES,
   FLOW_NODE_STATUS,
@@ -18,6 +18,17 @@ export type FlowNodeData = {
   owner?: string | null;
   equipmentId?: number | null;
   equipmentName?: string | null;
+  externalOrderItemId?: number | null;
+  externalOrder?: {
+    itemId: number;
+    itemName: string;
+    itemStatus?: string | null;
+    orderId: number;
+    orderNo: string;
+    orderTitle?: string | null;
+    expectedDeliveryDate?: string | null;
+    providerName?: string | null;
+  } | null;
   config?: string | null;
   params?: NodeParams | null;
   status: FlowNodeStatus;
@@ -26,6 +37,8 @@ export type FlowNodeData = {
   childWorkflowId?: number | null;
   subflowName?: string | null;
   subflowProgress?: string | null;
+  /** Display-only workflow planning summary; excluded from saveGraph payloads. */
+  platePlan?: { version: number; sampleCount: number };
 };
 
 export type RFNode = Node<FlowNodeData, "flowNode">;
@@ -36,6 +49,7 @@ const TYPE_ICONS = {
   decision: GitBranch,
   data: Database,
   timer: Clock,
+  external: Handshake,
 } as const;
 
 export default function FlowNode({ data, selected }: NodeProps<RFNode>) {
@@ -94,6 +108,22 @@ export default function FlowNode({ data, selected }: NodeProps<RFNode>) {
             <MonitorCog className="h-3 w-3 shrink-0" />
             <span className="truncate">{data.equipmentName}</span>
           </div>
+        )}
+        {data.platePlan && <div className="mt-1.5 rounded border border-teal-100 bg-teal-50 px-2 py-1 text-[10px] text-teal-700">{t("孔板与样本")} · {t("{n} 样本", { n: data.platePlan.sampleCount })} · V{data.platePlan.version}</div>}
+        {data.externalOrder && (
+          <button
+            className="nodrag mt-1.5 flex w-full items-start gap-1 rounded-md bg-pink-50 px-2 py-1.5 text-left text-[10px] text-pink-700 hover:bg-pink-100"
+            onClick={(event) => {
+              event.stopPropagation();
+              navigate(`/external-orders/${data.externalOrder!.orderId}`);
+            }}
+          >
+            <Handshake className="mt-0.5 h-3 w-3 shrink-0" />
+            <span className="min-w-0">
+              <span className="block truncate font-semibold">{data.externalOrder.orderNo} · {data.externalOrder.providerName}</span>
+              <span className="block truncate text-pink-600/80">{data.externalOrder.itemName}</span>
+            </span>
+          </button>
         )}
         {(() => {
           const summary = nodeParamSummary(data.nodeType, data.templateKey, data.params, t);

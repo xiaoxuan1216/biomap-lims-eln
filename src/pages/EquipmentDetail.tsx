@@ -53,6 +53,7 @@ import {
 import { EQUIP_CATEGORIES, EQUIP_STATUS, MAINT_TYPES, fmtDate, fmtDateTime } from "@/lib/labels";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n";
+import { DriverBindingCard } from "@/components/equipment/DriverBindingCard";
 
 export default function EquipmentDetail() {
   const { t } = useI18n();
@@ -328,6 +329,12 @@ export default function EquipmentDetail() {
           </Tabs>
         </Card>
       </div>
+
+      <DriverBindingCard
+        equipmentId={equipId}
+        equipmentName={eqp.name}
+        isAdmin={user?.role === "admin"}
+      />
 
       {/* 预约对话框 */}
       <Dialog open={bookOpen} onOpenChange={setBookOpen}>

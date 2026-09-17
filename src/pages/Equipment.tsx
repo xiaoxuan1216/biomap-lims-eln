@@ -32,6 +32,7 @@ import {
   CalendarClock,
   AlertTriangle,
   MapPin,
+  Cable,
 } from "lucide-react";
 import { EQUIP_CATEGORIES, EQUIP_STATUS, fmtDate } from "@/lib/labels";
 import { toast } from "sonner";
@@ -62,6 +63,9 @@ export default function Equipment() {
   const [category, setCategory] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [calibrationCutoff] = useState(() =>
+    new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+  );
 
   const { data: equipment, isLoading } = trpc.equipment.list.useQuery({
     category: category === "all" ? undefined : (category as "analytical"),
@@ -95,9 +99,14 @@ export default function Equipment() {
             {t("分析设备 · 执行设备 · 自动化岛台的台账、预约与维护")}
           </p>
         </div>
-        <Button className="bg-teal-600 hover:bg-teal-500" onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4 mr-1" /> {t("登记设备")}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => navigate("/drivers")}>
+            <Cable className="h-4 w-4 mr-1" /> {t("驱动中心")}
+          </Button>
+          <Button className="bg-teal-600 hover:bg-teal-500" onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4 mr-1" /> {t("登记设备")}
+          </Button>
+        </div>
       </div>
 
       {/* 状态统计 */}
@@ -140,8 +149,7 @@ export default function Equipment() {
                 const Icon = CATEGORY_ICONS[e.category] ?? MonitorCog;
                 const calDue =
                   e.nextCalibrationDate &&
-                  e.nextCalibrationDate <=
-                    new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
+                  e.nextCalibrationDate <= calibrationCutoff;
                 return (
                   <Card
                     key={e.id}

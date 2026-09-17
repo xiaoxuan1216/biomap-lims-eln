@@ -14,10 +14,16 @@ const db = await getDb();
 const tpl = SUBFLOW_TEMPLATES["m_ab_cloning"];
 if (!tpl) throw new Error("subflow template missing");
 
-for (const parentId of [134264, 134265]) {
-  const isEn = parentId === 134265;
-  const parent = await db.query.workflows.findFirst({ where: eq(workflows.id, parentId) });
-  if (!parent) throw new Error("parent wf missing " + parentId);
+const PARENTS = [
+  { name: "重组抗体表达与表征 Pipeline", isEn: false },
+  { name: "Recombinant Antibody Expression & Characterization Pipeline", isEn: true },
+] as const;
+
+for (const spec of PARENTS) {
+  const { isEn } = spec;
+  const parent = await db.query.workflows.findFirst({ where: eq(workflows.name, spec.name) });
+  if (!parent) throw new Error("parent workflow missing: " + spec.name);
+  const parentId = parent.id;
   if (parent.name.includes("分子克隆物理执行")) continue;
   const existing = await db.select().from(workflows);
   if (existing.some((w) => w.parentWorkflowId === parentId)) { console.log("skip", parentId, "(subflow exists)"); continue; }

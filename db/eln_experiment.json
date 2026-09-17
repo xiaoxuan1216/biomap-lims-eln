@@ -76,9 +76,10 @@
     ]
   },
   "consume": [
-    { "sampleId": 319701, "amount": 1, "note": "热激转化 BL21(DE3) 感受态" }
+    { "sampleId": 319701, "sampleName": "pET-28a-antiHER2-scFv 表达质粒", "amount": 1, "note": "热激转化 BL21(DE3) 感受态" }
   ],
   "linkWorkflowId": 134264,
+  "linkWorkflowName": "重组抗体表达与表征 Pipeline",
   "activities": [
     { "action": "创建了实验", "entityType": "experiment", "detail": "项目「重组抗体表达与表征」", "createdAt": "2026-08-02 09:15:00" },
     { "action": "消耗了样本", "entityType": "sample", "entityId": 319701, "entityName": "pET-28a-antiHER2-scFv 表达质粒", "detail": "EXP-0013 领用 1 管", "createdAt": "2026-08-02 09:40:00" },

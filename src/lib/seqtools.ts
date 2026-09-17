@@ -136,13 +136,16 @@ export function codonOptimize(dna: string, host: string, frame = 0): CodonOptRes
   const body = s.slice(frame);
   let optimized = head;
   let changed = 0;
-  for (let i = 0; i + 3 <= body.length; i += 3) {
+  let i = 0;
+  for (; i + 3 <= body.length; i += 3) {
     const codon = body.slice(i, i + 3);
     const aa = CODON_AA[codon];
     const next = aa ? bestCodon(aa, host) : codon;
     if (next !== codon) changed++;
     optimized += next;
   }
+  // Preserve non-coding trailing bases instead of silently truncating the input.
+  optimized += body.slice(i);
   const proteinBefore = translate(s, frame);
   const proteinAfter = translate(optimized, frame);
   return {

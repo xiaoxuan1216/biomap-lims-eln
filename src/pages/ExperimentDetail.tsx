@@ -34,14 +34,20 @@ import {
   Trash2,
   CheckCircle2,
   CloudUpload,
-  Unlock,
   Network,
+  AlertTriangle,
+  History,
+  Building2,
 } from "lucide-react";
 import BlockEditor from "@/components/eln/BlockEditor";
 import { EXP_STATUS, PROJECT_COLORS, fmtDate, fmtDateTime, parseBlocks, type ElnBlock } from "@/lib/labels";
 import { setCopilotContext, registerInsertHandler } from "@/lib/copilotContext";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n";
+import {
+  EXTERNAL_EXPERIMENT_RELATIONS,
+  EXTERNAL_RESULT_REVIEW,
+} from "@contracts/externalOrder";
 
 export default function ExperimentDetail() {
   const { t } = useI18n();
@@ -52,6 +58,7 @@ export default function ExperimentDetail() {
   const utils = trpc.useUtils();
 
   const { data: exp, isLoading } = trpc.experiment.byId.useQuery({ id: expId });
+  const { data: history } = trpc.experiment.history.useQuery({ id: expId });
   const { data: sampleOptions } = trpc.sample.options.useQuery();
 
   const [blocks, setBlocks] = useState<ElnBlock[]>([]);
@@ -59,7 +66,8 @@ export default function ExperimentDetail() {
   const [objective, setObjective] = useState("");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [signOpen, setSignOpen] = useState(false);
-  const [unsignOpen, setUnsignOpen] = useState(false);
+  const [amendOpen, setAmendOpen] = useState(false);
+  const [amendReason, setAmendReason] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [usageForm, setUsageForm] = useState({ sampleId: "", amount: "", note: "" });
   const [usageOpen, setUsageOpen] = useState(false);
@@ -67,6 +75,9 @@ export default function ExperimentDetail() {
   const loadedRef = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const signed = exp?.status === "signed";
+  const canEdit = user?.role === "user" || user?.role === "reviewer" || user?.role === "admin";
+  const canSign = user?.role === "reviewer" || user?.role === "admin";
+  const canDelete = user?.role === "admin";
 
   // 初始化加载
   useEffect(() => {
@@ -77,29 +88,6 @@ export default function ExperimentDetail() {
       loadedRef.current = true;
     }
   }, [exp]);
-
-  // Copilot 上下文注册（AI 方案可直接插入本实验）
-  useEffect(() => {
-    if (exp) {
-      setCopilotContext({
-        entityType: "experiment",
-        entityId: exp.id,
-        entityName: exp.code,
-      });
-      registerInsertHandler((newBlocks) => {
-        setBlocks((prev) => {
-          const next = [...prev, ...newBlocks];
-          scheduleAutoSave(next);
-          return next;
-        });
-      });
-    }
-    return () => {
-      setCopilotContext({});
-      registerInsertHandler(null);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exp?.id, signed]);
 
   const saveMut = trpc.experiment.saveContent.useMutation({
     onSuccess: () => setSaveState("saved"),
@@ -120,11 +108,12 @@ export default function ExperimentDetail() {
     },
     onError: (e) => toast.error(e.message),
   });
-  const unsignMut = trpc.experiment.unsign.useMutation({
-    onSuccess: () => {
-      toast.success(t("已撤销签署，实验重新可编辑"));
-      setUnsignOpen(false);
-      refreshAll();
+  const amendmentMut = trpc.experiment.createAmendment.useMutation({
+    onSuccess: ({ id: amendmentId }) => {
+      toast.success(t("已创建追加修订记录"));
+      setAmendOpen(false);
+      setAmendReason("");
+      navigate(`/experiments/${amendmentId}`);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -162,13 +151,37 @@ export default function ExperimentDetail() {
 
   // 自动保存（防抖 1.2s）
   const scheduleAutoSave = (next: ElnBlock[]) => {
-    if (signed || !loadedRef.current) return;
+    if (signed || !canEdit || !loadedRef.current) return;
     setSaveState("saving");
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       saveMut.mutate({ id: expId, content: JSON.stringify(next) });
     }, 1200);
   };
+
+  // Copilot 上下文注册（AI 方案可直接插入本实验）
+  useEffect(() => {
+    if (exp) {
+      setCopilotContext({
+        entityType: "experiment",
+        entityId: exp.id,
+        entityName: exp.code,
+      });
+      registerInsertHandler((newBlocks) => {
+        setBlocks((prev) => {
+          const next = [...prev, ...newBlocks];
+          scheduleAutoSave(next);
+          return next;
+        });
+      });
+    }
+    return () => {
+      setCopilotContext({});
+      registerInsertHandler(null);
+    };
+    // scheduleAutoSave intentionally follows the active experiment and signature state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exp?.id, signed]);
 
   const handleBlocksChange = (next: ElnBlock[]) => {
     setBlocks(next);
@@ -190,8 +203,6 @@ export default function ExperimentDetail() {
 
   const st = EXP_STATUS[exp.status];
   const pc = PROJECT_COLORS[exp.project?.color ?? "teal"] ?? PROJECT_COLORS.teal;
-  const canUnsign = exp.signedById === user?.id || user?.role === "admin";
-
   return (
     <div className="space-y-5">
       {/* 头部 */}
@@ -245,21 +256,49 @@ export default function ExperimentDetail() {
       </div>
 
       {signed && (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-800">
-          <Lock className="h-4 w-4 shrink-0" />
+        <div className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 text-sm ${
+          exp.integrity.valid
+            ? "border-violet-200 bg-violet-50 text-violet-800"
+            : "border-red-300 bg-red-50 text-red-800"
+        }`}>
+          {exp.integrity.valid
+            ? <Lock className="h-4 w-4 shrink-0" />
+            : <AlertTriangle className="h-4 w-4 shrink-0" />}
           <span>
-            {t("本实验已于 {time} 由 {name} 签署锁定，内容不可修改（符合 GLP 审计要求）。", { time: fmtDateTime(exp.signedAt), name: exp.signedByName ?? "" })}
+            {exp.integrity.valid && exp.integrity.signature?.meaning === "legacy_import"
+              ? t("这是从旧版导入的签名记录；升级时建立的内容哈希校验通过，但未重新执行复核签署。")
+              : exp.integrity.valid
+                ? t("本实验已于 {time} 由 {name} 复核签署；版本和签名哈希校验通过。", { time: fmtDateTime(exp.signedAt), name: exp.signedByName ?? "" })
+              : t("签名完整性校验失败：{reason}", { reason: exp.integrity.reason ?? t("未知原因") })}
           </span>
-          {canUnsign && (
+          {canEdit && !exp.amendment && (
             <Button
               variant="outline"
               size="sm"
               className="ml-auto border-violet-300 text-violet-700 hover:bg-violet-100"
-              onClick={() => setUnsignOpen(true)}
+              onClick={() => setAmendOpen(true)}
             >
-              <Unlock className="h-3.5 w-3.5 mr-1" /> {t("撤销签署")}
+              <PenLine className="h-3.5 w-3.5 mr-1" /> {t("创建追加修订")}
             </Button>
           )}
+        </div>
+      )}
+
+      {exp.amendment && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-800">
+          {t("该签署记录已有后续修订")}：
+          <Link className="font-medium underline ml-1" to={`/experiments/${exp.amendment.id}`}>
+            {exp.amendment.code} · {exp.amendment.title}
+          </Link>
+        </div>
+      )}
+
+      {exp.original && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-800">
+          {t("本记录修订自")}：
+          <Link className="font-medium underline ml-1" to={`/experiments/${exp.original.id}`}>
+            {exp.original.code} · {exp.original.title}
+          </Link>
         </div>
       )}
 
@@ -268,7 +307,7 @@ export default function ExperimentDetail() {
         <div className="lg:col-span-2 space-y-5">
           <Card>
             <CardContent className="p-6">
-              {signed ? (
+              {signed || !canEdit ? (
                 <h1 className="text-xl font-bold tracking-tight">{exp.title}</h1>
               ) : (
                 <input
@@ -288,7 +327,7 @@ export default function ExperimentDetail() {
                 <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
                   {t("实验目标")}
                 </div>
-                {signed ? (
+                {signed || !canEdit ? (
                   <p className="text-sm text-slate-700 whitespace-pre-wrap">
                     {exp.objective || "—"}
                   </p>
@@ -314,7 +353,7 @@ export default function ExperimentDetail() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 pt-4">
-              <BlockEditor blocks={blocks} onChange={handleBlocksChange} readOnly={signed} />
+              <BlockEditor blocks={blocks} onChange={handleBlocksChange} readOnly={signed || !canEdit} />
             </CardContent>
           </Card>
         </div>
@@ -322,7 +361,7 @@ export default function ExperimentDetail() {
         {/* 右侧栏 */}
         <div className="space-y-5">
           {/* 状态与签署 */}
-          {!signed && (
+          {!signed && canEdit && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">{t("实验状态")}</CardTitle>
@@ -346,15 +385,58 @@ export default function ExperimentDetail() {
                     <SelectItem value="completed">{t("已完成")}</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button
-                  className="w-full bg-violet-600 hover:bg-violet-500"
-                  onClick={() => setSignOpen(true)}
-                >
-                  <Lock className="h-4 w-4 mr-1.5" /> {t("签署并锁定实验")}
-                </Button>
+                {canSign && exp.status === "completed" && (
+                  <Button
+                    className="w-full bg-violet-600 hover:bg-violet-500"
+                    onClick={() => setSignOpen(true)}
+                  >
+                    <Lock className="h-4 w-4 mr-1.5" /> {t("复核并签署实验")}
+                  </Button>
+                )}
                 <p className="text-xs text-muted-foreground">
-                  {t("签署后内容将永久锁定并记录审计日志，仅签署人或管理员可撤销。")}
+                  {canSign
+                    ? t("实验完成后可复核签署。签署不可撤销；后续更正必须创建追加修订。")
+                    : t("实验完成后需由复核人或管理员签署。")}
                 </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 样本消耗 */}
+          {exp.externalWork.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Building2 className="h-4 w-4 text-pink-600" />
+                  {t("外部委托与 CRO 结果")}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {exp.externalWork.map((work) => (
+                  <div key={work.id} className="rounded-lg border p-3 text-sm">
+                    <Link to={`/external-orders/${work.orderId}`} className="font-medium text-teal-700 hover:underline">
+                      {work.order.orderNo} · {work.order.title}
+                    </Link>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {work.providerName} · {t(EXTERNAL_EXPERIMENT_RELATIONS[work.relation])}
+                      {work.itemName ? ` · ${work.itemName}` : ""}
+                    </div>
+                    {work.results.length > 0 && (
+                      <div className="mt-3 space-y-2 border-t pt-2">
+                        {work.results.map((result) => (
+                          <div key={result.id} className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="font-medium">{result.metric}：{result.valueText}{result.unit ? ` ${result.unit}` : ""}</div>
+                              {result.sampleSku && <Link to={`/samples/${result.sampleId}`} className="text-xs text-teal-700 hover:underline">{result.sampleSku} · {result.sampleName}</Link>}
+                            </div>
+                            <Badge variant="outline" className={EXTERNAL_RESULT_REVIEW[result.reviewStatus].cls}>{t(EXTERNAL_RESULT_REVIEW[result.reviewStatus].label)}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <p className="text-xs text-muted-foreground">{t("外部结果作为关联数据展示，不会改写已签署的 ELN 内容快照。")}</p>
               </CardContent>
             </Card>
           )}
@@ -365,7 +447,7 @@ export default function ExperimentDetail() {
               <CardTitle className="text-base flex items-center gap-2">
                 <TestTubes className="h-4 w-4 text-teal-600" />
                 {t("样本消耗")}
-                {!signed && (
+                {!signed && canEdit && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -393,7 +475,7 @@ export default function ExperimentDetail() {
                         {u.note && ` · ${u.note}`}
                       </div>
                     </div>
-                    {!signed && (
+                    {!signed && canEdit && (
                       <button
                         className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 shrink-0"
                         onClick={() => removeUsageMut.mutate({ usageId: u.id })}
@@ -411,8 +493,31 @@ export default function ExperimentDetail() {
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <History className="h-4 w-4 text-slate-500" />
+                {t("版本与签名")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-xs text-muted-foreground">
+              <div>{t("当前版本")}：v{exp.revision}</div>
+              <div>{t("版本总数")}：{history?.revisions.length ?? exp.revision}</div>
+              {exp.contentHash && (
+                <div className="font-mono break-all" title={exp.contentHash}>
+                  SHA-256: {exp.contentHash.slice(0, 16)}…
+                </div>
+              )}
+              {history?.revisions.slice(0, 3).map((revision) => (
+                <div key={revision.id} className="border-t pt-2">
+                  v{revision.revision} · {revision.changeReason} · {revision.createdByName ?? t("系统")}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
           {/* 危险操作 */}
-          {!signed && (
+          {!signed && canDelete && (
             <Card className="border-red-100">
               <CardContent className="p-4">
                 <Button
@@ -432,18 +537,22 @@ export default function ExperimentDetail() {
       <AlertDialog open={signOpen} onOpenChange={setSignOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("签署并锁定实验？")}</AlertDialogTitle>
+            <AlertDialogTitle>{t("复核并签署实验？")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t("签署人")}：<b>{user?.name}</b> · {fmtDate(new Date())}
               <br />
-              {t("签署后实验内容将被锁定，任何修改都会被阻止，并记录到审计日志。此操作符合 GLP/GCP 数据完整性要求。")}
+              {t("我确认已复核当前版本的内容、样本消耗与关联信息。签署会保存 SHA-256 快照并永久锁定；更正只能通过追加修订完成。")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("再想想")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-violet-600 hover:bg-violet-500"
-              onClick={() => signMut.mutate({ id: expId })}
+              onClick={() => signMut.mutate({
+                id: expId,
+                meaning: "reviewed_and_approved",
+                confirmation: true,
+              })}
             >
               {t("确认签署")}
             </AlertDialogAction>
@@ -451,19 +560,30 @@ export default function ExperimentDetail() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* 撤销签署 */}
-      <AlertDialog open={unsignOpen} onOpenChange={setUnsignOpen}>
+      {/* 对已签署记录创建追加修订 */}
+      <AlertDialog open={amendOpen} onOpenChange={setAmendOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("撤销签署？")}</AlertDialogTitle>
+            <AlertDialogTitle>{t("创建追加修订？")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("撤销后实验将回到「进行中」状态并重新可编辑。撤销操作同样会被记录到审计日志。")}
+              {t("原签署记录会保持不变。系统将复制其内容为一条新记录，并保存与原记录的修订关系。")}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="space-y-2 py-2">
+            <Label>{t("修订原因")}</Label>
+            <Input
+              value={amendReason}
+              onChange={(event) => setAmendReason(event.target.value)}
+              placeholder={t("请说明需要更正或补充的内容（至少 10 个字符）")}
+            />
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("取消")}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => unsignMut.mutate({ id: expId })}>
-              {t("确认撤销")}
+            <AlertDialogAction
+              disabled={amendReason.trim().length < 10 || amendmentMut.isPending}
+              onClick={() => amendmentMut.mutate({ id: expId, reason: amendReason.trim() })}
+            >
+              {t("创建修订记录")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -551,6 +671,7 @@ export default function ExperimentDetail() {
                   sampleId: Number(usageForm.sampleId),
                   amountUsed: Number(usageForm.amount),
                   note: usageForm.note || undefined,
+                  idempotencyKey: crypto.randomUUID(),
                 })
               }
             >

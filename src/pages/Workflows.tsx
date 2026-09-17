@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -24,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Network, Users, GitBranch } from "lucide-react";
+import { Plus, Network, Users, GitBranch, PlayCircle } from "lucide-react";
 import { WORKFLOW_STATUS, TEMPLATE_GROUPS, TEMPLATE_GROUP_ORDER } from "@contracts/workflow";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n";
@@ -58,14 +57,15 @@ export default function Workflows() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t("BioFlow 工作流")}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("BioFlow 流程设计")}</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {t("生物研发流程编排平台 · 合成生物 × 抗体研发 · 手工 / 设备 / 判断 / 数据节点 · 预置 Pipeline 即开即用")}
           </p>
         </div>
+        <div className="flex gap-2">
         <Button className="bg-teal-600 hover:bg-teal-500" onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4 mr-1" /> {t("新建流程")}
-        </Button>
+        </Button></div>
       </div>
 
       {/* 场景分栏 */}
@@ -105,7 +105,6 @@ export default function Workflows() {
         <div className="grid gap-4 md:grid-cols-2">
           {wfs.filter((w) => tab === "all" || (w.scenario ?? "synbio") === tab).map((w) => {
             const st = WORKFLOW_STATUS[w.status] ?? WORKFLOW_STATUS.draft;
-            const pct = w.activeCount ? Math.round((w.doneCount / w.activeCount) * 100) : 0;
             return (
               <Card
                 key={w.id}
@@ -141,13 +140,22 @@ export default function Workflows() {
                       </span>
                     )}
                   </div>
-                  <div>
-                    <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
-                      <span>{t("{done}/{total} 节点完成", { done: w.doneCount, total: w.activeCount })}</span>
-                      <span>{pct}%</span>
-                    </div>
-                    <Progress value={pct} className="h-1.5" />
+                  <div className="rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-muted-foreground">
+                    {t("这里保存流程定义；每次实验的节点进度请在运行中心查看。")}
                   </div>
+                  {w.status === "active" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full border-teal-200 text-teal-700 hover:bg-teal-50"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        navigate(`/runs/new?workflowId=${w.id}`);
+                      }}
+                    >
+                      <PlayCircle className="mr-1 h-4 w-4" /> {t("用此流程发起实验")}
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             );

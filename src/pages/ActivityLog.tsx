@@ -19,6 +19,7 @@ const ENTITY_LABELS: Record<string, string> = {
   sample: "样本",
   storage: "存储",
   sequence: "序列",
+  lab_run: "实验运行",
 };
 
 export default function ActivityLog() {

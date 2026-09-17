@@ -10,3 +10,10 @@
 
 > 注：v2/v3 的验收文档在版本快照回滚中随工作区一起被覆盖丢失；对应功能回归已在 v4 验收中顺带覆盖（样本详情、质粒图谱组件复用、双语渲染均正常）。
 | v7 | 开放 REST API（/api/v1，Bearer Token）+ MCP Server（16 工具）+ AGENTS.md/README/API 文档 | （见 runs/v7-openapi.log） | verifier/runs/v7-openapi.log | e95d701 |
+| v8 | 仪器属性智能体 V2（HPLC / 蛋白纯化 / 酶标 / 稳定性）+ Sample ID 扫码闭环 + 跨仪器数据谱系 | verifier/v8/acceptance.md | verifier/runs/v8-instrument-agent.log | 工作区版本 |
+| v9 | 仪器运行控制中心工程化升级（显式能力门禁 / Run 状态机 / 精确扫码 / 幂等事务 / 可信异步状态） | verifier/v9/acceptance.md | verifier/runs/v9-instrument-control-center.log | 工作区版本 |
+| v10 | 样品请求与履约中心（可用量校验 / 库存预占 / 工作队列 / 发放扣减 / 取消释放） | verifier/v10/acceptance.md | verifier/runs/v10-sample-request-fulfillment.log | 工作区版本 |
+| v11 | 设备驱动平台（Hamilton / CytoControl / Octet 协议契约、驱动中心、设备绑定、BioFlow 动态节点） | verifier/v11/acceptance.md | verifier/runs/v11-device-driver-platform.log | 工作区版本 |
+| v12 | 分子克隆动态排板（内嵌 BioFlow 与节点孔板、项目卡片摘要、条件推荐、版本与审计） | verifier/v12/acceptance.md | verifier/runs/v12-cloning-verify.log、v12-cloning-api.log | 工作区版本；中英文 UI 走查通过，依赖审计因网络超时待完成 |
+| v13 | BioMapOS Run Center（流程实例化、样本/物料绑定、设备当次参数、不可变 RunPlan、受控模拟状态机） | verifier/v13/acceptance.md | verifier/runs/v13-lab-run-api.log | 工作区版本；现场 Edge 通道保持锁定 |
+| v14 | Mosaic-style Run 数据流转（发起前计划预览、五段对象泳道、对象检查器、事实证据与结果空态） | verifier/v14/acceptance.md | verifier/runs/v14-mosaic-data-flow.log | 工作区版本；无结果记录时不生成结果节点 |

@@ -70,6 +70,8 @@ export const TX_REASONS: Record<string, string> = {
   consume: "领用",
   adjust: "调整",
   dispose: "废弃",
+  transfer_out: "外部转出",
+  transfer_in: "外部退回",
 };
 
 export const PROJECT_COLORS: Record<string, { dot: string; soft: string }> = {

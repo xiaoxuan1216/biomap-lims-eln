@@ -1,20 +1,30 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, like, or } from "drizzle-orm";
-import { createRouter, authedQuery } from "./middleware";
+import { and, asc, desc, eq, isNull, like, or } from "drizzle-orm";
+import { adminQuery, authedQuery, createRouter, writeQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import {
+  externalOrderItems,
+  externalOrders,
+  externalOrderSamples,
+  externalResults,
+  externalSampleCustodyEvents,
   experimentSamples,
-  lineageEdges,
+  inventoryReservations,
   projects,
   samples,
-  sequenceFeatures,
-  sequences,
   stockTransactions,
   storageLocations,
+  serviceProviders,
 } from "@db/schema";
-import { logActivity, nextSampleSku } from "./queries/labHelpers";
+import { getAvailableQuantity, roundRequestQuantity } from "@contracts/sampleRequest";
+import { appendActivity, nextSampleSku } from "./queries/labHelpers";
 import { buildLineage } from "./queries/lineage";
+import {
+  changeInventory,
+  InventoryError,
+  type InventoryReason,
+} from "./services/inventoryService";
 
 const SAMPLE_TYPES = [
   "cell_line",
@@ -46,6 +56,20 @@ const sampleInput = z.object({
   notes: z.string().optional(),
 });
 
+const sampleMetadataInput = sampleInput.omit({ quantity: true });
+
+function toInventoryTrpcError(error: unknown): never {
+  if (error instanceof InventoryError) {
+    const code = error.kind === "not_found"
+      ? "NOT_FOUND"
+      : error.kind === "insufficient"
+        ? "PRECONDITION_FAILED"
+        : "BAD_REQUEST";
+    throw new TRPCError({ code, message: error.message });
+  }
+  throw error;
+}
+
 export const sampleRouter = createRouter({
   list: authedQuery
     .input(
@@ -60,7 +84,7 @@ export const sampleRouter = createRouter({
     )
     .query(async ({ input }) => {
       const db = getDb();
-      const conditions = [];
+      const conditions = [isNull(samples.archivedAt)];
       if (input?.type) conditions.push(eq(samples.type, input.type));
       if (input?.locationId) conditions.push(eq(samples.locationId, input.locationId));
       if (input?.projectId) conditions.push(eq(samples.projectId, input.projectId));
@@ -69,7 +93,7 @@ export const sampleRouter = createRouter({
           or(
             like(samples.name, `%${input.search}%`),
             like(samples.sku, `%${input.search}%`),
-          ),
+          )!,
         );
       }
       const rows = await db
@@ -82,7 +106,7 @@ export const sampleRouter = createRouter({
         .from(samples)
         .leftJoin(storageLocations, eq(samples.locationId, storageLocations.id))
         .leftJoin(projects, eq(samples.projectId, projects.id))
-        .where(conditions.length ? and(...conditions) : undefined)
+        .where(and(...conditions)!)
         .orderBy(desc(samples.updatedAt))
         .limit(500);
       return rows.map((r) => ({
@@ -93,10 +117,35 @@ export const sampleRouter = createRouter({
       }));
     }),
 
+  /** 扫码枪精确解析 Sample ID，避免受列表分页或筛选范围影响。 */
+  resolveBarcode: authedQuery
+    .input(z.object({ code: z.string().trim().min(1).max(255) }))
+    .query(async ({ input }) => {
+      const [row] = await getDb()
+        .select({
+          sample: samples,
+          locationName: storageLocations.name,
+          locationType: storageLocations.type,
+          projectName: projects.name,
+        })
+        .from(samples)
+        .leftJoin(storageLocations, eq(samples.locationId, storageLocations.id))
+        .leftJoin(projects, eq(samples.projectId, projects.id))
+        .where(and(eq(samples.sku, input.code), isNull(samples.archivedAt)))
+        .limit(1);
+      if (!row) return null;
+      return {
+        ...row.sample,
+        locationName: row.locationName,
+        locationType: row.locationType,
+        projectName: row.projectName,
+      };
+    }),
+
   byId: authedQuery.input(z.object({ id: z.number() })).query(async ({ input }) => {
     const db = getDb();
     const sample = await db.query.samples.findFirst({
-      where: eq(samples.id, input.id),
+      where: and(eq(samples.id, input.id), isNull(samples.archivedAt)),
     });
     if (!sample) throw new TRPCError({ code: "NOT_FOUND", message: "样本不存在" });
     const location = sample.locationId
@@ -113,13 +162,72 @@ export const sampleRouter = createRouter({
       .where(eq(stockTransactions.sampleId, input.id))
       .orderBy(desc(stockTransactions.createdAt))
       .limit(100);
+    const activeReservations = await db
+      .select({ amount: inventoryReservations.amount })
+      .from(inventoryReservations)
+      .where(
+        and(
+          eq(inventoryReservations.sampleId, input.id),
+          eq(inventoryReservations.status, "active"),
+        ),
+      );
+    const activeReserved = roundRequestQuantity(
+      activeReservations.reduce(
+        (sum, reservation) => sum + Number(reservation.amount),
+        0,
+      ),
+    );
     const usage = await db
       .select()
       .from(experimentSamples)
       .where(eq(experimentSamples.sampleId, input.id))
       .orderBy(desc(experimentSamples.createdAt))
       .limit(50);
-    return { ...sample, location, project, transactions: txs, experimentUsage: usage };
+    const externalShipments = await db
+      .select({
+        shipment: externalOrderSamples,
+        orderNo: externalOrders.orderNo,
+        orderTitle: externalOrders.title,
+        orderQualityStatus: externalOrders.qualityStatus,
+        itemName: externalOrderItems.name,
+        providerName: serviceProviders.name,
+      })
+      .from(externalOrderSamples)
+      .innerJoin(externalOrders, eq(externalOrderSamples.orderId, externalOrders.id))
+      .leftJoin(externalOrderItems, eq(externalOrderSamples.orderItemId, externalOrderItems.id))
+      .leftJoin(serviceProviders, eq(externalOrders.providerId, serviceProviders.id))
+      .where(eq(externalOrderSamples.sampleId, input.id))
+      .orderBy(desc(externalOrderSamples.createdAt));
+    const custodyEvents = await db
+      .select()
+      .from(externalSampleCustodyEvents)
+      .where(eq(externalSampleCustodyEvents.sampleId, input.id))
+      .orderBy(desc(externalSampleCustodyEvents.createdAt))
+      .limit(100);
+    const structuredResults = await db
+      .select({
+        result: externalResults,
+        orderNo: externalOrders.orderNo,
+        orderTitle: externalOrders.title,
+        providerName: serviceProviders.name,
+      })
+      .from(externalResults)
+      .innerJoin(externalOrders, eq(externalResults.orderId, externalOrders.id))
+      .leftJoin(serviceProviders, eq(externalOrders.providerId, serviceProviders.id))
+      .where(eq(externalResults.sampleId, input.id))
+      .orderBy(desc(externalResults.createdAt));
+    return {
+      ...sample,
+      location,
+      project,
+      activeReserved,
+      availableQuantity: getAvailableQuantity(Number(sample.quantity), activeReserved),
+      transactions: txs,
+      experimentUsage: usage,
+      externalShipments: externalShipments.map(({ shipment, ...meta }) => ({ ...shipment, ...meta })),
+      custodyEvents,
+      externalResults: structuredResults.map(({ result, ...meta }) => ({ ...result, ...meta })),
+    };
   }),
 
   /** 样本全生命周期追溯：自该样本向上（祖先方向）遍历谱系 DAG
@@ -132,136 +240,152 @@ export const sampleRouter = createRouter({
       return result;
     }),
 
-  create: authedQuery.input(sampleInput).mutation(async ({ ctx, input }) => {
+  create: writeQuery.input(sampleInput).mutation(async ({ ctx, input }) => {
     const db = getDb();
-    const sku = await nextSampleSku();
-    const [{ id }] = await db
-      .insert(samples)
-      .values({
-        ...input,
-        sku,
-        createdById: ctx.user.id,
-        createdByName: ctx.user.name ?? null,
-      })
-      .$returningId();
-    if (input.quantity > 0) {
-      await db.insert(stockTransactions).values({
-        sampleId: id,
-        delta: input.quantity,
-        reason: "restock",
-        note: "初始入库",
-        userName: ctx.user.name ?? null,
-      });
-    }
-    await logActivity({
-      userName: ctx.user.name,
-      action: "登记了样本",
-      entityType: "sample",
-      entityId: id,
-      entityName: `${sku} ${input.name}`,
-    });
-    return { id, sku };
-  }),
-
-  update: authedQuery
-    .input(z.object({ id: z.number() }).merge(sampleInput.partial()))
-    .mutation(async ({ ctx, input }) => {
-      const { id, ...data } = input;
-      await getDb().update(samples).set(data).where(eq(samples.id, id));
-      await logActivity({
+    return db.transaction(async (tx) => {
+      const sku = await nextSampleSku(tx);
+      const [{ id }] = await tx
+        .insert(samples)
+        .values({
+          ...input,
+          sku,
+          createdById: ctx.user.id,
+          createdByName: ctx.user.name ?? null,
+        })
+        .$returningId();
+      if (input.quantity > 0) {
+        await tx.insert(stockTransactions).values({
+          sampleId: id,
+          delta: input.quantity,
+          quantityBefore: 0,
+          quantityAfter: input.quantity,
+          reason: "restock",
+          note: "初始入库",
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? null,
+        });
+      }
+      await appendActivity(tx, {
+        userId: ctx.user.id,
         userName: ctx.user.name,
-        action: "更新了样本信息",
+        action: "登记了样本",
         entityType: "sample",
         entityId: id,
-        entityName: data.name,
+        entityName: `${sku} ${input.name}`,
+        after: { ...input, id, sku },
+      });
+      return { id, sku };
+    });
+  }),
+
+  update: writeQuery
+    .input(z.object({ id: z.number() }).merge(sampleMetadataInput.partial()))
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      await getDb().transaction(async (tx) => {
+        const [before] = await tx
+          .select()
+          .from(samples)
+          .where(and(eq(samples.id, id), isNull(samples.archivedAt)))
+          .limit(1)
+          .for("update");
+        if (!before) throw new TRPCError({ code: "NOT_FOUND", message: "样本不存在" });
+        await tx.update(samples).set(data).where(eq(samples.id, id));
+        await appendActivity(tx, {
+          userId: ctx.user.id,
+          userName: ctx.user.name,
+          action: "更新了样本信息",
+          entityType: "sample",
+          entityId: id,
+          entityName: data.name ?? before.name,
+          before,
+          after: { ...before, ...data },
+        });
       });
       return { ok: true };
     }),
 
-  delete: authedQuery.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+  delete: adminQuery.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = getDb();
     const sample = await db.query.samples.findFirst({
       where: eq(samples.id, input.id),
     });
-    await db.delete(experimentSamples).where(eq(experimentSamples.sampleId, input.id));
-    await db.delete(stockTransactions).where(eq(stockTransactions.sampleId, input.id));
-    await db.delete(samples).where(eq(samples.id, input.id));
-    await logActivity({
-      userName: ctx.user.name,
-      action: "删除了样本",
-      entityType: "sample",
-      entityId: input.id,
-      entityName: sample ? `${sample.sku} ${sample.name}` : null,
+    if (!sample || sample.archivedAt) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "样本不存在" });
+    }
+    await db.transaction(async (tx) => {
+      await tx
+        .update(samples)
+        .set({ archivedAt: new Date(), locationId: null, boxRow: null, boxCol: null })
+        .where(eq(samples.id, input.id));
+      await appendActivity(tx, {
+        userId: ctx.user.id,
+        userName: ctx.user.name,
+        action: "归档了样本",
+        entityType: "sample",
+        entityId: input.id,
+        entityName: `${sample.sku} ${sample.name}`,
+        before: sample,
+        after: { ...sample, archivedAt: new Date().toISOString() },
+      });
     });
     return { ok: true };
   }),
 
   /** 入库 / 出库 / 调整 / 废弃 */
-  transact: authedQuery
+  transact: writeQuery
     .input(
       z.object({
         sampleId: z.number(),
         amount: z.number().positive("数量必须大于 0"),
         reason: z.enum(["restock", "consume", "adjust", "dispose"]),
         note: z.string().optional(),
+        idempotencyKey: z.string().trim().min(1).max(128).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const db = getDb();
-      const sample = await db.query.samples.findFirst({
-        where: eq(samples.id, input.sampleId),
-      });
-      if (!sample) throw new TRPCError({ code: "NOT_FOUND", message: "样本不存在" });
       const isIn = input.reason === "restock" || input.reason === "adjust";
       const delta = isIn ? input.amount : -input.amount;
-      if (!isIn && sample.quantity < input.amount) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: `库存不足：当前仅剩 ${sample.quantity} ${sample.unit}`,
-        });
-      }
-      await db.transaction(async (tx) => {
-        await tx
-          .update(samples)
-          .set({ quantity: sample.quantity + delta })
-          .where(eq(samples.id, input.sampleId));
-        await tx.insert(stockTransactions).values({
+      try {
+        const result = await changeInventory({
           sampleId: input.sampleId,
           delta,
-          reason: input.reason,
-          note: input.note ?? null,
-          userName: ctx.user.name ?? null,
+          reason: input.reason as InventoryReason,
+          note: input.note,
+          actorId: ctx.user.id,
+          actorName: ctx.user.name,
+          source: "web",
+          idempotencyKey: input.idempotencyKey,
         });
-      });
-      const actionMap = {
-        restock: "入库",
-        consume: "领用出库",
-        adjust: "调整库存",
-        dispose: "废弃出库",
-      } as const;
-      await logActivity({
-        userName: ctx.user.name,
-        action: `对样本${actionMap[input.reason]}`,
-        entityType: "sample",
-        entityId: input.sampleId,
-        entityName: `${sample.sku} ${sample.name}`,
-        detail: `${delta > 0 ? "+" : ""}${delta} ${sample.unit}${input.note ? `（${input.note}）` : ""}`,
-      });
-      return { ok: true, newQuantity: sample.quantity + delta };
+        return { ok: true, newQuantity: result.quantityAfter, replayed: result.replayed };
+      } catch (error) {
+        return toInventoryTrpcError(error);
+      }
     }),
 
-  /** 样本下拉选项（实验登记消耗用） */
-  options: authedQuery.query(async () => {
-    return getDb()
-      .select({
-        id: samples.id,
-        name: samples.name,
-        sku: samples.sku,
-        quantity: samples.quantity,
-        unit: samples.unit,
-      })
-      .from(samples)
-      .orderBy(asc(samples.name))
-      .limit(500);
-  }),
+  /** 样本下拉选项（实验登记消耗、外部委托送样用） */
+  options: authedQuery
+    .input(z.object({ projectId: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      const conditions = [isNull(samples.archivedAt)];
+      if (input?.projectId) {
+        conditions.push(
+          or(eq(samples.projectId, input.projectId), isNull(samples.projectId))!
+        );
+      }
+      return getDb()
+        .select({
+          id: samples.id,
+          name: samples.name,
+          sku: samples.sku,
+          type: samples.type,
+          projectId: samples.projectId,
+          quantity: samples.quantity,
+          unit: samples.unit,
+        })
+        .from(samples)
+        .where(and(...conditions)!)
+        .orderBy(asc(samples.name))
+        .limit(500);
+    }),
 });

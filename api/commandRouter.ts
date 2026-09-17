@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { and, desc, eq, gte, isNotNull, isNull, like, lte, or, sql } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
+import { and, eq, gte, isNotNull, isNull, like, lte, or, sql } from "drizzle-orm";
 import { createRouter, authedQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import {
@@ -48,6 +49,7 @@ function dayRange(offsetDays = 0): { start: Date; end: Date } {
 
 const NAV_TARGETS: { keys: RegExp; href: string; zh: string; en: string }[] = [
   { keys: /workflow|pipeline|流程|业务流|管线/i, href: "/workflows", zh: "业务流", en: "Workflows" },
+  { keys: /cro|cdmo|outsourc|外部委托|委托单|服务商/i, href: "/external-orders", zh: "外部委托", en: "External Work" },
   { keys: /sample|inventory|样本|库存/i, href: "/samples", zh: "样本库", en: "Samples" },
   { keys: /sequence|plasmid|序列|质粒/i, href: "/sequences", zh: "序列库", en: "Sequences" },
   { keys: /equipment|instrument|设备|仪器/i, href: "/equipment", zh: "设备管理", en: "Equipment" },
@@ -219,6 +221,12 @@ export const commandRouter = createRouter({
 
       /* ── 从模板创建业务流 ── */
       if (/(创建|新建|create|new|发起).*(流程|业务流|workflow|pipeline)/i.test(norm)) {
+        if (ctx.user.role === "viewer") {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "只读用户不能创建业务流",
+          });
+        }
         const findTpl = () => {
           const kwMap: [RegExp, string][] = [
             [/重组|recombinant/i, ""],
@@ -320,7 +328,7 @@ export const commandRouter = createRouter({
           }
         }
         return {
-          reply: L(lang, "没有找到对应的模块。可以打开：业务流 / 样本库 / 序列库 / 设备 / 实验 / 项目 / 存储 / 日志。", "Module not found. Available: workflows, samples, sequences, equipment, experiments, projects, storage, activity."),
+          reply: L(lang, "没有找到对应的模块。可以打开：业务流 / 外部委托 / 样本库 / 序列库 / 设备 / 实验 / 项目 / 存储 / 日志。", "Module not found. Available: workflows, external work, samples, sequences, equipment, experiments, projects, storage, activity."),
         };
       }
 

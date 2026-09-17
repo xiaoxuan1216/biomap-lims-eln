@@ -19,29 +19,25 @@ BioMap OS：面向合成生物学与抗体研发实验室的一体化 **LIMS + E
 | 后端 | Hono + tRPC 11（superjson）+ Drizzle ORM | `api/`（路由 `api/*Router.ts`，汇总于 `api/router.ts`） |
 | 开放 API | REST `/api/v1/*`（Bearer Token） | `api/v1.ts` |
 | MCP | stdio MCP Server（封装 /api/v1） | `mcp/` |
-| 数据库 | MySQL 协议（TiDB 兼容），18 张表 | `db/schema.ts` + `db/*.mts` 脚本 |
+| 数据库 | MySQL 协议（TiDB 兼容） | `db/schema.ts` + `db/migrations/` |
 | 国际化 | 中文为主语言，`src/i18n/en.ts` 为 zh→en 字典 | `src/i18n/` |
 
 ## 3. 常用命令
 
 ```bash
 npm install                 # 安装依赖（本仓库挂载点不支持软链时用 --install-links=true 或先装到 /tmp 再 cp -rL）
-npm run build               # 前端 + 后端全量构建（输出 dist/，含 dist/boot.js）
-PORT=3100 npm start         # 生产模式启动（启动时自动校验数据库结构）
+npm run verify              # lint + test + 类型检查 + 前后端构建
+PORT=3100 npm start         # 生产模式启动（先执行版本化迁移，失败即停止）
 npx tsx db/_qa.mts          # 生成 QA 登录令牌到 /tmp/token.txt
 npx tsx db/<script>.mts     # 运行数据库脚本（幂等脚本是本仓库惯例）
 ```
 
 ## 4. 不可破坏的约定（红线）
 
-1. **BioFlow 节点关联键是 `nodeKey`，不是节点数据库 id**——saveGraph 会删除重建节点行，
-   ELN/子流程等一切关联都用 `(workflowId, nodeKey)`。
-2. **ELN 签署后不可改**：`status=signed` 的记录禁止修改内容；任何关键操作必须写活动日志
-   （`logActivity`，见 `api/queries/labHelpers.ts`）。
-3. **库存三方一致**：消耗/补货必须同时更新 `samples.quantity` 并写 `stock_transactions` 流水；
-   ELN 消耗重记时先回滚再重插（参考 `db/_seed_eln.mts`）。
-4. **枚举变更走 SQL**：drizzle-kit push 会阻塞；改 enum/表结构用 `db.execute(sql\`ALTER ...\`)`
-   并先 `SHOW COLUMNS` 判存（参考 `db/_seed_consumables.mts`）。schema.ts 与 DB 必须同步改。
+1. **BioFlow 节点关联键是 `(workflowId, nodeKey)`**。`saveGraph` 必须原位更新已有键以保持数据库 id 稳定，禁止恢复“全删全建”。
+2. **ELN 签署永久不可改、不可撤签**：任何更正创建 `amendsExperimentId` 指向原记录的新 ELN；签名必须绑定 `experiment_revisions` 快照哈希。
+3. **库存三方一致**：数量、流水和活动审计必须在同一数据库事务内写入；外部重试必须使用幂等键。禁止任何路由直接修改 `samples.quantity`。
+4. **表结构只走版本化迁移**：修改 `db/schema.ts` 后生成并审查 `db/migrations/`，禁止启动时临时 DDL 和生产 `db:push`。
 5. **双语纪律**：所有界面文案过 `t()`，新增中文键必须同步在 `src/i18n/en.ts` 加英文翻译；
    禁止重复键（构建会告警）。
 6. **tRPC 外部调用格式**：GET 需 superjson 包装
@@ -50,7 +46,7 @@ npx tsx db/<script>.mts     # 运行数据库脚本（幂等脚本是本仓库�
 
 ## 5. 验证流程（交付前必做）
 
-1. `npm run build` 零 error、零 duplicate-key 告警；
+1. `npm run verify` 全部通过，生产依赖 `npm audit --omit=dev --audit-level=high` 无高危；
 2. 重启：`pkill -f "node dist/boot.js"`，再 `PORT=3100 nohup npm start &`；
 3. 实机 QA：`/qa-login.html?token=<db/_qa.mts 输出>` 登录，Playwright 走查涉及页面（中/英双语）；
 4. 在 `verifier/v<N>/acceptance.md` 写验收记录、`verifier/runs/` 留运行日志、`verifier/README.md` 加索引行。

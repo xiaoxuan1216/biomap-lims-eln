@@ -11,6 +11,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 
 const BASE = (process.env.BIOMAP_BASE_URL || "http://localhost:3100").replace(/\/$/, "");
 const TOKEN = process.env.BIOMAP_API_TOKEN || "";
@@ -20,12 +21,13 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-async function api(path, { method = "GET", body } = {}) {
+async function api(path, { method = "GET", body, idempotencyKey } = {}) {
   const res = await fetch(`${BASE}/api/v1${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${TOKEN}`,
       ...(body ? { "Content-Type": "application/json" } : {}),
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -80,9 +82,14 @@ server.registerTool("add_stock_transaction", {
     delta: z.number().describe("数量变化（非零；正=入库，负=出库）"),
     reason: z.enum(["restock", "consume", "adjust", "dispose"]).describe("restock 入库 / consume 消耗 / adjust 调整 / dispose 废弃"),
     note: z.string().optional().describe("备注"),
+    idempotencyKey: z.string().min(8).max(128).optional().describe("幂等键；同一操作重试时必须复用"),
   },
-}, wrap(({ id, delta, reason, note }) =>
-  api(`/samples/${id}/transactions`, { method: "POST", body: { delta, reason, note } })));
+}, wrap(({ id, delta, reason, note, idempotencyKey }) =>
+  api(`/samples/${id}/transactions`, {
+    method: "POST",
+    body: { delta, reason, note },
+    idempotencyKey: idempotencyKey ?? randomUUID(),
+  })));
 
 /* ── 实验记录（ELN）── */
 server.registerTool("list_experiments", {

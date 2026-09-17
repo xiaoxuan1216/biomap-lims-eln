@@ -1,0 +1,66 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { DEFAULT_CLONING_CONFIG } from "../../contracts/cloningLayout";
+import { getDb } from "../../api/queries/connection";
+import { samples, stockTransactions, workflowNodes, users, activities } from "../../db/schema";
+import { appRouter } from "../../api/router";
+
+const token = fs.readFileSync("/tmp/token.txt", "utf8").trim();
+async function rpc(name: string, input?: unknown, write = false, auth = true) {
+  const url = `http://127.0.0.1:3000/api/trpc/${name}${!write && input !== undefined ? "?input=" + encodeURIComponent(JSON.stringify({ json: input })) : ""}`;
+  const response = await fetch(url, { method: write ? "POST" : "GET", headers: { "content-type": "application/json", origin: "http://localhost:3100", ...(auth ? { cookie: `biomap_sid=${token}` } : {}) }, ...(write ? { body: JSON.stringify({ json: input }) } : {}) });
+  const result = await response.json();
+  return { status: response.status, data: result.result?.data?.json, error: result.error?.json };
+}
+const db = getDb();
+const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const inventoryBefore = hash(await db.select({ id: samples.id, quantity: samples.quantity }).from(samples));
+const transactionsBefore = (await db.select({ id: stockTransactions.id }).from(stockTransactions)).length;
+const projects = (await rpc("project.options")).data;
+const project = projects.find((p: { name: string }) => p.name === "重组抗体表达与表征");
+assert(project, "expected the existing antibody project");
+const workflowList = (await rpc("workflow.list")).data;
+const title = "演示：分子克隆排板与 BioFlow 集成";
+let workflow = workflowList.find((w: { name: string }) => w.name === title);
+if (!workflow) {
+  const created = await rpc("workflow.create", { name: title, projectId: project.id, templateKey: "gibson_assembly", scenario: "synbio", description: "动态排板产品集成演示。仅规划虚拟样本，不执行实验或扣减库存。" }, true);
+  assert.equal(created.status, 200); workflow = { id: created.data.id };
+}
+const nodesBefore = await db.select({ id: workflowNodes.id, key: workflowNodes.nodeKey }).from(workflowNodes).where(eq(workflowNodes.workflowId, workflow.id));
+assert(nodesBefore.some(n => n.key === "n3"));
+const existing = (await rpc("cloningLayout.list", { workflowId: workflow.id })).data;
+let latest = existing.length ? Math.max(...existing.map((x: { version: number }) => x.version)) : 0;
+const input = { workflowId: workflow.id, nodeKey: "n3", name: "96 样本 · 2 对照 · 紧凑方案", config: DEFAULT_CLONING_CONFIG, mode: "compact", expectedVersion: latest, idempotencyKey: randomUUID() };
+const saved = await rpc("cloningLayout.save", input, true); assert.equal(saved.status, 200, JSON.stringify(saved.error)); latest++;
+const replay = await rpc("cloningLayout.save", input, true); assert.equal(replay.data.id, saved.data.id); assert.equal(replay.data.replayed, true);
+const changedRetry = await rpc("cloningLayout.save", { ...input, name: "changed" }, true); assert.equal(changedRetry.status, 409);
+const stale = await rpc("cloningLayout.save", { ...input, idempotencyKey: randomUUID() }, true); assert.equal(stale.status, 409);
+const invalidNode = await rpc("cloningLayout.save", { ...input, expectedVersion: latest, nodeKey: "missing-node", idempotencyKey: randomUUID() }, true); assert.equal(invalidNode.status, 400);
+const request = { ...input, name: "96 样本 · 推荐均衡布局", mode: "recommended", expectedVersion: latest };
+const concurrent = await Promise.all([rpc("cloningLayout.save", { ...request, idempotencyKey: randomUUID() }, true), rpc("cloningLayout.save", { ...request, idempotencyKey: randomUUID() }, true)]);
+assert.deepEqual(concurrent.map(r => r.status).sort(), [200, 409]);
+const recommendedId = concurrent.find(r => r.status === 200)!.data.id;
+const read = await rpc("cloningLayout.byId", { id: recommendedId }); assert.equal(read.status, 200);
+assert.equal(read.data.projectId, project.id); assert.equal(read.data.nodeKey, "n3");
+assert.equal(read.data.plan.planningOnly, true); assert.equal(read.data.plan.sourceMode, "fictional");
+assert.deepEqual(read.data.plan.stages.find((s: { key: string }) => s.key === "E").plates.map((p: { samples: unknown[] }) => p.samples.length), [48, 48]);
+const oldRead = await rpc("cloningLayout.byId", { id: saved.data.id });
+assert.deepEqual(oldRead.data.plan.stages.find((s: { key: string }) => s.key === "E").plates.map((p: { samples: unknown[] }) => p.samples.length), [94, 2]);
+assert.notEqual(oldRead.data.snapshotHash, read.data.snapshotHash);
+const projectPlans = (await rpc("cloningLayout.list", { projectId: project.id })).data;
+assert(projectPlans.some((p: { id: number }) => p.id === recommendedId));
+assert.equal((await rpc("cloningLayout.list", {}, false, false)).status, 401);
+assert.equal((await rpc("cloningLayout.save", request, true, false)).status, 401);
+const actor = await db.query.users.findFirst({ where: eq(users.unionId, "demo-qa-user") }); assert(actor);
+const viewer = appRouter.createCaller({ req: new Request("http://localhost:3100"), resHeaders: new Headers(), user: { ...actor, role: "viewer" } });
+await assert.rejects(viewer.cloningLayout.save({ ...input, mode: "compact", idempotencyKey: randomUUID() }), (error: unknown) => (error as { code: string }).code === "FORBIDDEN");
+assert.equal(hash(await db.select({ id: samples.id, quantity: samples.quantity }).from(samples)), inventoryBefore);
+assert.equal((await db.select({ id: stockTransactions.id }).from(stockTransactions)).length, transactionsBefore);
+assert.deepEqual(await db.select({ id: workflowNodes.id, key: workflowNodes.nodeKey }).from(workflowNodes).where(eq(workflowNodes.workflowId, workflow.id)), nodesBefore);
+const audit = await rpc("admin.verifyAuditTrail"); assert.equal(audit.data.valid, true, JSON.stringify(audit.data));
+const activity = await db.select().from(activities).where(eq(activities.action, "保存了分子克隆排板方案"));
+assert(activity.some(a => a.entityId === workflow.id));
+const result = { passed: true, workflowId: workflow.id, projectId: project.id, compactPlanId: saved.data.id, recommendedPlanId: recommendedId, checks: ["database snapshot readback", "project and node association", "immutable history", "idempotent retry", "changed retry rejection", "stale-version rejection", "concurrent save serialization", "invalid node rejection", "unauthenticated access rejection", "viewer write rejection", "inventory unchanged", "DAG IDs unchanged", "activity hash chain"] };
+fs.writeFileSync("verifier/v12/api-checks.json", JSON.stringify(result, null, 2)); console.log(JSON.stringify(result)); process.exit(0);

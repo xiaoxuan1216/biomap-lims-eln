@@ -1,7 +1,7 @@
 /**
  * 开放 REST API（/api/v1/*）—— 供外部系统与 AI Agent 调用。
  * 鉴权：Authorization: Bearer <token>，令牌由环境变量 API_TOKENS 配置，
- * 格式为 "名称:令牌" 逗号分隔，如 API_TOKENS="claude:sk-abc123,n8n:sk-def456"。
+ * 格式为 "名称:令牌:权限" 逗号分隔；权限为 read 或 write。
  * 未配置 API_TOKENS 时，所有 /api/v1 请求一律 401（默认关闭，安全兜底）。
  *
  * 设计原则：读多写少；写操作（库存流水、创建 ELN）全部走与 Web 端相同的
@@ -26,39 +26,67 @@ import {
   workflows,
 } from "@db/schema";
 import { buildLineage } from "./queries/lineage";
-import { logActivity, nextExperimentCode } from "./queries/labHelpers";
+import { appendActivity, nextExperimentCode } from "./queries/labHelpers";
+import { changeInventory, InventoryError } from "./services/inventoryService";
+import { appendExperimentRevision } from "./services/elnService";
+import {
+  authenticateApiToken,
+  canWrite,
+  parseApiTokens,
+  type ApiTokenIdentity,
+} from "./security/apiTokens";
 
-type ApiIdentity = { tokenName: string };
+const configuredTokens = parseApiTokens(process.env.API_TOKENS ?? "");
+const RATE_LIMIT = 120;
+const RATE_WINDOW_MS = 60_000;
+const requestWindows = new Map<string, { startedAt: number; count: number }>();
 
-export const v1App = new Hono<{ Variables: { api: ApiIdentity } }>();
+export const v1App = new Hono<{ Variables: { api: ApiTokenIdentity } }>();
 
 /* ── 鉴权中间件 ── */
 v1App.use("*", async (c, next) => {
-  const conf = process.env.API_TOKENS ?? "";
-  const tokens = new Map(
-    conf.split(",").map((p) => p.trim()).filter(Boolean)
-      .map((p) => {
-        const i = p.indexOf(":");
-        return i > 0 ? [p.slice(i + 1), p.slice(0, i)] as const : null;
-      })
-      .filter((x): x is readonly [string, string] => x !== null),
-  );
   const auth = c.req.header("Authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-  const name = token ? tokens.get(token) : undefined;
-  if (!name) {
+  const identity = authenticateApiToken(configuredTokens, token);
+  if (!identity) {
     return c.json({ error: "Unauthorized", hint: "需提供有效的 Bearer Token（环境变量 API_TOKENS 配置）" }, 401);
   }
-  c.set("api", { tokenName: name });
+
+  const now = Date.now();
+  const window = requestWindows.get(identity.fingerprint);
+  if (!window || now - window.startedAt >= RATE_WINDOW_MS) {
+    requestWindows.set(identity.fingerprint, { startedAt: now, count: 1 });
+  } else if (window.count >= RATE_LIMIT) {
+    c.header("Retry-After", String(Math.ceil((RATE_WINDOW_MS - (now - window.startedAt)) / 1000)));
+    return c.json({ error: "Too Many Requests" }, 429);
+  } else {
+    window.count += 1;
+  }
+
+  if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method) && !canWrite(identity)) {
+    return c.json({ error: "Forbidden", hint: "该令牌只有只读权限" }, 403);
+  }
+
+  c.set("api", identity);
   await next();
 });
 
 const num = (v: string | undefined, dflt: number, max: number) =>
   Math.min(Math.max(parseInt(v ?? "", 10) || dflt, 1), max);
+const validId = (value: string) => {
+  const id = Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+};
 
 /* ── 健康检查 ── */
 v1App.get("/health", (c) =>
-  c.json({ ok: true, service: "BioMap OS Open API", version: "v1", token: c.get("api").tokenName }));
+  c.json({
+    ok: true,
+    service: "BioMap OS Open API",
+    version: "v1",
+    token: c.get("api").tokenName,
+    scope: c.get("api").scope,
+  }));
 
 /* ── 项目 ── */
 v1App.get("/projects", async (c) => {
@@ -72,11 +100,11 @@ v1App.get("/samples", async (c) => {
   const db = getDb();
   const search = c.req.query("search");
   const type = c.req.query("type");
-  const conds = [];
-  if (search) conds.push(or(like(samples.name, `%${search}%`), like(samples.sku, `%${search}%`)));
+  const conds = [isNull(samples.archivedAt)];
+  if (search) conds.push(or(like(samples.name, `%${search}%`), like(samples.sku, `%${search}%`))!);
   if (type) conds.push(eq(samples.type, type as never));
   const rows = await db.select().from(samples)
-    .where(conds.length ? and(...conds) : undefined)
+    .where(and(...conds)!)
     .orderBy(desc(samples.updatedAt))
     .limit(num(c.req.query("limit"), 100, 500));
   return c.json({ data: rows });
@@ -84,17 +112,23 @@ v1App.get("/samples", async (c) => {
 
 v1App.get("/samples/low-stock", async (c) => {
   const db = getDb();
-  const rows = await db.select().from(samples).where(or(
-    and(isNotNull(samples.alertThreshold), sql`${samples.quantity} <= ${samples.alertThreshold}`),
-    and(isNull(samples.alertThreshold), lte(samples.quantity, 2)),
+  const rows = await db.select().from(samples).where(and(
+    isNull(samples.archivedAt),
+    or(
+      and(isNotNull(samples.alertThreshold), sql`${samples.quantity} <= ${samples.alertThreshold}`),
+      and(isNull(samples.alertThreshold), lte(samples.quantity, 2)),
+    ),
   )).limit(200);
   return c.json({ data: rows, rule: "quantity <= alertThreshold（未设阈值时按 <= 2）" });
 });
 
 v1App.get("/samples/:id", async (c) => {
   const db = getDb();
-  const id = Number(c.req.param("id"));
-  const s = await db.query.samples.findFirst({ where: eq(samples.id, id) });
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Bad Request", hint: "id 必须是正整数" }, 400);
+  const s = await db.query.samples.findFirst({
+    where: and(eq(samples.id, id), isNull(samples.archivedAt)),
+  });
   if (!s) return c.json({ error: "Not Found" }, 404);
   const location = s.locationId
     ? await db.query.storageLocations.findFirst({ where: eq(storageLocations.id, s.locationId) })
@@ -105,17 +139,16 @@ v1App.get("/samples/:id", async (c) => {
 });
 
 v1App.get("/samples/:id/lineage", async (c) => {
-  const id = Number(c.req.param("id"));
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Bad Request", hint: "id 必须是正整数" }, 400);
   const result = await buildLineage("sample", id);
   if (!result) return c.json({ error: "Not Found" }, 404);
   return c.json({ data: result });
 });
 
 v1App.post("/samples/:id/transactions", async (c) => {
-  const db = getDb();
-  const id = Number(c.req.param("id"));
-  const s = await db.query.samples.findFirst({ where: eq(samples.id, id) });
-  if (!s) return c.json({ error: "Not Found" }, 404);
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Bad Request", hint: "id 必须是正整数" }, 400);
   const body = await c.req.json<{ delta?: number; reason?: string; note?: string }>().catch(() => null);
   const delta = Number(body?.delta);
   const reason = body?.reason ?? "";
@@ -123,19 +156,24 @@ v1App.post("/samples/:id/transactions", async (c) => {
     return c.json({ error: "Bad Request", hint: "需 JSON：{delta: 非零数字, reason: restock|consume|adjust|dispose, note?}" }, 400);
   }
   const operator = `api:${c.get("api").tokenName}`;
-  const next = Math.round((Number(s.quantity) + delta) * 1000) / 1000;
-  if (next < 0) return c.json({ error: "Conflict", hint: `库存不足：当前 ${s.quantity} ${s.unit}，扣减 ${-delta} 后将为负` }, 409);
-  await db.update(samples).set({ quantity: next }).where(eq(samples.id, id));
-  const [{ txId }] = await db.insert(stockTransactions).values({
-    sampleId: id, delta, reason: reason as never,
-    note: body.note ?? null, userName: operator,
-  }).$returningId();
-  await logActivity({
-    userName: operator, action: "通过 API 变更了库存",
-    entityType: "sample", entityId: id, entityName: `${s.sku} ${s.name}`,
-    detail: `${reason} ${delta > 0 ? "+" : ""}${delta} ${s.unit}${body.note ? `（${body.note}）` : ""}`,
-  });
-  return c.json({ data: { transactionId: txId, sampleId: id, quantityBefore: Number(s.quantity), quantityAfter: next } }, 201);
+  try {
+    const result = await changeInventory({
+      sampleId: id,
+      delta,
+      reason: reason as "restock" | "consume" | "adjust" | "dispose",
+      note: body.note,
+      actorName: operator,
+      source: "api",
+      idempotencyKey: c.req.header("Idempotency-Key"),
+    });
+    return c.json({ data: result }, result.replayed ? 200 : 201);
+  } catch (error) {
+    if (error instanceof InventoryError) {
+      const status = error.kind === "not_found" ? 404 : error.kind === "insufficient" ? 409 : 400;
+      return c.json({ error: error.message }, status);
+    }
+    throw error;
+  }
 });
 
 /* ── 实验记录（ELN）── */
@@ -157,7 +195,9 @@ v1App.get("/experiments", async (c) => {
 
 v1App.get("/experiments/:id", async (c) => {
   const db = getDb();
-  const e = await db.query.experiments.findFirst({ where: eq(experiments.id, Number(c.req.param("id"))) });
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Bad Request", hint: "id 必须是正整数" }, 400);
+  const e = await db.query.experiments.findFirst({ where: eq(experiments.id, id) });
   if (!e) return c.json({ error: "Not Found" }, 404);
   return c.json({ data: e });
 });
@@ -171,6 +211,7 @@ v1App.post("/experiments", async (c) => {
   if (!body?.title?.trim()) {
     return c.json({ error: "Bad Request", hint: "需 JSON：{title: 必填, objective?, projectId?, content?（块数组）}" }, 400);
   }
+  const title = body.title.trim();
   const operator = `api:${c.get("api").tokenName}`;
   /* projectId 缺省时归入系统项目「BioFlow 执行记录」（与 Web 端 createForNode 同一口径） */
   let projectId = body.projectId ?? null;
@@ -190,25 +231,39 @@ v1App.post("/experiments", async (c) => {
     }
     projectId = sp!.id;
   }
-  const code = await nextExperimentCode();
   const content = Array.isArray(body.content) && body.content.length
     ? body.content
     : [
         { id: "b1", type: "heading", text: "实验目的" },
         { id: "b2", type: "text", text: body.objective ?? "" },
       ];
-  const [{ id }] = await db.insert(experiments).values({
-    code, title: body.title.trim(), objective: body.objective ?? null,
-    projectId,
-    content: JSON.stringify(content),
-    status: "planning",
-    createdByName: operator,
-  }).$returningId();
-  await logActivity({
-    userName: operator, action: "通过 API 创建了实验记录",
-    entityType: "experiment", entityId: id, entityName: `${code} ${body.title.trim()}`,
+  const created = await db.transaction(async (tx) => {
+    const code = await nextExperimentCode(tx);
+    const [{ id }] = await tx.insert(experiments).values({
+      code, title, objective: body.objective ?? null,
+      projectId,
+      content: JSON.stringify(content),
+      status: "planning",
+      createdByName: operator,
+    }).$returningId();
+    const [experiment] = await tx.select().from(experiments).where(eq(experiments.id, id));
+    await appendExperimentRevision(
+      tx,
+      experiment,
+      { name: operator, source: "api" },
+      "通过 API 创建实验记录",
+    );
+    await appendActivity(tx, {
+      userName: operator,
+      source: "api",
+      action: "通过 API 创建了实验记录",
+      entityType: "experiment",
+      entityId: id,
+      entityName: `${code} ${title}`,
+    });
+    return { id, code };
   });
-  return c.json({ data: { id, code, projectId, status: "planning" } }, 201);
+  return c.json({ data: { ...created, projectId, status: "planning" } }, 201);
 });
 
 /* ── 业务流（BioFlow）── */
@@ -220,7 +275,8 @@ v1App.get("/workflows", async (c) => {
 
 v1App.get("/workflows/:id", async (c) => {
   const db = getDb();
-  const id = Number(c.req.param("id"));
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Bad Request", hint: "id 必须是正整数" }, 400);
   const wf = await db.query.workflows.findFirst({ where: eq(workflows.id, id) });
   if (!wf) return c.json({ error: "Not Found" }, 404);
   const nodes = await db.select().from(workflowNodes).where(eq(workflowNodes.workflowId, id));
@@ -246,7 +302,8 @@ v1App.get("/sequences", async (c) => {
 
 v1App.get("/sequences/:id", async (c) => {
   const db = getDb();
-  const id = Number(c.req.param("id"));
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Bad Request", hint: "id 必须是正整数" }, 400);
   const seq = await db.query.sequences.findFirst({ where: eq(sequences.id, id) });
   if (!seq) return c.json({ error: "Not Found" }, 404);
   const features = await db.select().from(sequenceFeatures).where(eq(sequenceFeatures.sequenceId, id));
@@ -262,8 +319,10 @@ v1App.get("/equipment", async (c) => {
 
 v1App.get("/equipment/:id/bookings", async (c) => {
   const db = getDb();
+  const id = validId(c.req.param("id"));
+  if (!id) return c.json({ error: "Bad Request", hint: "id 必须是正整数" }, 400);
   const rows = await db.select().from(equipmentBookings)
-    .where(eq(equipmentBookings.equipmentId, Number(c.req.param("id"))))
+    .where(eq(equipmentBookings.equipmentId, id))
     .orderBy(desc(equipmentBookings.startTime)).limit(100);
   return c.json({ data: rows });
 });

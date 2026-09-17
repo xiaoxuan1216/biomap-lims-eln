@@ -6,3 +6,18 @@ dist/
 *.log
 .DS_Store
 mcp/node_modules/
+
+# Local media, customer source material, and generated verification output.
+media_demo/
+tmp/
+docs/customer-sop-feishu/
+verifier/runs/
+
+# Local databases, backups, and private keys must never be shared with source.
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.sql.gz
+*.pem
+*.key

@@ -1,0 +1,1 @@
+ALTER TABLE `external_results` MODIFY COLUMN `numericValue` decimal(30,6);

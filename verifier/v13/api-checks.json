@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "runId": 3,
+  "runNo": "RUN-20260909-06182E",
+  "runStatus": "running",
+  "revision": 2,
+  "resourceCount": 2,
+  "nodeCount": 7,
+  "checks": [
+    "simulation Run exists",
+    "production inventory and equipment remain untouched",
+    "immutable snapshot hash and relational projection",
+    "frozen run and workflow headers",
+    "complete edge references",
+    "topological launch-wizard order",
+    "no connection secrets in RunPlan",
+    "same-content idempotent replay",
+    "changed-content replay rejected",
+    "legacy demo resources released",
+    "activity hash chain"
+  ]
+}
