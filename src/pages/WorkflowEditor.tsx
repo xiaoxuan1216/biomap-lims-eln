@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import type { inferRouterOutputs } from "@trpc/server";
 import {
   ReactFlow,
@@ -18,11 +18,13 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { trpc } from "@/providers/trpc";
+import WorkflowPlateWorkspace, { NodePlatePreview } from "@/features/cloning-planner/WorkflowPlateWorkspace";
+import { nodePlateStage, workflowPlateUrl } from "@/features/cloning-planner/workflowPlateContext";
+import { cn } from "@/lib/utils";
 import FlowNode, { type RFNode, type FlowNodeData } from "@/components/flow/FlowNode";
 import {
   NODE_PALETTE,
   FLOW_NODE_TYPES,
-  FLOW_NODE_STATUS,
   WORKFLOW_STATUS,
   EQUIP_PARAM_SCHEMAS,
   INSTRUMENT_PROFILES,
@@ -67,6 +69,9 @@ import {
   PanelRightClose,
   NotebookPen,
   Handshake,
+  Cable,
+  ShieldCheck,
+  PlayCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { setCopilotContext } from "@/lib/copilotContext";
@@ -77,6 +82,7 @@ const nodeTypes = { flowNode: FlowNode };
 const GROUP_ICONS = { manual: Hand, equipment: Cog, decision: GitBranch, data: Database, timer: Clock, external: Handshake } as const;
 const TEAM_SUGGESTIONS = ["演示用户", "张工", "王工", "陈研究员", "赵工"];
 type WorkflowDetail = NonNullable<inferRouterOutputs<AppRouter>["workflow"]["byId"]>;
+type DriverNodeEntry = inferRouterOutputs<AppRouter>["driver"]["nodeCatalog"][number];
 
 /** 在既有边上新增 source→target 是否会成环（从 target 沿边 DFS 能否回到 source） */
 function wouldCycle(edges: Edge[], source: string, target: string): boolean {
@@ -110,7 +116,20 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const rf = useReactFlow();
+  const [viewParams, setViewParams] = useSearchParams();
+  const [entryNodeKey] = useState(viewParams.get("nodeKey"));
+  const plateView = viewParams.get("view") === "plates";
+  const [platesVisited, setPlatesVisited] = useState(plateView);
+  const platePlans = trpc.cloningLayout.list.useQuery({ workflowId: id });
+  const latestPlatePlan = platePlans.data?.[0];
+  const viewedPlateId = Number(viewParams.get("planId")) || 0;
+  const viewedPlate = trpc.cloningLayout.byId.useQuery({ id: viewedPlateId }, { enabled: viewedPlateId > 0 });
+  const activePlatePlan = viewedPlateId
+    ? (viewedPlate.data?.workflowId === id ? viewedPlate.data : undefined)
+    : latestPlatePlan;
+  const hasPlatePlanning = !!latestPlatePlan || wf.nodes.some(n => !!nodePlateStage(n.templateKey));
   const { data: equipList } = trpc.equipment.list.useQuery();
+  const { data: driverNodes } = trpc.driver.nodeCatalog.useQuery();
   const { data: externalItems } = trpc.externalOrder.itemOptions.useQuery({
     projectId: wf.projectId ?? undefined,
   });
@@ -120,6 +139,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
       wf.nodes.map((n) => ({
         id: n.nodeKey,
         type: "flowNode" as const,
+        selected: n.nodeKey === entryNodeKey,
         position: { x: n.posX, y: n.posY },
         data: {
           label: n.label,
@@ -145,7 +165,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
             : null,
         },
       })),
-    [t, wf],
+    [t, wf, entryNodeKey],
   );
   const initialEdges = useMemo<Edge[]>(
     () =>
@@ -164,7 +184,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
   const [nodes, setNodesRaw, onNodesChangeRaw] = useNodesState<RFNode>(initialNodes);
   const [edges, setEdgesRaw, onEdgesChangeRaw] = useEdgesState<Edge>(initialEdges);
   const [dirty, setDirty] = useState(false);
-  const [selNodeId, setSelNodeId] = useState<string | null>(null);
+  const [selNodeId, setSelNodeId] = useState<string | null>(entryNodeKey);
   const [selEdgeId, setSelEdgeId] = useState<string | null>(null);
   const [wfName, setWfName] = useState(wf.name);
   const [wfDesc, setWfDesc] = useState(wf.description ?? "");
@@ -191,6 +211,40 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
     return m;
   }, [equipList]);
 
+  const paletteGroups = useMemo(() => {
+    const published = (driverNodes ?? []).filter((entry) => entry.releaseStatus === "published");
+    if (!published.length) return NODE_PALETTE;
+    return [
+      ...NODE_PALETTE,
+      {
+        key: "published-drivers",
+        label: "已发布设备驱动",
+        type: "equipment" as const,
+        items: published.map((entry): NodeTemplate => ({
+          key: entry.templateKey,
+          type: "equipment",
+          label: lang === "en" ? (entry.action.labelEn ?? entry.action.label) : entry.action.label,
+          description:
+            lang === "en"
+              ? (entry.action.descriptionEn ?? entry.action.description)
+              : entry.action.description,
+          driver: {
+            driverKey: entry.driverKey,
+            driverVersion: entry.driverVersion,
+            actionKey: entry.action.key,
+            driverName:
+              lang === "en" ? (entry.driverNameEn ?? entry.driverName) : entry.driverName,
+            vendor: entry.vendor,
+            maturity: entry.maturity,
+            retry: entry.action.retry,
+            fields: entry.action.fields,
+            compatibleEquipmentIds: entry.compatibleEquipmentIds,
+          },
+        })),
+      },
+    ];
+  }, [driverNodes, lang]);
+
   const setNodes: typeof setNodesRaw = useCallback(
     (v) => {
       setDirty(true);
@@ -206,20 +260,33 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
     [setEdgesRaw],
   );
 
+  const openPlates = useCallback((nodeKey?: string) => {
+    if (dirty) { toast.error(t("请先保存流程图")); return; }
+    setPlatesVisited(true);
+    // Query-only navigation keeps the editor and its graph/draft state mounted.
+    setViewParams(new URLSearchParams(workflowPlateUrl(id, {
+      nodeKey: nodeKey ?? viewParams.get("nodeKey"),
+      planId: Number(viewParams.get("planId")) || latestPlatePlan?.id,
+    }).split("?")[1]));
+  }, [dirty, t, id, latestPlatePlan?.id, setViewParams, viewParams]);
+
+  const showGraph = () => setViewParams(p => { const next = new URLSearchParams(p); next.delete("view"); return next; });
   const displayNodes = useMemo(
-    () =>
-      nodes.map((node) => {
-        const equipmentName = node.data.equipmentId ? equipName.get(node.data.equipmentId) : undefined;
-        return equipmentName && node.data.equipmentName !== equipmentName
-          ? { ...node, data: { ...node.data, equipmentName } }
-          : node;
-      }),
-    [equipName, nodes],
+    () => nodes.map(node => ({
+      ...node,
+      data: {
+        ...node.data,
+        equipmentName: node.data.equipmentId ? equipName.get(node.data.equipmentId) : undefined,
+        platePlan: activePlatePlan && (nodePlateStage(node.data.templateKey) || activePlatePlan.nodeKey === node.id)
+          ? { version: activePlatePlan.version, sampleCount: activePlatePlan.sampleCount } : undefined,
+      },
+    })),
+    [equipName, nodes, activePlatePlan],
   );
 
   // 用已知节点坐标设置初始视口（不依赖节点测量时序）
   useEffect(() => {
-    if (!wf.nodes.length) return;
+    if (!wf.nodes.length || plateView) return;
     const timer = window.setTimeout(() => {
       const el = canvasRef.current;
       if (!el) return;
@@ -239,7 +306,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
       rf.setViewport({ x: w / 2 - cx * zoom, y: h / 2 - cy * zoom, zoom });
     }, 80);
     return () => window.clearTimeout(timer);
-  }, [rf, wf]);
+  }, [rf, wf, plateView]);
 
   // Copilot 上下文
   useEffect(() => {
@@ -278,7 +345,13 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
             externalOrder: null,
             config: tpl.description ?? null,
             params:
-              tpl.type === "equipment" && EQUIP_PARAM_SCHEMAS[tpl.key]
+              tpl.driver
+                ? Object.fromEntries(
+                    tpl.driver.fields
+                      .filter((field) => field.default !== undefined)
+                      .map((field) => [field.key, field.default!]),
+                  )
+                : tpl.type === "equipment" && EQUIP_PARAM_SCHEMAS[tpl.key]
                 ? Object.fromEntries(
                     EQUIP_PARAM_SCHEMAS[tpl.key].filter((f) => f.default != null).map((f) => [f.key, f.default!]),
                   )
@@ -360,11 +433,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
     [setEdges],
   );
 
-  const updateMut = trpc.workflow.update.useMutation();
   const saveMut = trpc.workflow.saveGraph.useMutation();
-  const statusMut = trpc.workflow.updateNodeStatus.useMutation({
-    onError: (e) => toast.error(e.message),
-  });
   const createSubMut = trpc.workflow.createSubflow.useMutation({
     onError: (e) => toast.error(e.message),
   });
@@ -389,10 +458,12 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
   };
 
   const save = () => {
-    updateMut.mutate({ id, name: wfName.trim() || t("未命名流程"), description: wfDesc || null, status: wfStatus as "draft" | "active" | "completed" | "archived" });
     saveMut.mutate(
       {
         id,
+        name: wfName.trim() || t("未命名流程"),
+        description: wfDesc || null,
+        status: wfStatus as "draft" | "active" | "completed" | "archived",
         nodes: nodes.map((n) => ({
           nodeKey: n.id,
           type: n.data.nodeType,
@@ -461,6 +532,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
         )}
         <Input
           value={wfName}
+          disabled={plateView}
           onChange={(e) => {
             setWfName(e.target.value);
             setDirty(true);
@@ -469,6 +541,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
         />
         <Select
           value={wfStatus}
+          disabled={plateView}
           onValueChange={(v) => {
             setWfStatus(v);
             setDirty(true);
@@ -492,14 +565,30 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
           {t("{n} 节点 · {m} 连线", { n: nodes.length, m: edges.length })}
         </Badge>
         {dirty && <Badge variant="secondary">{t("未保存更改")}</Badge>}
-        <div className="ml-auto">
-          <Button className="bg-teal-600 hover:bg-teal-500" onClick={save} disabled={saveMut.isPending}>
+        <div className="ml-auto flex gap-2">
+          <Button
+            variant="outline"
+            className="border-teal-200 text-teal-700 hover:bg-teal-50"
+            disabled={dirty || wfStatus !== "active" || plateView}
+            title={dirty ? t("请先保存流程图") : wfStatus !== "active" ? t("请先将流程状态设为进行中") : undefined}
+            onClick={() => navigate(`/runs/new?workflowId=${id}`)}
+          >
+            <PlayCircle className="mr-1 h-4 w-4" /> {t("发起实验")}
+          </Button>
+          <Button className="bg-teal-600 hover:bg-teal-500" onClick={save} disabled={saveMut.isPending || plateView}>
             <Save className="h-4 w-4 mr-1" /> {saveMut.isPending ? t("保存中…") : t("保存")}
           </Button>
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-3">
+      {(hasPlatePlanning || plateView) && <div className="mb-3 flex flex-wrap items-center gap-2 border-b pb-2" role="group" aria-label={t("流程视图")}>
+        <Button size="sm" variant={plateView ? "ghost" : "secondary"} aria-pressed={!plateView} onClick={showGraph}><Network className="mr-1 h-4 w-4" />{t("流程图")}</Button>
+        <Button size="sm" variant={plateView ? "secondary" : "ghost"} aria-pressed={plateView} onClick={() => openPlates()} disabled={dirty} title={dirty ? t("请先保存流程图") : undefined}><LayoutGrid className="mr-1 h-4 w-4" />{t("孔板与样本")}</Button>
+        {activePlatePlan && <span className="ml-auto text-xs text-muted-foreground">{t("已保存排板：{n} 样本 / {p} 板", { n: activePlatePlan.sampleCount, p: activePlatePlan.plateCount })} · V{activePlatePlan.version}</span>}
+        {dirty && <span className="text-xs text-amber-700">{t("请先保存流程图")}</span>}
+      </div>}
+      <div className={cn("min-h-0 flex-1 gap-3", plateView ? "hidden" : "flex")} inert={plateView}>
+
         {/* 左侧：节点调色板（可隐藏） */}
         {!leftOpen && (
           <button
@@ -519,7 +608,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
               <PanelLeftClose className="h-4 w-4" />
             </button>
           </div>
-          {NODE_PALETTE.map((g) => {
+          {paletteGroups.map((g) => {
             const GIcon = GROUP_ICONS[g.type];
             const meta = FLOW_NODE_TYPES[g.type];
             const isCollapsed = collapsed[g.key];
@@ -619,15 +708,14 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
             <NodeInspector
               node={selNode}
               equipList={equipList ?? []}
+              driverNodes={driverNodes ?? []}
               externalItems={externalItems ?? []}
               workflowId={id}
+              platePlanId={activePlatePlan?.id}
+              onOpenPlatePlan={() => openPlates(selNode.id)}
               dirty={dirty}
               onPatch={(p) => patchNode(selNode.id, p)}
               onDelete={() => deleteNode(selNode.id)}
-              onStatus={(s) => {
-                patchNode(selNode.id, { status: s });
-                if (selNode.data.dbId) statusMut.mutate({ nodeId: selNode.data.dbId, status: s });
-              }}
               onOpenSubflow={() => navigate(`/workflows/${selNode.data.childWorkflowId}`)}
               onCreateSubflow={() => createSubflow(selNode)}
               creatingSubflow={createSubMut.isPending}
@@ -694,6 +782,12 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
         </div>
         )}
       </div>
+      {(platesVisited || plateView) && <div className={cn("min-h-0 flex-1 overflow-y-auto", !plateView && "hidden")} inert={!plateView}>
+        <WorkflowPlateWorkspace workflow={wf} nodeKey={viewParams.get("nodeKey") ?? undefined} planId={Number(viewParams.get("planId")) || undefined} onShowGraph={showGraph} onVersionSelect={planId => {
+          setPlatesVisited(true);
+          setViewParams(p => { const next = new URLSearchParams(p); next.set("view", "plates"); next.set("planId", String(planId)); return next; });
+        }} />
+      </div>}
     </div>
   );
 }
@@ -834,18 +928,21 @@ function NodeElnSection({ workflowId, nodeKey, dirty }: { workflowId: number; no
 function NodeInspector({
   node,
   equipList,
+  driverNodes,
   externalItems,
   workflowId,
   dirty,
   onPatch,
   onDelete,
-  onStatus,
   onOpenSubflow,
   onCreateSubflow,
   creatingSubflow,
+  platePlanId,
+  onOpenPlatePlan,
 }: {
   node: RFNode;
   equipList: { id: number; name: string; model: string | null; status: string }[];
+  driverNodes: DriverNodeEntry[];
   externalItems: {
     id: number;
     name: string;
@@ -861,14 +958,22 @@ function NodeInspector({
   dirty: boolean;
   onPatch: (p: Partial<FlowNodeData>) => void;
   onDelete: () => void;
-  onStatus: (s: FlowNodeStatus) => void;
   onOpenSubflow: () => void;
   onCreateSubflow: () => void;
   creatingSubflow: boolean;
+  platePlanId?: number;
+  onOpenPlatePlan: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const navigate = useNavigate();
   const meta = FLOW_NODE_TYPES[node.data.nodeType];
+  const driverNode = driverNodes.find((entry) => entry.templateKey === node.data.templateKey);
+  const compatibleEquipList = driverNode
+    ? equipList.filter(
+        (item) =>
+          driverNode.compatibleEquipmentIds.includes(item.id) || item.id === node.data.equipmentId,
+      )
+    : equipList;
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
@@ -879,6 +984,7 @@ function NodeInspector({
         <Label>{t("节点名称")}</Label>
         <Input value={node.data.label} onChange={(e) => onPatch({ label: e.target.value })} />
       </div>
+      {(nodePlateStage(node.data.templateKey) || node.data.platePlan) && <NodePlatePreview key={node.id} planId={platePlanId} stageKey={nodePlateStage(node.data.templateKey)} onExpand={onOpenPlatePlan} disabled={dirty} />}
       <div className="space-y-1.5">
         <Label>{t("实验负责人")}</Label>
         <Input
@@ -905,9 +1011,9 @@ function NodeInspector({
                   : {
                       equipmentId: Number(v),
                       equipmentName:
-                        (equipList.find((x) => x.id === Number(v))?.name ?? "") +
-                        (equipList.find((x) => x.id === Number(v))?.model
-                          ? ` · ${equipList.find((x) => x.id === Number(v))!.model}`
+                        (compatibleEquipList.find((x) => x.id === Number(v))?.name ?? "") +
+                        (compatibleEquipList.find((x) => x.id === Number(v))?.model
+                          ? ` · ${compatibleEquipList.find((x) => x.id === Number(v))!.model}`
                           : ""),
                     },
               )
@@ -918,15 +1024,25 @@ function NodeInspector({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">{t("不绑定")}</SelectItem>
-              {equipList.map((eq) => (
+              {compatibleEquipList.map((eq) => (
                 <SelectItem key={eq.id} value={String(eq.id)}>
                   {eq.name}
                   {eq.status !== "available" ? t("（不可用）") : ""}
+                  {driverNode?.simulationEquipmentIds.includes(eq.id) ? t("（模拟）") : ""}
                 </SelectItem>
               ))}
+              {driverNode && compatibleEquipList.length === 0 && (
+                <SelectItem value="no-compatible-equipment" disabled>
+                  {t("暂无已就绪的兼容设备")}
+                </SelectItem>
+              )}
             </SelectContent>
           </Select>
-          <p className="text-[11px] text-muted-foreground">{t("绑定后可在设备管理中预约该机时")}</p>
+          <p className="text-[11px] text-muted-foreground">
+            {driverNode
+              ? t("这里只显示已绑定该驱动并通过测试的设备")
+              : t("绑定后可在设备管理中预约该机时")}
+          </p>
         </div>
       )}
       {node.data.nodeType === "external" && (
@@ -983,13 +1099,118 @@ function NodeInspector({
           )}
         </div>
       )}
+      {node.data.nodeType === "equipment" && driverNode && (
+        <div className="space-y-3 rounded-lg border border-indigo-100 bg-indigo-50/60 p-3">
+          <div className="flex items-start gap-2">
+            <Cable className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-semibold text-indigo-900">
+                {lang === "en" ? (driverNode.driverNameEn ?? driverNode.driverName) : driverNode.driverName}
+              </div>
+              <div className="mt-0.5 text-[10px] text-indigo-600">
+                {driverNode.vendor} · v{driverNode.driverVersion} · {driverNode.action.capability}
+              </div>
+            </div>
+            <Badge variant="outline" className="shrink-0 border-indigo-200 bg-white text-[9px] text-indigo-700">
+              {driverNode.maturity === "verified"
+                ? t("已验证")
+                : driverNode.maturity === "bench-pending"
+                  ? t("待台架验证")
+                  : t("模拟器")}
+            </Badge>
+          </div>
+          {driverNode.releaseStatus === "retired" && (
+            <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-700">
+              {t("该驱动版本已停用；已有节点可查看，但不能绑定到新设备。")}
+            </div>
+          )}
+          <div className="flex items-center gap-1 text-[10px] text-indigo-700">
+            <ShieldCheck className="h-3 w-3" />
+            {t("启动重试策略：")}
+            {driverNode.action.retry === "safe"
+              ? t("可安全重试")
+              : driverNode.action.retry === "reconcile-first"
+                ? t("先对账再决定")
+                : t("禁止自动重试")}
+          </div>
+          {driverNode.action.executionMode === "simulation-only" && (
+            <div className="rounded border border-sky-200 bg-sky-50 px-2 py-1.5 text-[11px] text-sky-700">
+              {t("厂家协议参数尚未补齐；该动作当前仅允许模拟执行。")}
+            </div>
+          )}
+          {driverNode.action.fields.length > 0 && (
+            <div className="grid grid-cols-2 gap-2 border-t border-indigo-100 pt-2">
+              {driverNode.action.fields.map((field) => {
+                const value = node.data.params?.[field.key] ?? field.default ?? "";
+                return (
+                  <div key={field.key} className={field.type === "path" || field.type === "text" ? "col-span-2" : ""}>
+                    <div className="mb-1 text-[11px] text-slate-600">
+                      {lang === "en" ? (field.labelEn ?? field.label) : field.label}
+                      {field.required ? " *" : ""}
+                      {field.unit ? ` (${field.unit})` : ""}
+                    </div>
+                    {field.type === "select" || field.type === "boolean" ? (
+                      <Select
+                        value={String(value)}
+                        onValueChange={(next) =>
+                          onPatch({
+                            params: {
+                              ...(node.data.params ?? {}),
+                              [field.key]: field.type === "boolean" ? next === "true" : next,
+                            },
+                          })
+                        }
+                      >
+                        <SelectTrigger className="h-8 bg-white text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {(field.type === "boolean" ? ["true", "false"] : (field.options ?? [])).map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {field.type === "boolean" ? (option === "true" ? t("是") : t("否")) : option}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        className="h-8 bg-white text-xs"
+                        type={field.type === "number" ? "number" : "text"}
+                        min={field.min}
+                        max={field.max}
+                        value={String(value)}
+                        onChange={(event) =>
+                          onPatch({
+                            params: {
+                              ...(node.data.params ?? {}),
+                              [field.key]:
+                                field.type === "number" && event.target.value !== ""
+                                  ? Number(event.target.value)
+                                  : event.target.value,
+                            },
+                          })
+                        }
+                      />
+                    )}
+                    {(lang === "en" ? field.helpEn : field.help) && (
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        {lang === "en" ? field.helpEn : field.help}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
       {node.data.nodeType === "equipment" &&
         node.data.templateKey &&
+        !driverNode &&
         INSTRUMENT_PROFILES[node.data.templateKey] && (
           <InstrumentCard profile={INSTRUMENT_PROFILES[node.data.templateKey]} />
         )}
       {node.data.nodeType === "equipment" &&
         node.data.templateKey &&
+        !driverNode &&
         !INSTRUMENT_PROFILES[node.data.templateKey] &&
         EQUIP_PARAM_SCHEMAS[node.data.templateKey] && (
           <div className="space-y-2">
@@ -1047,26 +1268,8 @@ function NodeInspector({
           onChange={(e) => onPatch({ config: e.target.value || null })}
         />
       </div>
-      <div className="space-y-1.5">
-        <Label>{t("执行状态")}</Label>
-        <div className="grid grid-cols-2 gap-1.5">
-          {(Object.keys(FLOW_NODE_STATUS) as FlowNodeStatus[]).map((s) => {
-            const sm = FLOW_NODE_STATUS[s];
-            const active = node.data.status === s;
-            return (
-              <button
-                key={s}
-                onClick={() => onStatus(s)}
-                className={`rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
-                  active ? "border-transparent text-white" : "text-slate-600 hover:bg-slate-50"
-                }`}
-                style={active ? { background: sm.color } : { borderColor: "#e2e8f0" }}
-              >
-                {t(sm.label)}
-              </button>
-            );
-          })}
-        </div>
+      <div className="rounded-lg border border-dashed bg-slate-50 p-3 text-xs text-muted-foreground">
+        {t("这里定义节点配置；执行状态由每一次实验运行独立记录。")}
       </div>
       {/* 关联 ELN：手工 / 设备节点挂接执行记录 */}
       {(node.data.nodeType === "manual" || node.data.nodeType === "equipment") && (

@@ -26,6 +26,9 @@ import {
   MonitorCog,
   Bot,
   Handshake,
+  Cpu,
+  ClipboardList,
+  PlayCircle,
 } from "lucide-react";
 import { lazy, Suspense, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -42,7 +45,9 @@ const NAV_GROUPS = [
     label: "工作台",
     items: [
       { icon: LayoutDashboard, label: "仪表盘", path: "/" },
+      { icon: PlayCircle, label: "实验运行", path: "/runs" },
       { icon: Bot, label: "Lab Agent", path: "/lab-agent" },
+      { icon: Cpu, label: "仪器属性智能体", path: "/instrument-agent" },
       { icon: History, label: "活动日志", path: "/activity" },
     ],
   },
@@ -52,6 +57,7 @@ const NAV_GROUPS = [
       { icon: FolderKanban, label: "项目管理", path: "/projects" },
       { icon: NotebookPen, label: "实验记录本", path: "/experiments" },
       { icon: Network, label: "BioFlow 工作流", path: "/workflows" },
+      { icon: ClipboardList, label: "样品请求与履约", path: "/sample-requests" },
       { icon: Handshake, label: "外部委托", path: "/external-orders" },
       { icon: Dna, label: "序列库", path: "/sequences" },
     ],
@@ -235,7 +241,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <LanguageSwitcher />
             <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500">
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              {t("实验室运行中")}
+              {t("系统在线")}
             </div>
             <Avatar className="h-8 w-8 border">
               <AvatarFallback className="bg-teal-600 text-white text-xs">

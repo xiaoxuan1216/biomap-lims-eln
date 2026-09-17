@@ -1,5 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
-import { samples, stockTransactions } from "@db/schema";
+import { inventoryReservations, samples, stockTransactions } from "@db/schema";
 import { appendActivity, type DatabaseTransaction } from "../queries/labHelpers";
 import { getDb } from "../queries/connection";
 
@@ -33,6 +33,8 @@ export interface InventoryChangeInput {
   actorName?: string | null;
   source?: "web" | "api" | "mcp" | "system";
   idempotencyKey?: string | null;
+  /** 履约专用：允许本次出库消耗指定预占，其余有效预占仍受保护。 */
+  reservationId?: number | null;
 }
 
 export interface InventoryChangeResult {
@@ -116,6 +118,44 @@ export async function changeInventoryInTransaction(
         "insufficient",
         `库存不足：当前 ${quantityBefore} ${sample.unit}，操作后将为 ${quantityAfter}`,
       );
+    }
+
+    if (delta < 0) {
+      const activeReservations = await tx
+        .select()
+        .from(inventoryReservations)
+        .where(
+          and(
+            eq(inventoryReservations.sampleId, sample.id),
+            eq(inventoryReservations.status, "active"),
+          ),
+        )
+        .for("update");
+      const consumedReservation = input.reservationId
+        ? activeReservations.find((reservation) => reservation.id === input.reservationId)
+        : null;
+      if (input.reservationId && !consumedReservation) {
+        throw new InventoryError("invalid", "指定的库存预占不存在、已释放或不属于该样品");
+      }
+      if (
+        consumedReservation &&
+        roundQuantity(Number(consumedReservation.amount)) !== roundQuantity(Math.abs(delta))
+      ) {
+        throw new InventoryError("invalid", "发放数量必须与库存预占数量一致");
+      }
+
+      const protectedAmount = roundQuantity(
+        activeReservations
+          .filter((reservation) => reservation.id !== input.reservationId)
+          .reduce((sum, reservation) => sum + Number(reservation.amount), 0),
+      );
+      if (quantityAfter < protectedAmount) {
+        const available = roundQuantity(Math.max(0, quantityBefore - protectedAmount));
+        throw new InventoryError(
+          "insufficient",
+          `可用库存不足：现存 ${quantityBefore} ${sample.unit}，其中 ${protectedAmount} ${sample.unit} 已被其他请求预占，本次最多可出库 ${available} ${sample.unit}`,
+        );
+      }
     }
 
     await tx

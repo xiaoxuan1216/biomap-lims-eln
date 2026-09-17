@@ -1,0 +1,1 @@
+ALTER TABLE `equipment_driver_bindings` MODIFY COLUMN `status` enum('unconfigured','simulation_ready','ready','offline','fault') NOT NULL DEFAULT 'unconfigured';

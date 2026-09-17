@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "workflowId": 22,
+  "projectId": 7,
+  "compactPlanId": 1,
+  "recommendedPlanId": 2,
+  "checks": [
+    "database snapshot readback",
+    "project and node association",
+    "immutable history",
+    "idempotent retry",
+    "changed retry rejection",
+    "stale-version rejection",
+    "concurrent save serialization",
+    "invalid node rejection",
+    "unauthenticated access rejection",
+    "viewer write rejection",
+    "inventory unchanged",
+    "DAG IDs unchanged",
+    "activity hash chain"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "runId": 4,
+  "runNo": "RUN-20260909-AA68F0",
+  "executionMode": "simulation",
+  "runStatus": "ready",
+  "phaseCount": 4,
+  "projectedObjectCount": 14,
+  "projectedEdgeCount": 12,
+  "evidenceCount": 57,
+  "resultState": "not_recorded",
+  "checks": [
+    "four persisted data-flow phases",
+    "RunPlan, resource and execution-node projections",
+    "all edges resolve to projected objects",
+    "evidence sources are allowlisted and referenced",
+    "simulation remains isolated from production reservations",
+    "no result or return record is fabricated"
+  ]
+}

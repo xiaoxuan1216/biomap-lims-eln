@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, gte, lt } from "drizzle-orm";
 import { adminQuery, authedQuery, createRouter, writeQuery } from "./middleware";
 import { getDb } from "./queries/connection";
-import { equipment, equipmentBookings, equipmentMaintenance } from "@db/schema";
+import { equipment, equipmentBookings, equipmentMaintenance, labRuns } from "@db/schema";
 import { appendActivity, logActivity } from "./queries/labHelpers";
 
 const CATEGORIES = ["analytical", "execution", "automation", "support"] as const;
@@ -229,6 +229,15 @@ export const equipmentRouter = createRouter({
         where: eq(equipmentBookings.id, input.bookingId),
       });
       if (!booking) throw new TRPCError({ code: "NOT_FOUND", message: "预约不存在" });
+      if (booking.labRunId) {
+        const run = await db.query.labRuns.findFirst({ where: eq(labRuns.id, booking.labRunId) });
+        if (run && run.status !== "cancelled") {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: `该预约由实验运行 ${run.runNo} 管理，请从运行详情取消`,
+          });
+        }
+      }
       if (booking.userName !== ctx.user.name && ctx.user.role !== "admin") {
         throw new TRPCError({
           code: "FORBIDDEN",

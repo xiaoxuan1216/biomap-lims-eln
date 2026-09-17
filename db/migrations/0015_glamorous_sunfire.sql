@@ -1,0 +1,1 @@
+ALTER TABLE `lab_run_resources` ADD CONSTRAINT `lab_run_resource_run_sample_unique` UNIQUE(`runId`,`sampleId`);

@@ -10,12 +10,14 @@ import {
   externalResults,
   externalSampleCustodyEvents,
   experimentSamples,
+  inventoryReservations,
   projects,
   samples,
   stockTransactions,
   storageLocations,
   serviceProviders,
 } from "@db/schema";
+import { getAvailableQuantity, roundRequestQuantity } from "@contracts/sampleRequest";
 import { appendActivity, nextSampleSku } from "./queries/labHelpers";
 import { buildLineage } from "./queries/lineage";
 import {
@@ -115,6 +117,31 @@ export const sampleRouter = createRouter({
       }));
     }),
 
+  /** 扫码枪精确解析 Sample ID，避免受列表分页或筛选范围影响。 */
+  resolveBarcode: authedQuery
+    .input(z.object({ code: z.string().trim().min(1).max(255) }))
+    .query(async ({ input }) => {
+      const [row] = await getDb()
+        .select({
+          sample: samples,
+          locationName: storageLocations.name,
+          locationType: storageLocations.type,
+          projectName: projects.name,
+        })
+        .from(samples)
+        .leftJoin(storageLocations, eq(samples.locationId, storageLocations.id))
+        .leftJoin(projects, eq(samples.projectId, projects.id))
+        .where(and(eq(samples.sku, input.code), isNull(samples.archivedAt)))
+        .limit(1);
+      if (!row) return null;
+      return {
+        ...row.sample,
+        locationName: row.locationName,
+        locationType: row.locationType,
+        projectName: row.projectName,
+      };
+    }),
+
   byId: authedQuery.input(z.object({ id: z.number() })).query(async ({ input }) => {
     const db = getDb();
     const sample = await db.query.samples.findFirst({
@@ -135,6 +162,21 @@ export const sampleRouter = createRouter({
       .where(eq(stockTransactions.sampleId, input.id))
       .orderBy(desc(stockTransactions.createdAt))
       .limit(100);
+    const activeReservations = await db
+      .select({ amount: inventoryReservations.amount })
+      .from(inventoryReservations)
+      .where(
+        and(
+          eq(inventoryReservations.sampleId, input.id),
+          eq(inventoryReservations.status, "active"),
+        ),
+      );
+    const activeReserved = roundRequestQuantity(
+      activeReservations.reduce(
+        (sum, reservation) => sum + Number(reservation.amount),
+        0,
+      ),
+    );
     const usage = await db
       .select()
       .from(experimentSamples)
@@ -178,6 +220,8 @@ export const sampleRouter = createRouter({
       ...sample,
       location,
       project,
+      activeReserved,
+      availableQuantity: getAvailableQuantity(Number(sample.quantity), activeReserved),
       transactions: txs,
       experimentUsage: usage,
       externalShipments: externalShipments.map(({ shipment, ...meta }) => ({ ...shipment, ...meta })),
@@ -296,6 +340,7 @@ export const sampleRouter = createRouter({
         amount: z.number().positive("数量必须大于 0"),
         reason: z.enum(["restock", "consume", "adjust", "dispose"]),
         note: z.string().optional(),
+        idempotencyKey: z.string().trim().min(1).max(128).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -310,8 +355,9 @@ export const sampleRouter = createRouter({
           actorId: ctx.user.id,
           actorName: ctx.user.name,
           source: "web",
+          idempotencyKey: input.idempotencyKey,
         });
-        return { ok: true, newQuantity: result.quantityAfter };
+        return { ok: true, newQuantity: result.quantityAfter, replayed: result.replayed };
       } catch (error) {
         return toInventoryTrpcError(error);
       }

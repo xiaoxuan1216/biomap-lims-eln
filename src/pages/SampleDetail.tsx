@@ -52,6 +52,7 @@ import {
   PackageX,
   GitBranch,
   Truck,
+  ClipboardList,
 } from "lucide-react";
 import {
   ALERT_LABELS,
@@ -165,6 +166,8 @@ export default function SampleDetail() {
                 {sample.quantity} <span className="text-xs font-normal">{sample.unit}</span>
               </span>
             </div>
+            <InfoRow label={t("已被请求预占")} value={`${sample.activeReserved} ${sample.unit}`} />
+            <InfoRow label={t("当前可用量")} value={`${sample.availableQuantity} ${sample.unit}`} />
             <InfoRow label={t("低库存阈值")} value={sample.alertThreshold != null ? `${sample.alertThreshold} ${sample.unit}` : t("未设置")} />
             <InfoRow label={t("有效期")} value={fmtDate(sample.expiryDate)} highlight={alert === "expired" || alert === "expiring"} />
             <InfoRow
@@ -252,6 +255,13 @@ export default function SampleDetail() {
                 onClick={() => setDeleteOpen(true)}
               >
                 <Trash2 className="h-4 w-4 mr-1" /> {t("删除")}
+              </Button>
+              <Button
+                variant="outline"
+                className="col-span-2 border-teal-200 text-teal-700 hover:bg-teal-50 hover:text-teal-800"
+                onClick={() => navigate(`/sample-requests?sampleId=${sampleId}`)}
+              >
+                <ClipboardList className="h-4 w-4 mr-1" /> {t("申请领用此样品")}
               </Button>
               <Button
                 variant="outline"

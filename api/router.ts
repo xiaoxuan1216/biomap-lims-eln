@@ -12,6 +12,10 @@ import { workflowRouter } from "./workflowRouter";
 import { commandRouter } from "./commandRouter";
 import { adminRouter } from "./adminRouter";
 import { externalOrderRouter } from "./externalOrderRouter";
+import { sampleRequestRouter } from "./sampleRequestRouter";
+import { driverRouter } from "./driverRouter";
+import { cloningLayoutRouter } from "./cloningLayoutRouter";
+import { labRunRouter } from "./labRunRouter";
 
 export const appRouter = createRouter({
   ping: publicQuery.query(() => ({ ok: true, ts: Date.now() })),
@@ -28,6 +32,10 @@ export const appRouter = createRouter({
   command: commandRouter,
   admin: adminRouter,
   externalOrder: externalOrderRouter,
+  sampleRequest: sampleRequestRouter,
+  driver: driverRouter,
+  cloningLayout: cloningLayoutRouter,
+  labRun: labRunRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -4,3 +4,15 @@ dist
 *.swp
 *.log
 .env
+.env.*
+media_demo
+tmp
+docs/customer-sop-feishu
+verifier/runs
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.sql.gz
+*.pem
+*.key

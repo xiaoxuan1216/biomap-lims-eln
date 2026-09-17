@@ -10,6 +10,7 @@ import {
   int,
   decimal,
   date,
+  boolean,
   index,
   uniqueIndex,
 } from "drizzle-orm/mysql-core";
@@ -272,6 +273,170 @@ export const stockTransactions = mysqlTable(
 
 export type StockTransaction = typeof stockTransactions.$inferSelect;
 
+// ─── 样品请求与履约（Mosaic-style request orchestration）───────────────
+export const sampleRequests = mysqlTable(
+  "sample_requests",
+  {
+    id: serial("id").primaryKey(),
+    requestNo: varchar("requestNo", { length: 40 }).notNull().unique(),
+    title: varchar("title", { length: 255 }).notNull(),
+    purpose: text("purpose"),
+    projectId: bigint("projectId", { mode: "number", unsigned: true }),
+    requesterId: bigint("requesterId", { mode: "number", unsigned: true }),
+    requesterName: varchar("requesterName", { length: 255 }),
+    priority: mysqlEnum("priority", ["low", "normal", "high", "urgent"])
+      .default("normal")
+      .notNull(),
+    status: mysqlEnum("status", [
+      "draft",
+      "reserved",
+      "in_fulfillment",
+      "fulfilled",
+      "cancelled",
+    ])
+      .default("draft")
+      .notNull(),
+    neededBy: date("neededBy", { mode: "string" }),
+    cancellationReason: varchar("cancellationReason", { length: 500 }),
+    submittedAt: timestamp("submittedAt"),
+    reservedAt: timestamp("reservedAt"),
+    completedAt: timestamp("completedAt"),
+    cancelledAt: timestamp("cancelledAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    statusCreatedIdx: index("sample_request_status_created_idx").on(table.status, table.createdAt),
+    projectIdx: index("sample_request_project_idx").on(table.projectId),
+    requesterIdx: index("sample_request_requester_idx").on(table.requesterId),
+  }),
+);
+
+export type SampleRequest = typeof sampleRequests.$inferSelect;
+
+export const sampleRequestItems = mysqlTable(
+  "sample_request_items",
+  {
+    id: serial("id").primaryKey(),
+    requestId: bigint("requestId", { mode: "number", unsigned: true }).notNull(),
+    sampleId: bigint("sampleId", { mode: "number", unsigned: true }).notNull(),
+    requestedAmount: decimal("requestedAmount", {
+      precision: 14,
+      scale: 3,
+      mode: "number",
+    }).notNull(),
+    reservedAmount: decimal("reservedAmount", {
+      precision: 14,
+      scale: 3,
+      mode: "number",
+    })
+      .default(0)
+      .notNull(),
+    fulfilledAmount: decimal("fulfilledAmount", {
+      precision: 14,
+      scale: 3,
+      mode: "number",
+    })
+      .default(0)
+      .notNull(),
+    unit: varchar("unit", { length: 20 }).notNull(),
+    targetFormat: varchar("targetFormat", { length: 255 }),
+    note: varchar("note", { length: 500 }),
+    status: mysqlEnum("status", [
+      "pending",
+      "reserved",
+      "in_progress",
+      "fulfilled",
+      "cancelled",
+    ])
+      .default("pending")
+      .notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    requestIdx: index("sample_request_item_request_idx").on(table.requestId),
+    sampleIdx: index("sample_request_item_sample_idx").on(table.sampleId),
+  }),
+);
+
+export type SampleRequestItem = typeof sampleRequestItems.$inferSelect;
+
+export const inventoryReservations = mysqlTable(
+  "inventory_reservations",
+  {
+    id: serial("id").primaryKey(),
+    requestId: bigint("requestId", { mode: "number", unsigned: true }).notNull(),
+    requestItemId: bigint("requestItemId", { mode: "number", unsigned: true }).notNull(),
+    sampleId: bigint("sampleId", { mode: "number", unsigned: true }).notNull(),
+    amount: decimal("amount", { precision: 14, scale: 3, mode: "number" }).notNull(),
+    status: mysqlEnum("status", ["active", "consumed", "released", "expired"])
+      .default("active")
+      .notNull(),
+    idempotencyKey: varchar("idempotencyKey", { length: 128 }).notNull(),
+    expiresAt: timestamp("expiresAt"),
+    consumedAt: timestamp("consumedAt"),
+    releasedAt: timestamp("releasedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    sampleStatusIdx: index("inventory_reservation_sample_status_idx").on(table.sampleId, table.status),
+    requestIdx: index("inventory_reservation_request_idx").on(table.requestId),
+    requestItemUnique: uniqueIndex("inventory_reservation_request_item_unique").on(table.requestItemId),
+    idempotencyUnique: uniqueIndex("inventory_reservation_idempotency_unique").on(table.idempotencyKey),
+  }),
+);
+
+export type InventoryReservation = typeof inventoryReservations.$inferSelect;
+
+export const fulfillmentTasks = mysqlTable(
+  "fulfillment_tasks",
+  {
+    id: serial("id").primaryKey(),
+    requestId: bigint("requestId", { mode: "number", unsigned: true }).notNull(),
+    requestItemId: bigint("requestItemId", { mode: "number", unsigned: true }).notNull(),
+    type: mysqlEnum("type", ["issue"]).default("issue").notNull(),
+    status: mysqlEnum("status", [
+      "ready",
+      "claimed",
+      "running",
+      "succeeded",
+      "failed",
+      "cancelled",
+    ])
+      .default("ready")
+      .notNull(),
+    instruction: varchar("instruction", { length: 500 }),
+    assignedToId: bigint("assignedToId", { mode: "number", unsigned: true }),
+    assignedToName: varchar("assignedToName", { length: 255 }),
+    startedAt: timestamp("startedAt"),
+    completedAt: timestamp("completedAt"),
+    failureReason: varchar("failureReason", { length: 500 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    requestStatusIdx: index("fulfillment_task_request_status_idx").on(table.requestId, table.status),
+    requestItemUnique: uniqueIndex("fulfillment_task_request_item_unique").on(table.requestItemId),
+    assigneeIdx: index("fulfillment_task_assignee_idx").on(table.assignedToId),
+  }),
+);
+
+export type FulfillmentTask = typeof fulfillmentTasks.$inferSelect;
+
 // ─── 序列库 ─────────────────────────────────────────────────────────────
 export const sequences = mysqlTable("sequences", {
   id: serial("id").primaryKey(),
@@ -381,19 +546,27 @@ export const equipment = mysqlTable("equipment", {
 
 export type Equipment = typeof equipment.$inferSelect;
 
-export const equipmentBookings = mysqlTable("equipment_bookings", {
-  id: serial("id").primaryKey(),
-  equipmentId: bigint("equipmentId", {
-    mode: "number",
-    unsigned: true,
-  }).notNull(),
-  userName: varchar("userName", { length: 255 }).notNull(),
-  purpose: varchar("purpose", { length: 500 }),
-  startTime: timestamp("startTime").notNull(),
-  endTime: timestamp("endTime").notNull(),
-  status: mysqlEnum("status", ["active", "cancelled", "completed"]).default("active").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+export const equipmentBookings = mysqlTable(
+  "equipment_bookings",
+  {
+    id: serial("id").primaryKey(),
+    equipmentId: bigint("equipmentId", {
+      mode: "number",
+      unsigned: true,
+    }).notNull(),
+    userName: varchar("userName", { length: 255 }).notNull(),
+    purpose: varchar("purpose", { length: 500 }),
+    startTime: timestamp("startTime").notNull(),
+    endTime: timestamp("endTime").notNull(),
+    status: mysqlEnum("status", ["active", "cancelled", "completed"]).default("active").notNull(),
+    /** 由实验运行实例自动创建的预约；普通手工预约为空。 */
+    labRunId: bigint("labRunId", { mode: "number", unsigned: true }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    labRunIdx: index("equipment_booking_lab_run_idx").on(table.labRunId),
+  }),
+);
 
 export type EquipmentBooking = typeof equipmentBookings.$inferSelect;
 
@@ -412,6 +585,76 @@ export const equipmentMaintenance = mysqlTable("equipment_maintenance", {
 });
 
 export type EquipmentMaintenance = typeof equipmentMaintenance.$inferSelect;
+
+// ─── 设备驱动注册与绑定 ─────────────────────────────────────────────────
+/**
+ * 用户编写的驱动以不可变版本发布。内置厂家驱动由代码仓库提供，同样使用
+ * (driverKey, version) 解析；此表只保存用户创建或导入的版本。
+ */
+export const driverReleases = mysqlTable(
+  "driver_releases",
+  {
+    id: serial("id").primaryKey(),
+    driverKey: varchar("driverKey", { length: 20 }).notNull(),
+    version: varchar("version", { length: 12 }).notNull(),
+    name: varchar("name", { length: 255 }).notNull(),
+    vendor: varchar("vendor", { length: 120 }).notNull(),
+    status: mysqlEnum("status", ["draft", "published", "retired"]).default("draft").notNull(),
+    manifest: longtext("manifest").notNull(),
+    checksum: varchar("checksum", { length: 64 }).notNull(),
+    sourceKind: mysqlEnum("sourceKind", ["custom", "imported"]).default("custom").notNull(),
+    createdByName: varchar("createdByName", { length: 255 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    publishedAt: timestamp("publishedAt"),
+  },
+  (table) => ({
+    driverVersionUnique: uniqueIndex("driver_release_key_version_unique").on(
+      table.driverKey,
+      table.version,
+    ),
+    statusIdx: index("driver_release_status_idx").on(table.status, table.createdAt),
+  }),
+);
+
+export type DriverRelease = typeof driverReleases.$inferSelect;
+
+/**
+ * 每台物理设备只绑定一个驱动版本。连接参数不保存明文口令，凭据仅保存
+ * secretRef，由本地 Edge Agent 在运行时解析。
+ */
+export const equipmentDriverBindings = mysqlTable(
+  "equipment_driver_bindings",
+  {
+    id: serial("id").primaryKey(),
+    equipmentId: bigint("equipmentId", { mode: "number", unsigned: true }).notNull(),
+    driverKey: varchar("driverKey", { length: 20 }).notNull(),
+    driverVersion: varchar("driverVersion", { length: 12 }).notNull(),
+    mode: mysqlEnum("mode", ["simulation", "edge"]).default("simulation").notNull(),
+    connectionConfig: longtext("connectionConfig").notNull(),
+    secretRef: varchar("secretRef", { length: 255 }),
+    status: mysqlEnum("status", ["unconfigured", "simulation_ready", "ready", "offline", "fault"])
+      .default("unconfigured")
+      .notNull(),
+    lastTestAt: timestamp("lastTestAt"),
+    lastMessage: varchar("lastMessage", { length: 500 }),
+    createdByName: varchar("createdByName", { length: 255 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+    enabled: boolean("enabled").default(true).notNull(),
+  },
+  (table) => ({
+    equipmentUnique: uniqueIndex("equipment_driver_binding_equipment_unique").on(table.equipmentId),
+    driverIdx: index("equipment_driver_binding_driver_idx").on(
+      table.driverKey,
+      table.driverVersion,
+    ),
+  }),
+);
+
+export type EquipmentDriverBinding = typeof equipmentDriverBindings.$inferSelect;
 
 // ─── 活动日志（审计追踪）────────────────────────────────────────────────
 export const activities = mysqlTable(
@@ -920,3 +1163,211 @@ export const workflowEdges = mysqlTable(
 );
 
 export type WorkflowEdge = typeof workflowEdges.$inferSelect;
+
+// ─── 实验运行（Workflow Template → immutable Run snapshot）────────────
+/**
+ * workflows 保存可复用的流程定义；lab_runs 保存一次具体执行的受控快照。
+ * Run 创建后，源流程后续修改不会改写这次运行的节点、参数与设备证据。
+ */
+export const labRuns = mysqlTable(
+  "lab_runs",
+  {
+    id: serial("id").primaryKey(),
+    runNo: varchar("runNo", { length: 40 }).notNull(),
+    name: varchar("name", { length: 255 }).notNull(),
+    purpose: text("purpose"),
+    workflowId: bigint("workflowId", { mode: "number", unsigned: true }).notNull(),
+    workflowName: varchar("workflowName", { length: 255 }).notNull(),
+    workflowSnapshot: longtext("workflowSnapshot").notNull(),
+    snapshotHash: varchar("snapshotHash", { length: 64 }).notNull(),
+    projectId: bigint("projectId", { mode: "number", unsigned: true }),
+    sampleRequestId: bigint("sampleRequestId", { mode: "number", unsigned: true }),
+    executionMode: mysqlEnum("executionMode", ["simulation", "edge"])
+      .default("simulation")
+      .notNull(),
+    status: mysqlEnum("status", [
+      "draft",
+      "preparing",
+      "ready",
+      "running",
+      "completed",
+      "failed",
+      "cancelled",
+    ])
+      .default("draft")
+      .notNull(),
+    scheduledStart: timestamp("scheduledStart"),
+    scheduledEnd: timestamp("scheduledEnd"),
+    operatorName: varchar("operatorName", { length: 255 }),
+    /** 模拟状态推进的乐观锁版本；每次受控状态转换递增。 */
+    revision: int("revision").default(0).notNull(),
+    /** 最近一次模拟状态转换的幂等标识（带动作前缀）。 */
+    lastTransitionKey: varchar("lastTransitionKey", { length: 160 }),
+    /** 幂等请求的规范化内容哈希；同 key 异内容必须拒绝。 */
+    requestHash: varchar("requestHash", { length: 64 }),
+    idempotencyKey: varchar("idempotencyKey", { length: 128 }).notNull(),
+    createdById: bigint("createdById", { mode: "number", unsigned: true }),
+    createdByName: varchar("createdByName", { length: 255 }),
+    startedAt: timestamp("startedAt"),
+    completedAt: timestamp("completedAt"),
+    createdAt: timestamp("createdAt", { fsp: 3 }).defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt", { fsp: 3 })
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    runNoUnique: uniqueIndex("lab_run_no_unique").on(table.runNo),
+    idempotencyUnique: uniqueIndex("lab_run_idempotency_unique").on(table.idempotencyKey),
+    workflowIdx: index("lab_run_workflow_idx").on(table.workflowId, table.createdAt),
+    projectIdx: index("lab_run_project_idx").on(table.projectId, table.createdAt),
+    statusIdx: index("lab_run_status_idx").on(table.status, table.createdAt),
+  }),
+);
+
+export type LabRun = typeof labRuns.$inferSelect;
+
+/**
+ * Run 状态转换的独立幂等账本。请求键在同一 Run + 动作内永久唯一，
+ * 并保存首次成功的结果，因此即使后续已有其他转换，旧请求重放也不会再执行。
+ */
+export const labRunTransitions = mysqlTable(
+  "lab_run_transitions",
+  {
+    id: serial("id").primaryKey(),
+    runId: bigint("runId", { mode: "number", unsigned: true }).notNull(),
+    action: mysqlEnum("action", ["start", "advance", "cancel"]).notNull(),
+    idempotencyKey: varchar("idempotencyKey", { length: 128 }).notNull(),
+    requestHash: varchar("requestHash", { length: 64 }).notNull(),
+    resultJson: longtext("resultJson").notNull(),
+    statusBefore: mysqlEnum("statusBefore", [
+      "draft",
+      "preparing",
+      "ready",
+      "running",
+      "completed",
+      "failed",
+      "cancelled",
+    ]).notNull(),
+    statusAfter: mysqlEnum("statusAfter", [
+      "draft",
+      "preparing",
+      "ready",
+      "running",
+      "completed",
+      "failed",
+      "cancelled",
+    ]).notNull(),
+    revisionBefore: int("revisionBefore").notNull(),
+    revisionAfter: int("revisionAfter").notNull(),
+    createdById: bigint("createdById", { mode: "number", unsigned: true }).notNull(),
+    createdByName: varchar("createdByName", { length: 255 }),
+    createdAt: timestamp("createdAt", { fsp: 3 }).defaultNow().notNull(),
+  },
+  (table) => ({
+    requestUnique: uniqueIndex("lab_run_transition_request_unique").on(
+      table.runId,
+      table.action,
+      table.idempotencyKey,
+    ),
+    runCreatedIdx: index("lab_run_transition_run_created_idx").on(table.runId, table.createdAt),
+  }),
+);
+
+export type LabRunTransition = typeof labRunTransitions.$inferSelect;
+
+/** 当次运行所选样本、对照与物料；同时指向样品请求和库存预占记录。 */
+export const labRunResources = mysqlTable(
+  "lab_run_resources",
+  {
+    id: serial("id").primaryKey(),
+    runId: bigint("runId", { mode: "number", unsigned: true }).notNull(),
+    sampleId: bigint("sampleId", { mode: "number", unsigned: true }).notNull(),
+    role: mysqlEnum("role", ["sample", "material", "control"]).notNull(),
+    amount: decimal("amount", { precision: 14, scale: 3, mode: "number" }).notNull(),
+    unit: varchar("unit", { length: 20 }).notNull(),
+    nodeKey: varchar("nodeKey", { length: 64 }),
+    sampleSnapshot: longtext("sampleSnapshot").notNull(),
+    sampleRequestItemId: bigint("sampleRequestItemId", { mode: "number", unsigned: true }),
+    inventoryReservationId: bigint("inventoryReservationId", { mode: "number", unsigned: true }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    runIdx: index("lab_run_resource_run_idx").on(table.runId),
+    runSampleUnique: uniqueIndex("lab_run_resource_run_sample_unique").on(
+      table.runId,
+      table.sampleId,
+    ),
+    sampleIdx: index("lab_run_resource_sample_idx").on(table.sampleId),
+    requestItemIdx: index("lab_run_resource_request_item_idx").on(table.sampleRequestItemId),
+    reservationIdx: index("lab_run_resource_reservation_idx").on(table.inventoryReservationId),
+  }),
+);
+
+export type LabRunResource = typeof labRunResources.$inferSelect;
+
+/**
+ * 当次运行的节点快照。设备、驱动版本与参数均固化在这里，不能继续读取模板
+ * 的可变字段来解释历史运行。
+ */
+export const labRunNodes = mysqlTable(
+  "lab_run_nodes",
+  {
+    id: serial("id").primaryKey(),
+    runId: bigint("runId", { mode: "number", unsigned: true }).notNull(),
+    sourceNodeId: bigint("sourceNodeId", { mode: "number", unsigned: true }).notNull(),
+    nodeKey: varchar("nodeKey", { length: 64 }).notNull(),
+    type: mysqlEnum("type", ["manual", "equipment", "decision", "data", "timer", "external"]).notNull(),
+    label: varchar("label", { length: 255 }).notNull(),
+    templateKey: varchar("templateKey", { length: 64 }),
+    equipmentId: bigint("equipmentId", { mode: "number", unsigned: true }),
+    equipmentSnapshot: longtext("equipmentSnapshot"),
+    driverKey: varchar("driverKey", { length: 20 }),
+    driverVersion: varchar("driverVersion", { length: 12 }),
+    driverMode: mysqlEnum("driverMode", ["simulation", "edge"]),
+    configSnapshot: text("configSnapshot"),
+    parameterSnapshot: longtext("parameterSnapshot"),
+    status: mysqlEnum("status", ["pending", "running", "completed", "skipped", "failed"])
+      .default("pending")
+      .notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt")
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    runNodeUnique: uniqueIndex("lab_run_node_unique").on(table.runId, table.nodeKey),
+    runStatusIdx: index("lab_run_node_status_idx").on(table.runId, table.status),
+    equipmentIdx: index("lab_run_node_equipment_idx").on(table.equipmentId),
+  }),
+);
+
+export type LabRunNode = typeof labRunNodes.$inferSelect;
+
+// Immutable planning snapshots; they do not create inventory or execution records.
+export const cloningLayoutPlans = mysqlTable("cloning_layout_plans", {
+  id: serial("id").primaryKey(),
+  workflowId: bigint("workflowId", { mode: "number", unsigned: true }).notNull(),
+  nodeKey: varchar("nodeKey", { length: 64 }),
+  projectId: bigint("projectId", { mode: "number", unsigned: true }),
+  workflowName: varchar("workflowName", { length: 255 }).notNull(),
+  nodeLabel: varchar("nodeLabel", { length: 255 }),
+  name: varchar("name", { length: 255 }).notNull(),
+  version: int("version").notNull(),
+  engineVersion: varchar("engineVersion", { length: 32 }).notNull(),
+  mode: mysqlEnum("mode", ["compact", "recommended"]).notNull(),
+  sampleCount: int("sampleCount").notNull(),
+  plateCount: int("plateCount").notNull(),
+  snapshot: longtext("snapshot").notNull(),
+  snapshotHash: varchar("snapshotHash", { length: 64 }).notNull(),
+  requestHash: varchar("requestHash", { length: 64 }).notNull(),
+  idempotencyKey: varchar("idempotencyKey", { length: 128 }).notNull(),
+  createdById: bigint("createdById", { mode: "number", unsigned: true }).notNull(),
+  createdByName: varchar("createdByName", { length: 255 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  workflowVersion: uniqueIndex("cloning_workflow_version_unique").on(table.workflowId, table.version),
+  idempotency: uniqueIndex("cloning_idempotency_unique").on(table.idempotencyKey),
+  projectIdx: index("cloning_project_idx").on(table.projectId),
+}));

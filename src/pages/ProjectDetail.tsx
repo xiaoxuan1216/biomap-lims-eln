@@ -1,3 +1,6 @@
+import { workflowPlateUrl } from "@/features/cloning-planner/workflowPlateContext";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "../../api/router";
 import { trpc } from "@/providers/trpc";
 import { useParams, useNavigate } from "react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -97,8 +100,11 @@ type WfSummary = {
   nodes: { id: number; label: string; status: string; type: string }[];
 };
 
-function WorkflowCard({ wf, subflows, onOpen }: { wf: WfSummary; subflows: WfSummary[]; onOpen: (id: number) => void }) {
+type PlatePlanSummary = inferRouterOutputs<AppRouter>["cloningLayout"]["list"][number];
+function WorkflowCard({ wf, subflows, onOpen, platePlans }: { wf: WfSummary; subflows: WfSummary[]; onOpen: (id: number) => void; platePlans: PlatePlanSummary[] }) {
   const { t } = useI18n();
+  const navigate = useNavigate();
+  const plan = platePlans.find(p => p.workflowId === wf.id);
   const st = WORKFLOW_STATUS[wf.status] ?? WORKFLOW_STATUS.draft;
   return (
     <Card className="hover:border-teal-300 transition-colors">
@@ -115,6 +121,9 @@ function WorkflowCard({ wf, subflows, onOpen }: { wf: WfSummary; subflows: WfSum
         </div>
         <Progress value={wf.progress} className="h-1.5" />
         <NodeStrip nodes={wf.nodes} />
+        {plan && <button className="flex w-full flex-wrap items-center justify-between gap-2 rounded-md bg-teal-50 px-3 py-2 text-xs text-teal-800 hover:bg-teal-100" onClick={() => navigate(workflowPlateUrl(wf.id, { planId: plan.id, nodeKey: plan.nodeKey }))}>
+          <span>{t("孔板与样本")} · V{plan.version}</span><span>{t("{n} 样本 / {p} 板", { n: plan.sampleCount, p: plan.plateCount })} →</span>
+        </button>}
         {subflows.length > 0 && (
           <div className="pl-5 border-l-2 border-teal-100 space-y-2 pt-1">
             {subflows.map((sf) => (
@@ -126,6 +135,7 @@ function WorkflowCard({ wf, subflows, onOpen }: { wf: WfSummary; subflows: WfSum
                   <span className="text-xs text-muted-foreground shrink-0">{sf.progress}%</span>
                 </div>
                 <Progress value={sf.progress} className="h-1 mt-1" />
+                {platePlans.find(p => p.workflowId === sf.id) && (() => { const subPlan = platePlans.find(p => p.workflowId === sf.id)!; return <button className="mt-2 text-[11px] text-teal-700 hover:underline" onClick={event => { event.stopPropagation(); navigate(workflowPlateUrl(sf.id, { planId: subPlan.id, nodeKey: subPlan.nodeKey })); }}>{t("孔板与样本")} · V{subPlan.version} · {t("{n} 样本 / {p} 板", { n: subPlan.sampleCount, p: subPlan.plateCount })} →</button>; })()}
               </div>
             ))}
           </div>
@@ -143,6 +153,7 @@ export default function ProjectDetail() {
   const { data: project, isLoading } = trpc.project.byId.useQuery({ id: projectId });
   const { data: dash } = trpc.project.dashboard.useQuery({ id: projectId });
   const { data: externalOrders } = trpc.externalOrder.list.useQuery({ projectId });
+  const { data: cloningPlans } = trpc.cloningLayout.list.useQuery({ projectId });
   const utils = trpc.useUtils();
   const [createOpen, setCreateOpen] = useState(false);
   const [wfOpen, setWfOpen] = useState<{ experimentId: number; title: string } | null>(null);
@@ -423,7 +434,7 @@ export default function ProjectDetail() {
           {topWfs.length ? (
             <div className="grid md:grid-cols-2 gap-4">
               {topWfs.map((w) => (
-                <WorkflowCard key={w.id} wf={w} subflows={subflowOf(w.id)} onOpen={(wid) => navigate(`/workflows/${wid}`)} />
+                <WorkflowCard key={w.id} wf={w} subflows={subflowOf(w.id)} platePlans={cloningPlans ?? []} onOpen={(wid) => navigate(`/workflows/${wid}`)} />
               ))}
             </div>
           ) : (

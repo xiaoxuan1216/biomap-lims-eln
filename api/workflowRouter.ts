@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { adminQuery, authedQuery, createRouter, writeQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import {
   externalOrderItems,
   externalOrders,
+  driverReleases,
+  equipmentDriverBindings,
   projects,
   serviceProviders,
   workflows,
@@ -14,6 +16,13 @@ import {
 } from "@db/schema";
 import { appendActivity, logActivity } from "./queries/labHelpers";
 import { WORKFLOW_TEMPLATES, SUBFLOW_TEMPLATES, templateScenario } from "@contracts/workflow";
+import {
+  BUILTIN_DRIVER_MANIFESTS,
+  driverManifestSchema,
+  parseDriverTemplateKey,
+  validateDriverActionForBinding,
+  validateDriverValues,
+} from "@contracts/deviceDriver";
 import { en } from "@/i18n/en";
 
 /** 实例化模板时的英文翻译：优先 en 词典，其次人名映射，未命中保留原文 */
@@ -30,9 +39,9 @@ export function trForLang(s: string, lang?: string): string {
   if (lang !== "en" || !s) return s;
   return en[s] ?? OWNER_EN[s] ?? s;
 }
-function trParams(params: Record<string, string | number> | undefined, lang?: string) {
+function trParams(params: Record<string, string | number | boolean> | undefined, lang?: string) {
   if (!params) return params;
-  const out: Record<string, string | number> = {};
+  const out: Record<string, string | number | boolean> = {};
   for (const [k, v] of Object.entries(params)) out[k] = typeof v === "string" ? trForLang(v, lang) : v;
   return out;
 }
@@ -367,7 +376,15 @@ export const workflowRouter = createRouter({
 
   /** 保存整张图（节点 + 边，全量替换；含 DAG 环校验，保留节点执行状态） */
   saveGraph: writeQuery
-    .input(z.object({ id: z.number(), nodes: z.array(nodeInput), edges: z.array(edgeInput) }))
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(255).optional(),
+      description: z.string().nullish(),
+      status: z.enum(["draft", "active", "completed", "archived"]).optional(),
+      projectId: z.number().nullish(),
+      nodes: z.array(nodeInput),
+      edges: z.array(edgeInput),
+    }))
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
       const keys = input.nodes.map((n) => n.nodeKey);
@@ -403,6 +420,117 @@ export const workflowRouter = createRouter({
             code: "PRECONDITION_FAILED",
             message: `节点“${linkedRemovedNode.label}”仍挂接子流程，不能从图中删除`,
           });
+        }
+
+        for (const node of input.nodes) {
+          const ref = parseDriverTemplateKey(node.templateKey);
+          if (!ref) continue;
+          if (node.type !== "equipment") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "设备驱动动作只能保存为设备节点" });
+          }
+          let manifest = BUILTIN_DRIVER_MANIFESTS.find(
+            (item) => item.driverKey === ref.driverKey && item.version === ref.version,
+          );
+          let releaseStatus: "published" | "retired" | "draft" = "published";
+          if (!manifest) {
+            const release = await tx.query.driverReleases.findFirst({
+              where: and(
+                eq(driverReleases.driverKey, ref.driverKey),
+                eq(driverReleases.version, ref.version),
+              ),
+            });
+            if (!release) {
+              throw new TRPCError({ code: "BAD_REQUEST", message: `驱动版本不存在：${ref.driverKey}@${ref.version}` });
+            }
+            let rawManifest: unknown;
+            try {
+              rawManifest = JSON.parse(release.manifest);
+            } catch {
+              throw new TRPCError({ code: "BAD_REQUEST", message: "驱动 Manifest 已损坏，不能保存节点" });
+            }
+            const parsed = driverManifestSchema.safeParse(rawManifest);
+            if (!parsed.success) {
+              throw new TRPCError({ code: "BAD_REQUEST", message: "驱动 Manifest 已损坏，不能保存节点" });
+            }
+            manifest = parsed.data;
+            releaseStatus = release.status;
+          }
+          const existing = nodesByKey.get(node.nodeKey);
+          if (releaseStatus !== "published" && existing?.templateKey !== node.templateKey) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: "只能新增已发布驱动的 BioFlow 节点" });
+          }
+          if (
+            releaseStatus !== "published" &&
+            existing &&
+            existing.equipmentId !== (node.equipmentId ?? null)
+          ) {
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: "已停用驱动的历史节点只能保留原设备绑定",
+            });
+          }
+          const action = manifest.actions.find(
+            (item) => item.key === ref.actionKey && item.exposeAsNode,
+          );
+          if (!action) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: `驱动动作不可用于 BioFlow：${ref.actionKey}` });
+          }
+          let params: Record<string, unknown> = {};
+          if (node.params) {
+            try {
+              const parsed = JSON.parse(node.params) as unknown;
+              if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+              params = parsed as Record<string, unknown>;
+            } catch {
+              throw new TRPCError({ code: "BAD_REQUEST", message: `节点“${node.label}”参数不是有效对象` });
+            }
+          }
+          const issues = validateDriverValues(action.fields, params);
+          if (issues.length) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: `节点“${node.label}”：${issues.join("；")}` });
+          }
+          if (node.equipmentId) {
+            const binding = await tx.query.equipmentDriverBindings.findFirst({
+              where: eq(equipmentDriverBindings.equipmentId, node.equipmentId),
+            });
+            const expectedStatus = binding?.mode === "simulation" ? "simulation_ready" : "ready";
+            if (
+              !binding ||
+              !binding.enabled ||
+              binding.status !== expectedStatus ||
+              binding.driverKey !== ref.driverKey ||
+              binding.driverVersion !== ref.version
+            ) {
+              throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message: `节点“${node.label}”绑定的设备尚未通过该驱动版本的连接测试`,
+              });
+            }
+            let connectionConfig: Record<string, unknown>;
+            try {
+              const raw = JSON.parse(binding.connectionConfig) as unknown;
+              if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error();
+              connectionConfig = raw as Record<string, unknown>;
+            } catch {
+              throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message: `节点“${node.label}”绑定的设备连接配置已损坏`,
+              });
+            }
+            const bindingIssues = validateDriverActionForBinding(
+              manifest,
+              action.key,
+              params,
+              binding.mode,
+              connectionConfig,
+            );
+            if (bindingIssues.length) {
+              throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message: `节点“${node.label}”：${bindingIssues.join("；")}`,
+              });
+            }
+          }
         }
 
         for (const node of input.nodes) {
@@ -469,14 +597,23 @@ export const workflowRouter = createRouter({
             removedNodes.map((node) => node.id),
           ));
         }
-        await tx.update(workflows).set({ updatedAt: new Date() }).where(eq(workflows.id, input.id));
+        await tx
+          .update(workflows)
+          .set({
+            ...(input.name !== undefined ? { name: input.name } : {}),
+            ...(input.description !== undefined ? { description: input.description } : {}),
+            ...(input.status !== undefined ? { status: input.status } : {}),
+            ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(workflows.id, input.id));
         await appendActivity(tx, {
           userId: ctx.user.id,
           userName: ctx.user.name ?? "未知用户",
           action: "更新了业务流图",
           entityType: "workflow",
           entityId: input.id,
-          entityName: wf.name,
+          entityName: input.name ?? wf.name,
           detail: `${input.nodes.length} 个节点 · ${input.edges.length} 条连线`,
         });
         return { ok: true };

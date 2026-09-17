@@ -37,6 +37,8 @@ export type FlowNodeData = {
   childWorkflowId?: number | null;
   subflowName?: string | null;
   subflowProgress?: string | null;
+  /** Display-only workflow planning summary; excluded from saveGraph payloads. */
+  platePlan?: { version: number; sampleCount: number };
 };
 
 export type RFNode = Node<FlowNodeData, "flowNode">;
@@ -107,6 +109,7 @@ export default function FlowNode({ data, selected }: NodeProps<RFNode>) {
             <span className="truncate">{data.equipmentName}</span>
           </div>
         )}
+        {data.platePlan && <div className="mt-1.5 rounded border border-teal-100 bg-teal-50 px-2 py-1 text-[10px] text-teal-700">{t("孔板与样本")} · {t("{n} 样本", { n: data.platePlan.sampleCount })} · V{data.platePlan.version}</div>}
         {data.externalOrder && (
           <button
             className="nodrag mt-1.5 flex w-full items-start gap-1 rounded-md bg-pink-50 px-2 py-1.5 text-left text-[10px] text-pink-700 hover:bg-pink-100"

@@ -1,6 +1,8 @@
 // 业务流 DAG 共享契约：节点类型、节点调色板（预存节点组）、预置业务流模板
 // 前后端共用（前端编辑器 / 后端模板实例化与校验）
 
+import type { DriverField } from "./deviceDriver";
+
 export type FlowNodeType = "manual" | "equipment" | "decision" | "data" | "timer" | "external";
 
 export const FLOW_NODE_TYPES: Record<
@@ -69,6 +71,18 @@ export interface NodeTemplate {
   label: string;
   description?: string;
   defaultOwner?: string;
+  /** 动态设备驱动动作；保存时仍使用既有 templateKey/config/params 字段。 */
+  driver?: {
+    driverKey: string;
+    driverVersion: string;
+    actionKey: string;
+    driverName: string;
+    vendor: string;
+    maturity: "simulation" | "bench-pending" | "verified";
+    retry: "safe" | "reconcile-first" | "never-auto";
+    fields: DriverField[];
+    compatibleEquipmentIds: number[];
+  };
 }
 
 export interface NodeGroup {
@@ -205,9 +219,12 @@ export interface ParamField {
   unit?: string;
   options?: string[];
   default?: string | number;
+  required?: boolean;
+  min?: number;
+  max?: number;
 }
 
-export type NodeParams = Record<string, string | number>;
+export type NodeParams = Record<string, string | number | boolean>;
 
 export const EQUIP_PARAM_SCHEMAS: Record<string, ParamField[]> = {
   e_qpcr: [
@@ -217,10 +234,10 @@ export const EQUIP_PARAM_SCHEMAS: Record<string, ParamField[]> = {
     { key: "melting", label: "熔解曲线", type: "select", options: ["需要", "不需要"], default: "需要" },
   ],
   e_plate_reader: [
-    { key: "mode", label: "检测模式", type: "select", options: ["吸光度", "荧光强度", "化学发光", "时间分辨荧光"], default: "化学发光" },
-    { key: "emWavelength", label: "检测波长", type: "number", unit: "nm", default: 450 },
-    { key: "refWavelength", label: "参考波长", type: "number", unit: "nm", default: 620 },
-    { key: "shakeSec", label: "振荡时间", type: "number", unit: "s", default: 30 },
+    { key: "mode", label: "检测模式", type: "select", options: ["吸光度", "荧光强度", "化学发光", "时间分辨荧光"], default: "化学发光", required: true },
+    { key: "emWavelength", label: "检测波长", type: "number", unit: "nm", default: 450, required: true, min: 200, max: 1_000 },
+    { key: "refWavelength", label: "参考波长", type: "number", unit: "nm", default: 620, min: 200, max: 1_000 },
+    { key: "shakeSec", label: "振荡时间", type: "number", unit: "s", default: 30, min: 0, max: 3_600 },
   ],
   e_centrifuge: [
     { key: "rpm", label: "转速", type: "number", unit: "rpm", default: 12000 },
@@ -243,9 +260,9 @@ export const EQUIP_PARAM_SCHEMAS: Record<string, ParamField[]> = {
     { key: "hours", label: "孵育时长", type: "number", unit: "h", default: 4 },
   ],
   e_liquid: [
-    { key: "channel", label: "移液模式", type: "select", options: ["单通道", "8 通道", "96 通道"], default: "96 通道" },
-    { key: "volume", label: "体系体积", type: "number", unit: "μL", default: 50 },
-    { key: "mixTimes", label: "混合次数", type: "number", unit: "次", default: 3 },
+    { key: "channel", label: "移液模式", type: "select", options: ["单通道", "8 通道", "96 通道"], default: "96 通道", required: true },
+    { key: "volume", label: "体系体积", type: "number", unit: "μL", default: 50, required: true, min: 0.1, max: 1_000 },
+    { key: "mixTimes", label: "混合次数", type: "number", unit: "次", default: 3, min: 0, max: 100 },
   ],
   e_purify: [
     { key: "column", label: "层析柱类型", type: "select", options: ["Protein A 亲和", "Ni-NTA 亲和", "离子交换", "分子筛"], default: "Ni-NTA 亲和" },
@@ -737,10 +754,10 @@ export function nodeParamSummary(
   const tr = (key: string, vars?: Record<string, string | number>) => (t ? t(key, vars) : key);
   if (nodeType === "timer") {
     if (!params) return "";
-    if (params.mode === "scheduled" && params.datetime) return tr("{time} 开始", { time: params.datetime });
+    if (params.mode === "scheduled" && params.datetime) return tr("{time} 开始", { time: String(params.datetime) });
     if (params.value)
       return tr("前置完成后等待 {value} {unit}", {
-        value: params.value,
+        value: String(params.value),
         unit: tr(TIMER_UNITS[String(params.unit)] ?? String(params.unit ?? "h")),
       });
     return tr("等待前置完成");
@@ -751,6 +768,13 @@ export function nodeParamSummary(
   }
   if (nodeType === "equipment" && templateKey && params) {
     const schema = EQUIP_PARAM_SCHEMAS[templateKey] ?? [];
+    if (templateKey.startsWith("drv:") && schema.length === 0) {
+      return Object.entries(params)
+        .filter(([, value]) => value !== "" && value !== null && value !== undefined)
+        .slice(0, 2)
+        .map(([key, value]) => `${key} ${String(value)}`)
+        .join(" · ");
+    }
     return schema
       .slice(0, 2)
       .map((f) => (params[f.key] != null && params[f.key] !== "" ? `${tr(f.label)} ${tr(String(params[f.key]))}${f.unit ? ` ${f.unit}` : ""}` : null))
