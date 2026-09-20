@@ -1,0 +1,18 @@
+import "dotenv/config";
+import assert from "node:assert/strict";
+import { eq } from "drizzle-orm";
+import { users } from "../../db/schema.ts";
+const url = new URL(process.env.DATABASE_URL!); url.pathname = "/biomap_v15_qa"; process.env.DATABASE_URL = url.toString();
+const { getDb } = await import("../../api/queries/connection.ts");
+const { appRouter } = await import("../../api/router.ts");
+const [user] = await getDb().select().from(users).where(eq(users.id, 54));
+const api = appRouter.createCaller({ user, req: new Request("http://127.0.0.1:3115"), resHeaders: new Headers() });
+const heavy = await api.sampleIdentity.pairedCandidates({ sampleIds: [212] });
+assert.ok(heavy.candidates.some(row => row.sampleId === 213 && row.chain === "LC"));
+assert.ok(heavy.candidates.every(row => row.chain === "LC" && row.antibodyId === "QA-INCOMING-7a9b6fe9"));
+const light = await api.sampleIdentity.pairedCandidates({ sampleIds: [213] });
+assert.ok(light.candidates.some(row => row.sampleId === 212 && row.chain === "HC"));
+assert.deepEqual(await api.sampleIdentity.pairedCandidates({ sampleIds: [212, 213] }), { candidates: [], hasMore: false });
+assert.deepEqual(await api.sampleIdentity.pairedCandidates({ sampleIds: [214] }), { candidates: [], hasMore: false });
+console.log("PASS: opposite chain and exact antibody match; paired/finished antibody inputs do not suggest extra chains. Read-only QA check.");
+process.exit(0);

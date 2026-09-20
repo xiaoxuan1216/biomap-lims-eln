@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { stageSourceSchema } from "./methodOutputs";
+import { reworkSourceSchema } from "./runRecovery";
 
 export const LAB_RUN_STATUSES = [
   "draft",
@@ -10,7 +12,7 @@ export const LAB_RUN_STATUSES = [
   "cancelled",
 ] as const;
 
-export const LAB_RUN_MODES = ["simulation", "edge"] as const;
+export const LAB_RUN_MODES = ["simulation", "edge", "manual"] as const;
 export const LAB_RUN_RESOURCE_ROLES = ["sample", "material", "control"] as const;
 export const LAB_RUN_NODE_STATUSES = ["pending", "running", "completed", "skipped", "failed"] as const;
 
@@ -19,15 +21,28 @@ export type LabRunMode = (typeof LAB_RUN_MODES)[number];
 export type LabRunResourceRole = (typeof LAB_RUN_RESOURCE_ROLES)[number];
 export type LabRunNodeStatus = (typeof LAB_RUN_NODE_STATUSES)[number];
 
+export function labTaskLabel(run: { status: LabRunStatus; executionMode: LabRunMode; paused?: boolean; resultState?: string | null }) {
+  if (run.paused) return "待处理";
+  if (run.resultState === "approved") return "已完成";
+  if (run.resultState === "review") return "待复核";
+  if (run.resultState === "changes_requested") return "待处理";
+  if (run.status === "completed") return run.executionMode === "simulation" ? "演练结束" : "待补齐结果";
+  return LAB_RUN_STATUS_META[run.status].label;
+}
+
+export function labRunModeLabel(mode: LabRunMode) {
+  return mode === "simulation" ? "模拟运行" : mode === "manual" ? "人工执行" : "自动设备执行";
+}
+
 export const LAB_RUN_STATUS_META: Record<
   LabRunStatus,
   { label: string; color: string; description: string }
 > = {
   draft: { label: "草稿", color: "#64748b", description: "尚未锁定资源与执行快照" },
   preparing: { label: "准备中", color: "#f59e0b", description: "资源已预占，等待领料或就绪确认" },
-  ready: { label: "计划就绪", color: "#0d9488", description: "运行计划已锁定；物理启动仍需独立门禁" },
-  running: { label: "运行中", color: "#2563eb", description: "实验已进入受控执行" },
-  completed: { label: "已完成", color: "#16a34a", description: "运行与结果记录已完成" },
+  ready: { label: "待开始", color: "#0d9488", description: "计划已保存，实验尚未开始" },
+  running: { label: "执行中", color: "#2563eb", description: "实验已进入受控执行" },
+  completed: { label: "执行结束", color: "#16a34a", description: "步骤已结束，结果仍需独立检查与复核" },
   failed: { label: "异常", color: "#dc2626", description: "运行失败或需要人工处置" },
   cancelled: { label: "已取消", color: "#94a3b8", description: "运行已取消并停止后续执行" },
 };
@@ -64,6 +79,11 @@ export const labRunNodeBindingInputSchema = z.object({
 export const createLabRunInputSchema = z
   .object({
     workflowId: z.number().int().positive(),
+    methodReleaseId: z.number().int().positive().optional(),
+    draftId: z.string().uuid().optional(),
+    reworkSource: reworkSourceSchema.optional(),
+    stageSource: stageSourceSchema.optional(),
+    samplePlatePlanIds: z.array(z.number().int().positive()).max(20).optional(),
     cloningLayoutPlanId: z.number().int().positive().nullish(),
     name: z.string().trim().min(1, "运行名称不能为空").max(255),
     purpose: z.string().trim().max(10_000).nullish(),
@@ -104,6 +124,11 @@ export const labRunTransitionInputSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(128),
 });
 
+export const advanceSimulationInputSchema = labRunTransitionInputSchema.extend({
+  decisions: z.record(z.string().min(1).max(64), z.enum(["yes", "no"])).optional(),
+  skipWait: z.boolean().optional(),
+});
+
 export const cancelLabRunInputSchema = z.object({
   id: z.number().int().positive(),
   reason: z.string().trim().min(1).max(500),
@@ -118,6 +143,7 @@ export const labRunTransitionResultSchema = z.object({
   status: z.enum(LAB_RUN_STATUSES),
   revision: z.number().int().nonnegative(),
   releasedResources: z.boolean().optional(),
+  simulation: z.object({ decisions: z.record(z.string(), z.enum(["yes", "no"])), skippedWaits: z.array(z.string()) }).optional(),
 });
 
 export type LabRunTransitionResult = z.infer<typeof labRunTransitionResultSchema>;
@@ -224,6 +250,10 @@ export type LabRunDataFlowSource =
   | "sample_lineage"
   | "lab_run_node"
   | "equipment_booking"
+  | "lab_run_output"
+  | "lab_run_result"
+  | "raw_file"
+  | "eln"
   | "none";
 
 export interface LabRunDataFlowEvidence {
@@ -235,6 +265,10 @@ export interface LabRunDataFlowEvidence {
 }
 
 export interface LabRunDataFlowInput {
+  resultStatus?: string;
+  results?: Array<{ id: number; sampleId: number; nodeKey: string; outcome: string; value: string; evidenceId: number; metricLabel?: string; unit?: string }>;
+  outputs?: Array<{ id: number; sampleId: number; nodeKey: string; sku: string; name: string; quantity: number; unit: string; status: string; evidenceId: number; parentSampleIds: number[] }>;
+  experimentId?: number | null;
   run: {
     id: number;
     runNo: string;
@@ -322,7 +356,7 @@ export interface LabRunDataFlowProjection {
   nodes: Array<{
     id: string;
     phase: LabRunDataFlowPhase;
-    kind: "run_plan" | "resource" | "lineage" | "run_node";
+    kind: "run_plan" | "resource" | "lineage" | "run_node" | "result";
     title: string;
     subtitle: string | null;
     status: string;
@@ -338,9 +372,9 @@ export interface LabRunDataFlowProjection {
     evidence: LabRunDataFlowEvidence[];
   }>;
   resultState: {
-    status: "not_recorded";
-    source: "none";
-    evidence: [];
+    status: string;
+    source: LabRunDataFlowSource;
+    evidence: LabRunDataFlowEvidence[];
   };
 }
 
@@ -355,8 +389,7 @@ function dataFlowEvidence(
 }
 
 /**
- * Produce a UI-ready Mosaic projection from persisted Run facts. This deliberately
- * emits no result tile: the current model has no Run result record to substantiate one.
+ * Produce a UI projection only from persisted Run facts. Simulations never emit result evidence.
  */
 export function buildLabRunDataFlow(input: LabRunDataFlowInput): LabRunDataFlowProjection {
   const { run } = input;
@@ -496,21 +529,48 @@ export function buildLabRunDataFlow(input: LabRunDataFlowInput): LabRunDataFlowP
     });
   }
 
+  const outputs = run.executionMode === "simulation" ? [] : (input.outputs ?? []).filter(output => output.status !== "voided");
+  const outputNodes: LabRunDataFlowProjection["nodes"] = outputs.map(output => ({
+    id: `output:${output.id}`, phase: "results", kind: "resource", title: `${output.sku} · ${output.name}`, subtitle: `${output.quantity} ${output.unit}`, status: output.status, source: "lab_run_output",
+    evidence: [dataFlowEvidence("lab_run_output", `output:${output.id}`, output.name, output.status, output.status === "released"), dataFlowEvidence("sample_inventory", `sample:${output.sampleId}`, output.sku, output.status === "released" ? "current" : output.status, false), dataFlowEvidence("raw_file", `/api/run-files/${output.evidenceId}`, "原始文件", "recorded", true)],
+  }));
+  for (const output of outputs) {
+    edges.push({ id: `output-step:${output.id}`, source: `run-node:${output.nodeKey}`, target: `output:${output.id}`, relation: "produces", sourceType: "lab_run_output", evidence: outputNodes.find(node => node.id === `output:${output.id}`)!.evidence });
+    for (const parentId of output.parentSampleIds) {
+      const source = resourceNodeBySample.get(parentId);
+      if (source) edges.push({ id: `output-parent:${output.id}:${parentId}`, source, target: `output:${output.id}`, relation: "derived_from", sourceType: "sample_lineage", evidence: [] });
+    }
+  }
+  const resultNodes: LabRunDataFlowProjection["nodes"] = (run.executionMode === "simulation" ? [] : input.results ?? []).map(result => ({
+    id: `result:${result.id}`, phase: "results", kind: "result", title: `${input.resources.find(resource => resource.sampleId === result.sampleId)?.sku ?? outputs.find(output => output.sampleId === result.sampleId)?.sku ?? result.sampleId} · ${result.metricLabel ? `${result.metricLabel}: ` : ""}${result.value} ${result.unit ?? ""}`, subtitle: input.nodes.find(node => node.nodeKey === result.nodeKey)?.label ?? result.nodeKey,
+    status: result.outcome, source: "lab_run_result", evidence: [dataFlowEvidence("lab_run_result", `result:${result.id}`, result.value, result.outcome, true), dataFlowEvidence("raw_file", `/api/run-files/${result.evidenceId}`, "原始文件", "recorded", true)],
+  }));
+  for (const result of input.results ?? []) if (resultNodes.some(node => node.id === `result:${result.id}`)) {
+    edges.push({ id: `result-step:${result.id}`, source: `run-node:${result.nodeKey}`, target: `result:${result.id}`, relation: "produces", sourceType: "lab_run_result", evidence: resultNodes.find(node => node.id === `result:${result.id}`)!.evidence });
+    const output = outputs.find(output => output.sampleId === result.sampleId);
+    const resourceId = output ? `output:${output.id}` : resourceNodeBySample.get(result.sampleId);
+    if (resourceId) edges.push({ id: `result-sample:${result.id}`, source: resourceId, target: `result:${result.id}`, relation: "measured_as", sourceType: "lab_run_result", evidence: [] });
+  }
+  const resultEvidence = resultNodes.flatMap(node => node.evidence);
+  if (input.experimentId && resultNodes.length) resultEvidence.push(dataFlowEvidence("eln", `/experiments/${input.experimentId}`, "实验记录", input.resultStatus ?? "recorded", input.resultStatus === "approved"));
+  const resultState: LabRunDataFlowProjection["resultState"] = { status: resultNodes.length ? input.resultStatus ?? "recorded" : "not_recorded", source: resultNodes.length ? "lab_run_result" : "none", evidence: resultEvidence };
   return {
     schemaVersion: "1.0",
     phases: [
       { id: "plan", label: "运行计划", labelEn: "Run plan", status: input.integrityValid ? "locked" : "integrity_failed", source: "run_plan_snapshot", evidence: planEvidence },
       { id: "materials", label: "样本与物料", labelEn: "Samples & materials", status: run.executionMode === "simulation" ? "snapshot_only" : run.requestStatus ?? "not_reserved", source: run.sampleRequestId ? "sample_request" : "lab_run_resource", evidence: requestEvidence.length ? requestEvidence : resourceNodes.flatMap((node) => node.evidence.slice(0, 1)) },
       { id: "execution", label: "流程执行", labelEn: "Execution", status: run.status, source: "lab_run_node", evidence: [...executionNodes.flatMap((node) => node.evidence.slice(0, 1)), ...bookingEvidence] },
-      { id: "results", label: "结果记录", labelEn: "Results", status: "not_recorded", source: "none", evidence: [] },
+      { id: "results", label: "结果记录", labelEn: "Results", ...resultState },
     ],
     nodes: [
       { id: planNodeId, phase: "plan", kind: "run_plan", title: run.name, subtitle: `${run.runNo} · ${run.workflowName}`, status: input.integrityValid ? "locked" : "integrity_failed", source: "run_plan_snapshot", evidence: planEvidence },
       ...lineageNodes,
       ...resourceNodes,
       ...executionNodes,
+      ...outputNodes,
+      ...resultNodes,
     ],
     edges,
-    resultState: { status: "not_recorded", source: "none", evidence: [] },
+    resultState,
   };
 }

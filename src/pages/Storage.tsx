@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { trpc } from "@/providers/trpc";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,6 +67,8 @@ type Node = {
 };
 
 export default function Storage() {
+  const [workspaceParams] = useSearchParams();
+  const workspaceSuffix = workspaceParams.get("workspace") === "configuration" ? "?workspace=configuration" : "";
   const { t } = useI18n();
   const utils = trpc.useUtils();
   const { data: locations, isLoading } = trpc.storage.tree.useQuery();
@@ -127,7 +129,7 @@ export default function Storage() {
         >
           <Icon className={`h-4 w-4 shrink-0 ${node.type === "freezer" ? "text-cyan-500" : node.type === "box" ? "text-teal-600" : "text-slate-400"}`} />
           {isBox ? (
-            <Link to={`/storage/box/${node.id}`} className="font-medium text-sm hover:text-teal-700">
+            <Link to={`/storage/box/${node.id}${workspaceSuffix}`} className="font-medium text-sm hover:text-teal-700">
               {node.name}
               <span className="text-xs text-muted-foreground font-normal ml-2">
                 {node.rows}×{node.cols} {t("格")}

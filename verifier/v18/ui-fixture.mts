@@ -1,0 +1,28 @@
+import "dotenv/config";
+import { readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { users } from "../../db/schema.ts";
+const url = new URL(process.env.DATABASE_URL!); url.pathname = "/biomap_v15_qa"; process.env.DATABASE_URL = url.toString();
+const { getDb } = await import("../../api/queries/connection.ts");
+const { appRouter } = await import("../../api/router.ts");
+const { signSessionToken } = await import("../../api/security/session.ts");
+const fixture = JSON.parse(readFileSync("verifier/v16/chain-fixture.json", "utf8"));
+const [user] = await getDb().select().from(users).where(eq(users.id, 54));
+if (!user || user.role === "viewer") throw new Error("Existing QA operator unavailable");
+const api = appRouter.createCaller({ user, req: new Request("http://127.0.0.1:3115"), resHeaders: new Headers() });
+const source = await api.labRun.byId({ id: fixture.runs[0] });
+const note = "QA ONLY — synthetic UI fixture, no physical laboratory operation";
+const run = await api.labRun.create({ workflowId: source.workflowId, methodReleaseId: fixture.methods[0].releaseId, name: "QA 四阶段步骤记录 · 界面操作", purpose: note, projectId: fixture.projectId, executionMode: "manual", scheduledStart: new Date(Date.now() - 60000), scheduledEnd: new Date(Date.now() + 6 * 3600000), resources: source.resources.filter(resource => resource.role === "sample").map(resource => ({ sampleId: resource.sampleId, role: "sample", amount: 1 })), nodeBindings: source.nodes.filter(node => node.type === "equipment").map(node => ({ nodeKey: node.nodeKey, equipmentId: node.equipmentId!, params: {} })), idempotencyKey: randomUUID() });
+const created = await api.labRun.byId({ id: run.id });
+const request = await api.sampleRequest.byId({ id: created.sampleRequestId! });
+for (const task of request.tasks) { await api.sampleRequest.claimTask({ taskId: task.id }); await api.sampleRequest.completeTask({ taskId: task.id }); }
+const current = await api.labRun.byId({ id: run.id });
+await api.runExecution.act({ runId: run.id, expectedRevision: current.revision, action: "start", idempotencyKey: randomUUID(), note });
+const method = await api.workflow.createAntibodyMethod({ stage: "expression", lang: "zh" });
+await api.workflow.update({ id: method.id, name: "QA 转染表达 · 步骤列表编辑", description: note });
+const original = await api.workflow.byId({ id: method.id });
+writeFileSync("verifier/v18/ui-fixture.json", JSON.stringify({ runId: run.id, methodId: method.id, operatorId: user.id, originalNodes: original.nodes.map(node => ({ id: node.id, nodeKey: node.nodeKey, label: node.label })), syntheticOnly: true }, null, 2));
+writeFileSync("/tmp/v18-ui-token", await signSessionToken({ unionId: user.unionId }), { mode: 0o600 });
+console.log(JSON.stringify({ runId: run.id, methodId: method.id, operatorId: user.id, syntheticOnly: true }));
+process.exit(0);

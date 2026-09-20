@@ -8,10 +8,17 @@ export interface CopilotContext {
 }
 
 let current: CopilotContext = {};
+const listeners = new Set<() => void>();
+export function subscribeCopilotContext(listener: () => void) {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
 let insertHandler: ((blocks: ElnBlock[]) => void) | null = null;
 
 export function setCopilotContext(ctx: CopilotContext) {
+  if (current.entityType === ctx.entityType && current.entityId === ctx.entityId && current.entityName === ctx.entityName) return;
   current = ctx;
+  listeners.forEach(listener => listener());
 }
 
 export function getCopilotContext(): CopilotContext {

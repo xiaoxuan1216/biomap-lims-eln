@@ -1,0 +1,34 @@
+import "dotenv/config";
+import { readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { users } from "../../db/schema.ts";
+import { antibodyMethodDraft } from "../../contracts/antibodyMethods.ts";
+const url = new URL(process.env.DATABASE_URL!); url.pathname = "/biomap_v15_qa"; process.env.DATABASE_URL = url.toString();
+const { getDb } = await import("../../api/queries/connection.ts");
+const { appRouter } = await import("../../api/router.ts");
+const db = getDb(), note = "QA ONLY - synthetic batch reuse UI, no physical experiment";
+const input = JSON.parse(readFileSync("verifier/v19/intake-fixture.json", "utf8"));
+async function caller(id: number) { const [user] = await db.select().from(users).where(eq(users.id, id)); return appRouter.createCaller({ user, req: new Request("http://127.0.0.1:3115"), resHeaders: new Headers() }); }
+const writer = await caller(54), reviewer = await caller(input.reviewerId);
+const source = await writer.workflow.byId({ id: input.methodId });
+const method = await writer.workflow.createAntibodyMethod({ stage: "expression", projectId: input.projectId, lang: "zh" });
+await writer.workflow.update({ id: method.id, name: "QA 转染表达 · 批次信息沿用", description: note });
+const spec = source.methodSpec;
+const current = antibodyMethodDraft("expression").spec;
+for (const [key, rule] of Object.entries(spec.nodes)) rule.record = current.nodes[key].record;
+const guard = await writer.workflow.byId({ id: method.id });
+await writer.workflow.saveMethodSpec({ workflowId: method.id, expectedSpecHash: guard.methodSpecHash, expectedGraphHash: guard.graphHash, spec });
+const saved = await writer.workflow.byId({ id: method.id });
+const release = await writer.workflow.submitMethod({ workflowId: method.id, expectedSpecHash: saved.methodSpecHash, expectedGraphHash: saved.graphHash });
+await reviewer.workflow.reviewMethod({ id: release.id, decision: "publish", note });
+const run = await writer.labRun.create({ ...input.createInput, workflowId: method.id, methodReleaseId: release.id, name: "QA 转染表达 · 已确认批次信息沿用", purpose: note, scheduledStart: new Date(Date.now() - 60000), scheduledEnd: new Date(Date.now() + 6 * 3600000), idempotencyKey: randomUUID() });
+writeFileSync("verifier/v20/reuse-fixture.json", JSON.stringify({ runId: run.id, methodId: method.id, releaseId: release.id, syntheticOnly: true }, null, 2));
+const revision = async () => (await writer.labRun.byId({ id: run.id })).revision;
+const details = await writer.labRun.byId({ id: run.id });
+const request = await writer.sampleRequest.byId({ id: details.sampleRequestId! });
+for (const task of request.tasks) { await writer.sampleRequest.claimTask({ taskId: task.id }); await writer.sampleRequest.completeTask({ taskId: task.id }); }
+await writer.runExecution.act({ runId: run.id, expectedRevision: await revision(), action: "start", note, idempotencyKey: randomUUID() });
+const records = [{ id: randomUUID(), sampleIds: input.incoming.map((row: { sampleId: number }) => row.sampleId), values: Object.fromEntries(spec.nodes.cell_readiness.record!.fields.map(field => [field.key, field.kind === "number" ? "1" : field.kind === "datetime" ? new Date().toISOString() : `QA-${field.key}-V20`])) }];
+await writer.runExecution.act({ runId: run.id, expectedRevision: await revision(), action: "complete_step", nodeKey: "cell_readiness", records, expectedRecordEventId: null, note, idempotencyKey: randomUUID() });
+console.log(JSON.stringify({ status: "ready for UI", runId: run.id, methodId: method.id, syntheticOnly: true })); process.exit(0);

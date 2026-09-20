@@ -1,13 +1,27 @@
+import { cloningQcEn } from "./cloningQcEn";
+import { antibodyWorkflowEn } from "./antibodyWorkflowEn";
+import { stepRecordsEn } from "./stepRecordsEn";
+import { sampleIdentityEn } from "./sampleIdentityEn";
 import { croCatalogEn } from "./croCatalogEn";
 import { cloningPlannerEn } from "./cloningPlannerEn";
+import { bioViewEn } from "./bioViewEn";
+import { taskWorkspaceEn } from "./taskWorkspaceEn";
+import { runExecutionEn } from "./runExecutionEn";
 
 /**
  * 英文翻译字典：以中文原文为 key。
  * 未收录的 key 在英文模式下回退显示中文原文。
  */
 export const en: Record<string, string> = {
+  ...cloningQcEn,
+  ...antibodyWorkflowEn,
+  ...stepRecordsEn,
+  ...sampleIdentityEn,
   ...croCatalogEn,
   ...cloningPlannerEn,
+  ...bioViewEn,
+  ...taskWorkspaceEn,
+  ...runExecutionEn,
   // ── 通用 ──
   保存: "Save",
   取消: "Cancel",

@@ -1,12 +1,20 @@
+import { buildSamplePlate, plateCoverage, type FrozenSamplePlate } from "@contracts/samplePlateLayout";
+import { plateCatalog, plateHash, readPlate } from "./samplePlateRouter";
+import { samplePlatePlans } from "@db/schema";
+import { resolvedSampleIdentities } from "./services/sampleIdentityService";
+import { isNextMethodStage } from "@contracts/methodOutputs";
 import { createHash, randomUUID } from "node:crypto";
+import { assessMethodEquipment, methodParameterIssues, methodMaterialDemand, type MethodSpec } from "@contracts/method";
+import { publishedMethod } from "./services/methodService";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gte, inArray, isNull, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt } from "drizzle-orm";
 import { z } from "zod";
 import {
   cancelLabRunInputSchema,
   buildLabRunDataFlow,
   createLabRunInputSchema,
   labRunTransitionInputSchema,
+  advanceSimulationInputSchema,
   labRunTransitionResultSchema,
   readinessSummary,
   terminalRunStatus,
@@ -22,6 +30,15 @@ import {
   type ParamField,
 } from "@contracts/workflow";
 import type { CloningPlan } from "@contracts/cloningLayout";
+import {
+  bioViewExecutionSnapshotSchema,
+  bioViewSnapshotContent,
+  compileBioViewExecutionSnapshot,
+  defaultBioViewVisualizationSpec,
+  freezeBioViewExecutionSnapshot,
+  parseBioViewVisualizationSpec,
+  type BioViewExecutionSnapshot,
+} from "@contracts/bioView";
 import {
   BUILTIN_DRIVER_MANIFESTS,
   driverManifestSchema,
@@ -44,20 +61,26 @@ import {
   labRunResources,
   labRunTransitions,
   labRuns,
+  labRunDrafts,
+  labRunExecution,
+  labRunResults,
+  labRunOutputs,
+  labRunEvents,
   projects,
   sampleRequestItems,
   sampleRequests,
   samples,
   sequences,
   storageLocations,
-  workflowEdges,
-  workflowNodes,
   workflows,
 } from "@db/schema";
 import { getAvailableQuantity, roundRequestQuantity } from "@contracts/sampleRequest";
 import { authedQuery, createRouter, writeQuery } from "./middleware";
 import { getDb } from "./queries/connection";
 import { appendActivity, type DatabaseTransaction } from "./queries/labHelpers";
+
+import { approvedEquipmentOverrides } from "@contracts/runRecovery";
+import { settleExecutionGraph } from "@contracts/runExecution";
 
 type JsonRecord = Record<string, string | number | boolean>;
 
@@ -217,16 +240,23 @@ function frozenTimestampMatches(value: string, current: Date | null) {
   return !!current && Number.isFinite(parsed) && Math.floor(parsed / 1_000) === Math.floor(current.getTime() / 1_000);
 }
 
-type FrozenRunPlan = {
+export type FrozenRunPlan = {
+  samplePlatePlans?: FrozenSamplePlate[];
+  inputIdentities?: import("@contracts/sampleIdentity").FrozenSampleIdentity[];
+  reworkSource?: { runId: number; reason: string };
+  stageSource?: { runId: number };
+  method?: { id: number; version: number; hash: string; spec: MethodSpec; origins: Record<string, { workflowId: number; nodeKey: string; path: string }> };
   schemaVersion: string;
   /** Optional for backward compatibility with Run snapshots created before plate-plan freezing. */
   cloningLayoutPlan?: FrozenCloningLayoutPlan | null;
+  /** Optional for backward compatibility with Run snapshots created before BioView. */
+  bioView?: BioViewExecutionSnapshot | null;
   run: {
     runNo: string;
     name: string;
     purpose: string | null;
     projectId: number | null;
-    executionMode: "simulation" | "edge";
+    executionMode: "simulation" | "edge" | "manual";
     scheduledStart: string;
     scheduledEnd: string;
     operatorName: string | null;
@@ -245,8 +275,9 @@ type FrozenRunPlan = {
     label: string;
     templateKey: string | null;
     config: string | null;
+    externalOrderItemId?: number | null;
   }>;
-  edges: Array<{ sourceKey: string; targetKey: string }>;
+  edges: Array<{ sourceKey: string; targetKey: string; sourceHandle?: string | null }>;
   resources: Array<{
     id: number;
     sku: string;
@@ -276,7 +307,7 @@ type FrozenRunPlan = {
   }>;
 };
 
-function parseFrozenRunPlan(run: typeof labRuns.$inferSelect): FrozenRunPlan | null {
+export function parseFrozenRunPlan(run: typeof labRuns.$inferSelect): FrozenRunPlan | null {
   if (sha256(run.workflowSnapshot) !== run.snapshotHash) return null;
   try {
     const parsed = JSON.parse(run.workflowSnapshot) as Partial<FrozenRunPlan>;
@@ -304,6 +335,13 @@ function parseFrozenRunPlan(run: typeof labRuns.$inferSelect): FrozenRunPlan | n
         plan.resources,
       )
     ) return null;
+    if (plan.bioView !== undefined && plan.bioView !== null) {
+      const parsedBioView = bioViewExecutionSnapshotSchema.safeParse(plan.bioView);
+      if (!parsedBioView.success) return null;
+      const expectedHash = `sha256:${sha256(JSON.stringify(bioViewSnapshotContent(parsedBioView.data)))}`;
+      if (parsedBioView.data.snapshotHash !== expectedHash) return null;
+      plan.bioView = parsedBioView.data;
+    }
     const graph = validateRunGraph(plan.nodes, plan.edges);
     if (!graph.valid) return null;
     const nodeKeys = new Set(plan.nodes.map((node) => node.nodeKey));
@@ -328,7 +366,7 @@ function jsonSnapshotMatches(raw: string | null, expected: unknown) {
   }
 }
 
-function runProjectionIntegrity(
+export function runProjectionIntegrity(
   run: typeof labRuns.$inferSelect,
   plan: FrozenRunPlan,
   nodes: Array<typeof labRunNodes.$inferSelect>,
@@ -432,6 +470,11 @@ function sortedRecord(values: JsonRecord) {
 function labRunRequestHash(input: CreateLabRunInput, includeTargetOrder = true) {
   return sha256(JSON.stringify({
     workflowId: input.workflowId,
+    ...(input.samplePlatePlanIds?.length ? { samplePlatePlanIds: [...input.samplePlatePlanIds].sort((a,b) => a-b) } : {}),
+    ...(input.methodReleaseId ? { methodReleaseId: input.methodReleaseId } : {}),
+    ...(input.draftId ? { draftId: input.draftId } : {}),
+    ...(input.reworkSource ? { reworkSource: input.reworkSource } : {}),
+    ...(input.stageSource ? { stageSource: input.stageSource } : {}),
     // Preserve the pre-layout canonical payload when no plan is selected so
     // retries of Runs created before this field existed remain idempotent.
     ...(input.cloningLayoutPlanId != null
@@ -622,7 +665,7 @@ function validateStaticParams(fields: ParamField[], values: JsonRecord, nodeLabe
   }
 }
 
-async function currentReadiness(
+export async function currentReadiness(
   run: typeof labRuns.$inferSelect,
   tx: DatabaseTransaction,
   options: {
@@ -654,7 +697,7 @@ async function currentReadiness(
     } else if (request.status !== "fulfilled") {
       issues.push({
         code: "sample_request",
-        level: "warning",
+        level: run.executionMode === "manual" ? "blocking" : "warning",
         label: "样本与物料已预占，现场仍需完成领料",
         labelEn: "Samples and materials are reserved; physical issue is still pending",
       });
@@ -662,7 +705,9 @@ async function currentReadiness(
   }
 
   const nodes = options.nodes ?? await tx.select().from(labRunNodes).where(eq(labRunNodes.runId, run.id));
-  const equipmentNodes = nodes.filter((node) => node.type === "equipment");
+  const method = parseFrozenRunPlan(run)?.method;
+  const approved = run.executionMode === "manual" ? approvedEquipmentOverrides(await tx.select({ action: labRunEvents.action, payload: labRunEvents.payload }).from(labRunEvents).where(eq(labRunEvents.runId, run.id)).orderBy(asc(labRunEvents.id))) : {};
+  const equipmentNodes = nodes.filter(node => node.type === "equipment" && (run.status !== "running" || !["completed", "skipped"].includes(node.status))).map(node => approved[node.nodeKey] ? { ...node, equipmentId: approved[node.nodeKey].equipmentId } : node);
   const equipmentIds = ([...new Set(equipmentNodes.map((node) => node.equipmentId).filter(Boolean))] as number[])
     .sort((left, right) => left - right);
   let equipmentRows: Array<typeof equipment.$inferSelect> = [];
@@ -708,6 +753,9 @@ async function currentReadiness(
       });
       continue;
     }
+    const compatibility = assessMethodEquipment(node, { ...device, binding: bindings.find(b => b.equipmentId === device.id) }, method?.spec.nodes[node.nodeKey], run.executionMode);
+    if (run.executionMode !== "simulation" && device.nextCalibrationDate && device.nextCalibrationDate < (run.scheduledEnd ?? new Date()).toISOString().slice(0, 10)) issues.push({ code: "equipment", level: "blocking", label: `设备“${device.name}”的校准有效期不能覆盖本次实验`, labelEn: `Calibration for “${device.name}” does not cover this experiment`, nodeKey: node.nodeKey });
+    if (!compatibility.compatible) issues.push({ code: "equipment", level: "blocking", label: `${node.label}：${compatibility.reason}`, labelEn: `Method qualification or execution capability is missing for “${node.label}”. Ask the method owner to review the instrument.`, nodeKey: node.nodeKey });
     if (node.driverKey) {
       const binding = bindings.find((row) => row.equipmentId === node.equipmentId);
       const expectedStatus = run.executionMode === "simulation" ? "simulation_ready" : "ready";
@@ -759,7 +807,7 @@ async function currentReadiness(
   if (run.scheduledEnd && run.scheduledEnd < new Date()) {
     issues.push({
       code: "schedule",
-      level: "warning",
+      level: run.executionMode === "simulation" ? "warning" : "blocking",
       label: "计划运行时段已结束，请重新确认排程",
       labelEn: "The planned run window has ended; confirm the schedule again",
     });
@@ -771,10 +819,11 @@ export const labRunRouter = createRouter({
   list: authedQuery.query(async () => {
     const db = getDb();
     const rows = await db
-      .select({ run: labRuns, projectName: projects.name, requestStatus: sampleRequests.status })
+      .select({ run: labRuns, projectName: projects.name, requestStatus: sampleRequests.status, execution: labRunExecution })
       .from(labRuns)
       .leftJoin(projects, eq(labRuns.projectId, projects.id))
       .leftJoin(sampleRequests, eq(labRuns.sampleRequestId, sampleRequests.id))
+      .leftJoin(labRunExecution, eq(labRuns.id, labRunExecution.runId))
       .orderBy(desc(labRuns.createdAt));
     if (!rows.length) return [];
     const ids = rows.map(({ run }) => run.id);
@@ -782,10 +831,14 @@ export const labRunRouter = createRouter({
       db.select({ runId: labRunResources.runId, role: labRunResources.role }).from(labRunResources).where(inArray(labRunResources.runId, ids)),
       db.select({ runId: labRunNodes.runId, type: labRunNodes.type, status: labRunNodes.status }).from(labRunNodes).where(inArray(labRunNodes.runId, ids)),
     ]);
-    return rows.map(({ run, projectName, requestStatus }) => ({
+    return rows.map(({ run, projectName, requestStatus, execution }) => ({
       ...run,
       projectName,
       requestStatus,
+      executionOwnerId: execution?.ownerId ?? null,
+      executionOwnerName: execution?.ownerName ?? null,
+      paused: execution?.paused ?? false,
+      resultState: execution?.resultState ?? null,
       sampleCount: resources.filter((resource) => resource.runId === run.id && resource.role === "sample").length,
       materialCount: resources.filter((resource) => resource.runId === run.id && resource.role !== "sample").length,
       nodeCount: nodes.filter((node) => node.runId === run.id).length,
@@ -794,20 +847,20 @@ export const labRunRouter = createRouter({
   }),
 
   launchContext: authedQuery
-    .input(z.object({ workflowId: z.number().int().positive() }))
+    .input(z.object({ workflowId: z.number().int().positive(), methodReleaseId: z.number().int().positive().optional() }))
     .query(async ({ input }) => {
       const db = getDb();
-      const [workflow] = await db
+      const [workingCopy] = await db
         .select()
         .from(workflows)
         .where(eq(workflows.id, input.workflowId))
         .limit(1);
-      if (!workflow || workflow.parentWorkflowId) {
+      if (!workingCopy || workingCopy.parentWorkflowId || workingCopy.status === "archived") {
         throw new TRPCError({ code: "NOT_FOUND", message: "流程模板不存在" });
       }
-      const [nodes, edges, sampleRows, reservations, equipmentRows, bindings, projectRows, layoutPlans] = await Promise.all([
-        db.select().from(workflowNodes).where(eq(workflowNodes.workflowId, workflow.id)),
-        db.select().from(workflowEdges).where(eq(workflowEdges.workflowId, workflow.id)),
+      const { release, snapshot } = await publishedMethod(db, workingCopy.id, input.methodReleaseId);
+      const { workflow, nodes, edges } = snapshot;
+      const [sampleRows, reservations, equipmentRows, bindings, projectRows, layoutPlans] = await Promise.all([
         db.select().from(samples).where(isNull(samples.archivedAt)).orderBy(samples.name),
         db.select({ sampleId: inventoryReservations.sampleId, amount: inventoryReservations.amount })
           .from(inventoryReservations)
@@ -853,6 +906,8 @@ export const labRunRouter = createRouter({
         : nodes;
       return {
         workflow,
+        methodRelease: { id: release.id, version: release.version, hash: release.snapshotHash },
+        methodSpec: snapshot.spec,
         nodes: orderedNodes,
         edges,
         cloningLayoutPlans: layoutPlans,
@@ -966,7 +1021,15 @@ export const labRunRouter = createRouter({
     const frozenResourceBySampleId = new Map(
       (frozenPlan?.resources ?? []).map((resource) => [resource.id, resource]),
     );
+    const [execution] = await db.select().from(labRunExecution).where(eq(labRunExecution.runId, row.run.id));
+    const allResults = await db.select().from(labRunResults).where(eq(labRunResults.runId, row.run.id));
+    const runOutputs = await db.select().from(labRunOutputs).where(eq(labRunOutputs.runId, row.run.id));
+    const supersededResults = new Set(allResults.map(result => result.supersedesId).filter(Boolean));
     const dataFlow = buildLabRunDataFlow({
+      results: allResults.filter(result => !supersededResults.has(result.id) && !runOutputs.some(output => output.sampleId === result.sampleId && output.status === "voided")).map(result => ({ ...result, metricLabel: frozenPlan?.method?.spec.nodes[result.nodeKey]?.measurements?.find(metric => metric.key === result.metricKey)?.label })),
+      outputs: runOutputs.map(output => { const snapshot = JSON.parse(output.sampleSnapshot) as { sku: string; name: string }; return { id: output.id, sampleId: output.sampleId, nodeKey: output.nodeKey, ...snapshot, quantity: Number(output.quantity), unit: output.unit, status: output.status, evidenceId: output.evidenceId, parentSampleIds: JSON.parse(output.parentSampleIds) as number[] }; }),
+      resultStatus: execution?.resultState,
+      experimentId: execution?.experimentId,
       run: {
         id: row.run.id,
         runNo: row.run.runNo,
@@ -1040,15 +1103,29 @@ export const labRunRouter = createRouter({
     });
     return {
       ...row.run,
+      resultState: execution?.resultState ?? null,
+      executionOwnerId: execution?.ownerId ?? null,
+      executionOwnerName: execution?.ownerName ?? null,
+      paused: execution?.paused ?? false,
       projectName: row.projectName,
       requestNo: row.requestNo,
       requestStatus: row.requestStatus,
-      resources: resourceRows.map(({ resource, ...current }) => ({ ...resource, ...current })),
+      resources: resourceRows.map(({ resource, ...current }) => {
+        const frozen = frozenResourceBySampleId.get(resource.sampleId);
+        return { ...resource, ...current, sku: frozen?.sku ?? current.sku, sampleName: frozen?.name ?? current.sampleName, sampleType: frozen?.type ?? current.sampleType };
+      }),
       nodes: orderedNodeRows.map(({ node, ...device }) => ({ ...node, ...device })),
       bookings,
       readiness,
       integrityValid,
+      method: frozenPlan?.method ?? null,
+      reworkSource: frozenPlan?.reworkSource ?? null,
+      stageSource: frozenPlan?.stageSource ?? null,
+      inputIdentities: frozenPlan?.inputIdentities ?? [],
+      samplePlatePlans: frozenPlan?.samplePlatePlans ?? [],
+      methodEdges: frozenPlan?.edges ?? [],
       cloningLayoutPlan: frozenPlan?.cloningLayoutPlan ?? null,
+      bioView: frozenPlan?.bioView ?? null,
       dataFlow,
     };
   }),
@@ -1076,23 +1153,39 @@ export const labRunRouter = createRouter({
 
     try {
       return await db.transaction(async (tx) => {
-        const [workflow] = await tx
+        const [workingCopy] = await tx
           .select()
           .from(workflows)
           .where(eq(workflows.id, input.workflowId))
           .limit(1)
           .for("update");
-        if (!workflow || workflow.parentWorkflowId) {
+        if (!workingCopy || workingCopy.parentWorkflowId) {
           throw new TRPCError({ code: "NOT_FOUND", message: "流程模板不存在" });
         }
-        if (workflow.status !== "active") {
-          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "只有已启用的流程模板可以发起实验运行" });
+        if (workingCopy.status === "archived") {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "方法已停用" });
         }
         assertExecutionChannelAvailable(input.executionMode);
-        const [sourceNodes, sourceEdges] = await Promise.all([
-          tx.select().from(workflowNodes).where(eq(workflowNodes.workflowId, workflow.id)),
-          tx.select().from(workflowEdges).where(eq(workflowEdges.workflowId, workflow.id)),
-        ]);
+        if (input.draftId) {
+          const [draft] = await tx.select().from(labRunDrafts).where(eq(labRunDrafts.id, input.draftId)).limit(1).for("update");
+          if (!draft || draft.ownerId !== ctx.user.id || draft.workflowId !== input.workflowId) throw new TRPCError({ code: "FORBIDDEN", message: "实验草稿已交接或不存在" });
+          if (JSON.stringify(JSON.parse(draft.payload).reworkSource) !== JSON.stringify(input.reworkSource)) throw new TRPCError({ code: "BAD_REQUEST", message: "请保留草稿中的重做来源" });
+          if (JSON.stringify(JSON.parse(draft.payload).stageSource) !== JSON.stringify(input.stageSource)) throw new TRPCError({ code: "BAD_REQUEST", message: "请保留草稿中的阶段来源" });
+          if (draft.runId) throw new TRPCError({ code: "CONFLICT", message: "此草稿已经生成实验任务，请返回任务列表" });
+        }
+        if (!input.methodReleaseId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "请重新选择已发布方法版本" });
+        if (input.reworkSource) {
+          const [parent] = await tx.select().from(labRuns).where(eq(labRuns.id, input.reworkSource.runId)).limit(1).for("update");
+          const [owner] = await tx.select().from(labRunExecution).where(eq(labRunExecution.runId, input.reworkSource.runId)).limit(1);
+          if (!parent || parent.status !== "completed" || parent.executionMode !== "manual" || input.executionMode !== "manual" || parent.workflowId !== input.workflowId || owner?.ownerId !== ctx.user.id) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "重做必须由原任务负责人从已结束的人工实验发起，并使用同一方法" });
+          const parentSamples = await tx.select().from(labRunResources).where(and(eq(labRunResources.runId, parent.id), eq(labRunResources.role, "sample")));
+          if (input.resources.some(r => r.role === "sample" && !parentSamples.some(s => s.sampleId === r.sampleId))) throw new TRPCError({ code: "BAD_REQUEST", message: "重做样本必须来自原任务；新样本请另建实验" });
+        }
+        const { release, snapshot: methodSnapshot } = await publishedMethod(tx, workingCopy.id, input.methodReleaseId, true);
+        const { workflow, nodes: sourceNodes, edges: sourceEdges, spec: methodSpec } = methodSnapshot;
+        const selectedSampleCount = input.resources.filter(resource => resource.role === "sample").length;
+        if (selectedSampleCount < methodSpec.minSamples || selectedSampleCount > methodSpec.maxSamples) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "样本数量不符合已发布方法要求" });
+        if (methodSpec.layoutRequired && !input.cloningLayoutPlanId && !input.samplePlatePlanIds?.length) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "本方法要求确认样本与孔板布局" });
         const graph = validateRunGraph(sourceNodes, sourceEdges);
         if (!graph.valid) {
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: graph.error });
@@ -1182,13 +1275,13 @@ export const labRunRouter = createRouter({
             throw new TRPCError({ code: "PRECONDITION_FAILED", message: `设备“${device.name}”当前不可用于实验运行` });
           }
           if (
-            input.executionMode === "edge" &&
+            input.executionMode !== "simulation" &&
             device.nextCalibrationDate &&
             device.nextCalibrationDate < scheduledEnd.toISOString().slice(0, 10)
           ) {
             throw new TRPCError({ code: "PRECONDITION_FAILED", message: `设备“${device.name}”的校准有效期不能覆盖计划结束时间` });
           }
-          if (input.executionMode === "edge") {
+          if (input.executionMode !== "simulation") {
             const conflicts = await tx
               .select()
               .from(equipmentBookings)
@@ -1236,7 +1329,18 @@ export const labRunRouter = createRouter({
           let driverMode: "simulation" | "edge" | null = null;
           let driverSnapshot: Record<string, unknown> | null = null;
 
-          const ref = parseDriverTemplateKey(node.templateKey);
+          const actionRef = parseDriverTemplateKey(node.templateKey);
+          const ref = input.executionMode === "manual" ? null : actionRef;
+          if (actionRef && input.executionMode === "manual") {
+            const resolved = await resolveDriver(tx, actionRef.driverKey, actionRef.version);
+            const action = resolved.manifest.actions.find(candidate => candidate.key === actionRef.actionKey && candidate.exposeAsNode);
+            if (!action || resolved.releaseStatus !== "published") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "方法引用的设备操作定义不可用" });
+            fields = action.fields;
+          }
+          if (node.type === "equipment" && device) {
+            const match = assessMethodEquipment(node, { ...device, binding: driverBindings.find(b => b.equipmentId === device.id) }, methodSpec.nodes[node.nodeKey], input.executionMode);
+            if (!match.compatible) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `${node.label}：${match.reason}` });
+          }
           if (ref) {
             driverKey = ref.driverKey;
             driverVersion = ref.version;
@@ -1300,7 +1404,12 @@ export const labRunRouter = createRouter({
           }
 
           const effectiveValues = { ...defaultsFromFields(fields), ...templateValues, ...overrides };
-          if (!ref && node.type === "equipment" && fields.length) {
+          const parameterIssues = methodParameterIssues({ ...defaultsFromFields(fields), ...templateValues }, overrides, methodSpec.nodes[node.nodeKey]);
+          if (parameterIssues.length) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `${node.label}：${parameterIssues.join("；")}` });
+          if (actionRef && input.executionMode === "manual") {
+            const issues = validateDriverValues(fields as DriverField[], effectiveValues);
+            if (issues.length) throw new TRPCError({ code: "PRECONDITION_FAILED", message: issues.join("；") });
+          } else if (!ref && node.type === "equipment" && fields.length) {
             validateStaticParams(fields as ParamField[], effectiveValues, node.label);
           }
           preparedNodes.push({
@@ -1341,6 +1450,47 @@ export const labRunRouter = createRouter({
         if (sampleRows.length !== sampleIds.length) {
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: "部分样本或物料不存在，或已归档" });
         }
+        const frozenSamplePlates: FrozenSamplePlate[] = [];
+        if (input.samplePlatePlanIds?.length) {
+          const ids = [...new Set(input.samplePlatePlanIds)];
+          const records = await tx.select().from(samplePlatePlans).where(inArray(samplePlatePlans.id, ids)).for("update");
+          if (records.length !== ids.length || records.some(record => record.workflowId !== workflow.id || (record.nodeKey && !sourceNodes.some(node => node.nodeKey === record.nodeKey)))) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "孔板方案不属于当前方法或关联步骤已变更" });
+          const catalog = await plateCatalog(tx, sampleIds);
+          for (const record of records) {
+            const frozen = readPlate(record);
+            if (methodSpec.stage && methodSpec.stage !== frozen.plan.config.stage) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "孔板方案阶段与方法阶段不一致" });
+            let currentHash = "";
+            try { currentHash = plateHash(JSON.stringify(buildSamplePlate(frozen.plan.config, catalog))); } catch { /* stale or missing sample */ }
+            if (currentHash !== frozen.snapshotHash) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "排板样本或身份已变更，请重新保存孔板方案" });
+            frozenSamplePlates.push(frozen);
+          }
+          if (!plateCoverage(frozenSamplePlates.map(item => item.plan), input.resources.filter(resource => resource.role === "sample").map(resource => resource.sampleId))) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "孔板方案必须完整覆盖本次实验样本，且不能包含额外样本" });
+        }
+        const outputOrigins = await tx.select().from(labRunOutputs).where(inArray(labRunOutputs.sampleId, sampleIds));
+        const inputIdentities = await resolvedSampleIdentities(tx, input.resources.filter(resource => resource.role === "sample").map(resource => resource.sampleId));
+        if (outputOrigins.some(output => output.status !== "released")) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "所选实验产物尚未复核放行" });
+        if (methodSpec.inputTypes?.length && input.resources.some(resource => resource.role === "sample" && !methodSpec.inputTypes.includes(sampleRows.find(sample => sample.id === resource.sampleId)!.type as typeof methodSpec.inputTypes[number]))) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "样本类型不符合方法的输入要求" });
+        const parentPolicies = Object.values(methodSpec.nodes).map(rule => rule.produces?.parentPolicy);
+        if (parentPolicies.some(policy => policy === "paired_hc_lc" || policy === "same_antibody")) {
+          const selectedInputs = input.resources.filter(resource => resource.role === "sample");
+          const identities = selectedInputs.map(resource => inputIdentities.find(identity => identity.sampleId === resource.sampleId));
+          if (identities.some(identity => !identity)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "本方法需要有已复核抗体身份和链别的输入，请先完成来源样本确认" });
+          if (parentPolicies.includes("paired_hc_lc")) {
+            for (const identity of identities) {
+              const paired = identities.filter(other => other!.antibodyId === identity!.antibodyId);
+              if (!paired.some(other => other!.chain === "HC") || !paired.some(other => other!.chain === "LC") || paired.some(other => !["HC", "LC"].includes(other!.chain))) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "每个抗体都需要已确认的重链和轻链质粒，请补齐配对后再创建实验" });
+            }
+          }
+        }
+        if (input.stageSource) {
+          const [sourceRun] = await tx.select().from(labRuns).where(eq(labRuns.id, input.stageSource.runId)).limit(1);
+          const [sourceExecution] = await tx.select().from(labRunExecution).where(eq(labRunExecution.runId, input.stageSource.runId)).limit(1);
+          if (input.reworkSource || input.executionMode !== "manual" || !sourceRun || sourceRun.status !== "completed" || sourceExecution?.resultState !== "approved" || !isNextMethodStage(parseFrozenRunPlan(sourceRun)?.method?.spec.stage, methodSpec.stage)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "阶段来源或下一阶段方法无效" });
+          if (input.resources.some(resource => resource.role === "sample" && !outputOrigins.some(output => output.sampleId === resource.sampleId && output.runId === sourceRun.id))) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "下一阶段输入必须来自已确认的上阶段产物" });
+        }
+        const demand = methodMaterialDemand(methodSpec, input.resources.filter(resource => resource.role === "sample").length, input.resources.map(resource => ({ ...resource, sku: sampleRows.find(sample => sample.id === resource.sampleId)!.sku, unit: sampleRows.find(sample => sample.id === resource.sampleId)!.unit })));
+        const missingMaterials = demand.filter(rule => rule.missing > 0);
+        if (missingMaterials.length) throw new TRPCError({ code: "PRECONDITION_FAILED", message: missingMaterials.map(rule => `${rule.name} 缺少 ${rule.missing} ${rule.unit}`).join("；") });
         const activeReservations = await tx
           .select()
           .from(inventoryReservations)
@@ -1381,10 +1531,42 @@ export const labRunRouter = createRouter({
         }
 
         const runNo = nextRunNo();
-        const workflowSnapshot = JSON.stringify({
-          schemaVersion: "1.0",
-          frozenAt: new Date().toISOString(),
+        const frozenAt = new Date().toISOString();
+        const visualizationSpec = parseBioViewVisualizationSpec(workflow.visualizationSpec);
+        const visualizationSpecState = visualizationSpec
+          ? "valid"
+          : workflow.visualizationSpec
+            ? "invalid"
+            : "missing";
+        const visualizationSpecSource = workflow.visualizationSpec ?? JSON.stringify(defaultBioViewVisualizationSpec());
+        const bioViewContent = compileBioViewExecutionSnapshot({
+          spec: visualizationSpec,
+          specState: visualizationSpecState,
+          sourceTemplate: `${workflow.id}@${workflow.updatedAt.toISOString()}`,
+          workflowId: workflow.id,
+          workflowUpdatedAt: workflow.updatedAt.toISOString(),
+          nodes: sourceNodes,
+          edgeCount: sourceEdges.length,
+          resources: input.resources.map((resource) => ({ id: resource.sampleId, role: resource.role })),
           cloningLayoutPlan,
+          samplePlatePlans: frozenSamplePlates.map(({ id, snapshotHash }) => ({ id, snapshotHash })),
+          generatedAt: frozenAt,
+          visualizationSpecHash: `sha256:${sha256(visualizationSpecSource)}`,
+        });
+        const bioView = freezeBioViewExecutionSnapshot(
+          bioViewContent,
+          sha256(JSON.stringify(bioViewContent)),
+        );
+        const workflowSnapshot = JSON.stringify({
+          ...(input.reworkSource ? { reworkSource: input.reworkSource } : {}),
+    ...(input.stageSource ? { stageSource: input.stageSource } : {}),
+          inputIdentities,
+          ...(frozenSamplePlates.length ? { samplePlatePlans: frozenSamplePlates } : {}),
+          method: { id: release.id, version: release.version, hash: release.snapshotHash, spec: methodSpec, origins: methodSnapshot.origins },
+          schemaVersion: "1.0",
+          frozenAt,
+          cloningLayoutPlan,
+          bioView,
           run: {
             runNo,
             name: input.name,
@@ -1393,7 +1575,7 @@ export const labRunRouter = createRouter({
             executionMode: input.executionMode,
             scheduledStart,
             scheduledEnd,
-            operatorName: input.operatorName || ctx.user.name,
+            operatorName: input.executionMode === "manual" ? ctx.user.name : input.operatorName || ctx.user.name,
           },
           workflow: {
             id: workflow.id,
@@ -1450,7 +1632,7 @@ export const labRunRouter = createRouter({
             status: "ready",
             scheduledStart,
             scheduledEnd,
-            operatorName: input.operatorName || ctx.user.name,
+            operatorName: input.executionMode === "manual" ? ctx.user.name : input.operatorName || ctx.user.name,
             requestHash,
             idempotencyKey: input.idempotencyKey,
             createdById: ctx.user.id,
@@ -1461,7 +1643,7 @@ export const labRunRouter = createRouter({
         let requestId: number | null = null;
         let itemIds: Array<{ id: number }> = [];
         let reservationIds: Array<{ id: number }> = [];
-        if (input.executionMode === "edge") {
+        if (input.executionMode !== "simulation") {
           const requestNo = nextRequestNo();
           const now = new Date();
           [{ id: requestId }] = await tx
@@ -1568,7 +1750,7 @@ export const labRunRouter = createRouter({
             status: "pending" as const,
           })),
         );
-        if (input.executionMode === "edge" && uniqueEquipmentIds.length) {
+        if (input.executionMode !== "simulation" && uniqueEquipmentIds.length) {
           await tx.insert(equipmentBookings).values(
             uniqueEquipmentIds.map((equipmentId) => ({
               equipmentId,
@@ -1583,6 +1765,7 @@ export const labRunRouter = createRouter({
         if (requestId) {
           await tx.update(labRuns).set({ sampleRequestId: requestId }).where(eq(labRuns.id, runId));
         }
+        if (input.executionMode === "manual") await tx.insert(labRunExecution).values({ runId, ownerId: ctx.user.id, ownerName: ctx.user.name ?? "用户" });
         await appendActivity(tx, {
           userId: ctx.user.id,
           userName: ctx.user.name,
@@ -1604,6 +1787,8 @@ export const labRunRouter = createRouter({
             resourceCommitment: input.executionMode === "simulation" ? "snapshot_only" : "reserved",
           },
         });
+        if (input.reworkSource) await appendActivity(tx, { userId: ctx.user.id, userName: ctx.user.name, action: "从原实验发起部分样本重做", entityType: "lab_run", entityId: input.reworkSource.runId, entityName: `Run ${input.reworkSource.runId}`, detail: `${runNo}：${input.reworkSource.reason}` });
+        if (input.draftId) await tx.update(labRunDrafts).set({ runId, updatedAt: new Date() }).where(eq(labRunDrafts.id, input.draftId));
         return { id: runId, runNo, repeated: false };
       });
     } catch (error) {
@@ -1728,7 +1913,7 @@ export const labRunRouter = createRouter({
     }),
 
   advanceSimulation: writeQuery
-    .input(labRunTransitionInputSchema)
+    .input(advanceSimulationInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getDb();
       return db.transaction(async (tx) => {
@@ -1739,7 +1924,7 @@ export const labRunRouter = createRouter({
           .limit(1)
           .for("update");
         if (!run) throw new TRPCError({ code: "NOT_FOUND", message: "实验运行不存在" });
-        const requestHash = transitionRequestHash({ expectedRevision: input.expectedRevision });
+        const requestHash = transitionRequestHash({ expectedRevision: input.expectedRevision, ...(input.decisions ? { decisions: input.decisions } : {}), ...(input.skipWait !== undefined ? { skipWait: input.skipWait } : {}) });
         const replay = await findTransitionReplay(tx, {
           runId: run.id,
           action: "advance",
@@ -1770,44 +1955,26 @@ export const labRunRouter = createRouter({
         if (!active.length) {
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: "当前没有可推进的模拟节点" });
         }
-        const statusAfter = new Map(nodes.map((node) => [node.nodeKey, node.status]));
-        active.forEach((node) => statusAfter.set(node.nodeKey, "completed"));
-        const hasFailed = [...statusAfter.values()].some((status) => status === "failed");
-        const predecessors = new Map<string, string[]>();
-        for (const edge of frozenPlan.edges) {
-          predecessors.set(edge.targetKey, [...(predecessors.get(edge.targetKey) ?? []), edge.sourceKey]);
+        const decisions: Record<string, "yes" | "no"> = {};
+        const previous = await tx.select({ result: labRunTransitions.resultJson }).from(labRunTransitions).where(and(eq(labRunTransitions.runId, run.id), eq(labRunTransitions.action, "advance")));
+        for (const item of previous) Object.assign(decisions, labRunTransitionResultSchema.parse(JSON.parse(item.result)).simulation?.decisions);
+        for (const key of Object.keys(input.decisions ?? {})) if (!active.some(n => n.nodeKey === key && n.type === "decision")) throw new TRPCError({ code: "BAD_REQUEST", message: "只能为当前判断步骤选择分支" });
+        Object.assign(decisions, input.decisions);
+        for (const node of active.filter(n => n.type === "decision")) {
+          const branches = frozenPlan.edges.filter(e => e.sourceKey === node.nodeKey);
+          if (!decisions[node.nodeKey] || !branches.some(e => e.sourceHandle === "yes") || !branches.some(e => e.sourceHandle === "no")) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "请确认判断结论；方法必须包含明确的是/否分支" });
         }
-        const next = hasFailed ? [] : nodes.filter((node) => {
-          if (node.status !== "pending") return false;
-          const required = predecessors.get(node.nodeKey) ?? [];
-          return required.every((nodeKey) => ["completed", "skipped"].includes(statusAfter.get(nodeKey) ?? ""));
-        });
-        next.forEach((node) => statusAfter.set(node.nodeKey, "running"));
-        const pendingWithoutSuccessor = nodes.some(
-          (node) => statusAfter.get(node.nodeKey) === "pending",
-        );
-        if (!hasFailed && !next.length && pendingWithoutSuccessor) {
-          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "仍有节点无法满足前置依赖，请检查运行快照" });
-        }
-        await tx
-          .update(labRunNodes)
-          .set({ status: "completed" })
-          .where(inArray(labRunNodes.id, active.map((node) => node.id)));
-        const skippedAfterFailure = hasFailed
-          ? nodes.filter((node) => node.status === "pending")
-          : [];
-        if (skippedAfterFailure.length) {
-          skippedAfterFailure.forEach((node) => statusAfter.set(node.nodeKey, "skipped"));
-          await tx
-            .update(labRunNodes)
-            .set({ status: "skipped" })
-            .where(inArray(labRunNodes.id, skippedAfterFailure.map((node) => node.id)));
-        }
-        if (next.length) {
-          await tx
-            .update(labRunNodes)
-            .set({ status: "running" })
-            .where(inArray(labRunNodes.id, next.map((node) => node.id)));
+        const skippedWaits = active.filter(n => n.type === "timer").map(n => n.nodeKey);
+        if (skippedWaits.length && !input.skipWait) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "请明确确认演练快进等待；此操作不代表实际等待已完成" });
+        active.forEach(node => { node.status = "completed"; });
+        const settled = settleExecutionGraph(nodes, frozenPlan.edges, decisions);
+        const statusAfter = settled.status;
+        const next = nodes.filter(node => settled.started.includes(node.nodeKey));
+        const skippedAfterFailure = nodes.filter(node => settled.skipped.includes(node.nodeKey));
+        if (!next.length && [...statusAfter.values()].some(status => status === "pending") && ![...statusAfter.values()].includes("failed")) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "仍有步骤无法满足前置依赖" });
+        for (const node of nodes) {
+          const status = statusAfter.get(node.nodeKey)!;
+          if (status !== node.status || active.includes(node)) await tx.update(labRunNodes).set({ status, updatedAt: new Date() }).where(eq(labRunNodes.id, node.id));
         }
         const terminalStatus = terminalRunStatus([...statusAfter.values()]);
         const status = terminalStatus ?? "running";
@@ -1838,14 +2005,15 @@ export const labRunRouter = createRouter({
           entityType: "lab_run",
           entityId: run.id,
           entityName: run.runNo,
-          detail: `完成：${active.map((node) => node.label).join("、")}${next.length ? `；进入：${next.map((node) => node.label).join("、")}` : ""}${skippedAfterFailure.length ? `；异常后跳过：${skippedAfterFailure.map((node) => node.label).join("、")}` : ""}`,
+          detail: `完成：${active.map((node) => node.label).join("、")}${next.length ? `；进入：${next.map((node) => node.label).join("、")}` : ""}${skippedAfterFailure.length ? `；分支跳过：${skippedAfterFailure.map((node) => node.label).join("、")}` : ""}`,
           before: { status: "running", runningNodeKeys: active.map((node) => node.nodeKey) },
-          after: { status, runningNodeKeys: next.map((node) => node.nodeKey) },
+          after: { status, runningNodeKeys: next.map((node) => node.nodeKey), decisions, skippedWaits, simulationOnly: true },
         });
         const result: LabRunTransitionResult = {
           ok: true,
           status,
           revision: run.revision + 1,
+          simulation: { decisions, skippedWaits },
         };
         await recordTransition(tx, {
           runId: run.id,

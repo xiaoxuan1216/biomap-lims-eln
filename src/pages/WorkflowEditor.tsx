@@ -1,5 +1,6 @@
+import SamplePlateWorkspace from "@/features/cloning-planner/SamplePlateWorkspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
+import { useBeforeUnload, useNavigate, useParams, useSearchParams } from "react-router";
 import type { inferRouterOutputs } from "@trpc/server";
 import {
   ReactFlow,
@@ -20,6 +21,7 @@ import "@xyflow/react/dist/style.css";
 import { trpc } from "@/providers/trpc";
 import WorkflowPlateWorkspace, { NodePlatePreview } from "@/features/cloning-planner/WorkflowPlateWorkspace";
 import { nodePlateStage, workflowPlateUrl } from "@/features/cloning-planner/workflowPlateContext";
+import WorkflowBioViewWorkspace from "@/features/bioview/WorkflowBioViewWorkspace";
 import { cn } from "@/lib/utils";
 import FlowNode, { type RFNode, type FlowNodeData } from "@/components/flow/FlowNode";
 import {
@@ -72,15 +74,16 @@ import {
   Cable,
   ShieldCheck,
   PlayCircle,
+  PanelsTopLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import { setCopilotContext } from "@/lib/copilotContext";
 import { useI18n } from "@/i18n";
+import { useAuth } from "@/hooks/useAuth";
 import type { AppRouter } from "../../api/router";
 
 const nodeTypes = { flowNode: FlowNode };
 const GROUP_ICONS = { manual: Hand, equipment: Cog, decision: GitBranch, data: Database, timer: Clock, external: Handshake } as const;
-const TEAM_SUGGESTIONS = ["演示用户", "张工", "王工", "陈研究员", "赵工"];
 type WorkflowDetail = NonNullable<inferRouterOutputs<AppRouter>["workflow"]["byId"]>;
 type DriverNodeEntry = inferRouterOutputs<AppRouter>["driver"]["nodeCatalog"][number];
 
@@ -119,15 +122,18 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
   const [viewParams, setViewParams] = useSearchParams();
   const [entryNodeKey] = useState(viewParams.get("nodeKey"));
   const plateView = viewParams.get("view") === "plates";
+  const bioView = viewParams.get("view") === "bioview";
+  const auxiliaryView = plateView || bioView;
   const [platesVisited, setPlatesVisited] = useState(plateView);
+  const [bioViewVisited, setBioViewVisited] = useState(bioView);
   const platePlans = trpc.cloningLayout.list.useQuery({ workflowId: id });
   const latestPlatePlan = platePlans.data?.[0];
   const viewedPlateId = Number(viewParams.get("planId")) || 0;
   const viewedPlate = trpc.cloningLayout.byId.useQuery({ id: viewedPlateId }, { enabled: viewedPlateId > 0 });
-  const activePlatePlan = viewedPlateId
-    ? (viewedPlate.data?.workflowId === id ? viewedPlate.data : undefined)
+  const activePlatePlan = viewedPlateId && viewedPlate.data?.workflowId === id
+    ? viewedPlate.data
     : latestPlatePlan;
-  const hasPlatePlanning = !!latestPlatePlan || wf.nodes.some(n => !!nodePlateStage(n.templateKey));
+  const hasPlatePlanning = true;
   const { data: equipList } = trpc.equipment.list.useQuery();
   const { data: driverNodes } = trpc.driver.nodeCatalog.useQuery();
   const { data: externalItems } = trpc.externalOrder.itemOptions.useQuery({
@@ -151,7 +157,8 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
           externalOrder: n.externalOrder,
           config: n.config,
           params: parseParams(n.params),
-          status: n.status,
+          status: "pending",
+          definitionOnly: true,
           dbId: n.id,
           childWorkflowId: n.childWorkflowId,
           subflowName: n.childWorkflowId ? (wf.subflows?.[n.childWorkflowId]?.name ?? null) : null,
@@ -159,7 +166,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
             ? (() => {
                 const subflow = wf.subflows?.[n.childWorkflowId];
                 return subflow
-                  ? t("{done}/{total}", { done: subflow.doneCount, total: subflow.nodeCount })
+                  ? t("{n} 节点", { n: subflow.nodeCount })
                   : null;
               })()
             : null,
@@ -184,15 +191,22 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
   const [nodes, setNodesRaw, onNodesChangeRaw] = useNodesState<RFNode>(initialNodes);
   const [edges, setEdgesRaw, onEdgesChangeRaw] = useEdgesState<Edge>(initialEdges);
   const [dirty, setDirty] = useState(false);
+  const { user } = useAuth();
+  const recoveryKey = `biomap-method-draft:${user?.id}:${id}`;
+  type Recovery = { hash: string; nodes: RFNode[]; edges: Edge[]; name: string; description: string; status: string };
+  const [recovery, setRecovery] = useState<Recovery | null>(() => { try { const value = JSON.parse(localStorage.getItem(recoveryKey) ?? "null"); return value && typeof value.hash === "string" && Array.isArray(value.nodes) && Array.isArray(value.edges) ? value : null; } catch { return null; } });
+  const [baseHash, setBaseHash] = useState(wf.graphHash);
+  useBeforeUnload(useCallback(event => { if (dirty) { event.preventDefault(); event.returnValue = ""; } }, [dirty]));
   const [selNodeId, setSelNodeId] = useState<string | null>(entryNodeKey);
   const [selEdgeId, setSelEdgeId] = useState<string | null>(null);
   const [wfName, setWfName] = useState(wf.name);
   const [wfDesc, setWfDesc] = useState(wf.description ?? "");
   const [wfStatus, setWfStatus] = useState<string>(wf.status);
+  useEffect(() => { if (dirty) { try { localStorage.setItem(recoveryKey, JSON.stringify({ hash: baseHash, nodes, edges, name: wfName, description: wfDesc, status: wfStatus })); } catch { /* Before-unload protection remains active when local storage is unavailable. */ } } }, [dirty, nodes, edges, wfName, wfDesc, wfStatus, baseHash, recoveryKey]);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   /* 左右工具栏唤出/隐藏（持久化），让 DAG 画布占满空间 */
-  const [leftOpen, setLeftOpen] = useState(() => localStorage.getItem("biomap-flow-left") !== "0");
-  const [rightOpen, setRightOpen] = useState(() => localStorage.getItem("biomap-flow-right") !== "0");
+  const [leftOpen, setLeftOpen] = useState(() => localStorage.getItem("biomap-flow-left") === "1");
+  const [rightOpen, setRightOpen] = useState(() => !!entryNodeKey);
   const toggleLeft = () =>
     setLeftOpen((v) => {
       localStorage.setItem("biomap-flow-left", v ? "0" : "1");
@@ -271,6 +285,14 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
   }, [dirty, t, id, latestPlatePlan?.id, setViewParams, viewParams]);
 
   const showGraph = () => setViewParams(p => { const next = new URLSearchParams(p); next.delete("view"); return next; });
+  const openBioView = () => {
+    setBioViewVisited(true);
+    setViewParams(p => {
+      const next = new URLSearchParams(p);
+      next.set("view", "bioview");
+      return next;
+    });
+  };
   const displayNodes = useMemo(
     () => nodes.map(node => ({
       ...node,
@@ -286,7 +308,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
 
   // 用已知节点坐标设置初始视口（不依赖节点测量时序）
   useEffect(() => {
-    if (!wf.nodes.length || plateView) return;
+    if (!wf.nodes.length || auxiliaryView) return;
     const timer = window.setTimeout(() => {
       const el = canvasRef.current;
       if (!el) return;
@@ -306,7 +328,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
       rf.setViewport({ x: w / 2 - cx * zoom, y: h / 2 - cy * zoom, zoom });
     }, 80);
     return () => window.clearTimeout(timer);
-  }, [rf, wf, plateView]);
+  }, [rf, wf, auxiliaryView]);
 
   // Copilot 上下文
   useEffect(() => {
@@ -335,6 +357,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
           position: pos,
           selected: true,
           data: {
+            definitionOnly: true,
             label: tpl.label,
             nodeType: tpl.type,
             templateKey: tpl.key,
@@ -451,7 +474,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
           toast.success(t("子流程已创建"));
           utils.workflow.byId.invalidate({ id });
           utils.workflow.list.invalidate();
-          navigate(`/workflows/${r.id}`);
+          navigate(`/workflows/${r.id}/edit`);
         },
       },
     );
@@ -461,6 +484,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
     saveMut.mutate(
       {
         id,
+        expectedGraphHash: baseHash,
         name: wfName.trim() || t("未命名流程"),
         description: wfDesc || null,
         status: wfStatus as "draft" | "active" | "completed" | "archived",
@@ -489,7 +513,9 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
         })),
       },
       {
-        onSuccess: () => {
+        onSuccess: result => {
+          setBaseHash(result.graphHash); setRecovery(null);
+          try { localStorage.removeItem(recoveryKey); } catch { /* Server save is authoritative. */ }
           toast.success(t("流程图已保存"));
           setDirty(false);
           utils.workflow.byId.invalidate({ id });
@@ -506,19 +532,20 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
 
   return (
     <div className="flex h-[calc(100vh-7.5rem)] flex-col">
+      {recovery && <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm"><span>{t(recovery.hash === wf.graphHash ? "发现未保存的方法草稿，可恢复后继续编辑。" : "本地草稿对应的版本已变化，请下载保留并对照最新方法。")}</span><Button size="sm" disabled={recovery.hash !== wf.graphHash} onClick={() => { setNodesRaw(recovery.nodes); setEdgesRaw(recovery.edges); setWfName(recovery.name); setWfDesc(recovery.description); setWfStatus(recovery.status); setDirty(true); setRecovery(null); }}>{t("恢复本地草稿")}</Button><Button size="sm" variant="outline" onClick={() => { const url = URL.createObjectURL(new Blob([JSON.stringify(recovery, null, 2)], { type: "application/json" })); const a = document.createElement("a"); a.href = url; a.download = `method-${id}-draft.json`; a.click(); URL.revokeObjectURL(url); }}>{t("下载草稿备份")}</Button><Button size="sm" variant="ghost" onClick={() => { localStorage.removeItem(recoveryKey); setRecovery(null); }}>{t("丢弃本地草稿")}</Button></div>}
       {/* 顶栏 */}
       <div className="mb-3 flex items-center gap-3">
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate(wf?.parent ? `/workflows/${wf.parent.workflowId}` : "/workflows")}
+          onClick={() => navigate(wf?.parent ? `/workflows/${wf.parent.workflowId}/edit` : "/configuration/methods")}
         >
           <ArrowLeft className="h-4 w-4 mr-1" /> {t("返回")}
         </Button>
         {wf?.parent && (
           <button
             className="flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-medium text-teal-700 hover:bg-teal-100"
-            onClick={() => navigate(`/workflows/${wf.parent!.workflowId}`)}
+            onClick={() => navigate(`/workflows/${wf.parent!.workflowId}/edit`)}
             title={t("返回父流程")}
           >
             <Workflow className="h-3 w-3" />
@@ -532,7 +559,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
         )}
         <Input
           value={wfName}
-          disabled={plateView}
+          disabled={auxiliaryView}
           onChange={(e) => {
             setWfName(e.target.value);
             setDirty(true);
@@ -541,7 +568,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
         />
         <Select
           value={wfStatus}
-          disabled={plateView}
+          disabled={auxiliaryView}
           onValueChange={(v) => {
             setWfStatus(v);
             setDirty(true);
@@ -569,25 +596,26 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
           <Button
             variant="outline"
             className="border-teal-200 text-teal-700 hover:bg-teal-50"
-            disabled={dirty || wfStatus !== "active" || plateView}
-            title={dirty ? t("请先保存流程图") : wfStatus !== "active" ? t("请先将流程状态设为进行中") : undefined}
-            onClick={() => navigate(`/runs/new?workflowId=${id}`)}
+            disabled={dirty}
+            title={dirty ? t("请先保存流程图") : undefined}
+            onClick={() => navigate(`/workflows/${id}?workspace=configuration`)}
           >
-            <PlayCircle className="mr-1 h-4 w-4" /> {t("发起实验")}
+            <PlayCircle className="mr-1 h-4 w-4" /> {t("方法要求与发布")}
           </Button>
-          <Button className="bg-teal-600 hover:bg-teal-500" onClick={save} disabled={saveMut.isPending || plateView}>
+          <Button className="bg-teal-600 hover:bg-teal-500" onClick={save} disabled={saveMut.isPending || auxiliaryView}>
             <Save className="h-4 w-4 mr-1" /> {saveMut.isPending ? t("保存中…") : t("保存")}
           </Button>
         </div>
       </div>
 
-      {(hasPlatePlanning || plateView) && <div className="mb-3 flex flex-wrap items-center gap-2 border-b pb-2" role="group" aria-label={t("流程视图")}>
-        <Button size="sm" variant={plateView ? "ghost" : "secondary"} aria-pressed={!plateView} onClick={showGraph}><Network className="mr-1 h-4 w-4" />{t("流程图")}</Button>
-        <Button size="sm" variant={plateView ? "secondary" : "ghost"} aria-pressed={plateView} onClick={() => openPlates()} disabled={dirty} title={dirty ? t("请先保存流程图") : undefined}><LayoutGrid className="mr-1 h-4 w-4" />{t("孔板与样本")}</Button>
+      <div className="mb-3 flex flex-wrap items-center gap-2 border-b pb-2" role="group" aria-label={t("流程视图")}>
+        <Button size="sm" variant={auxiliaryView ? "ghost" : "secondary"} aria-pressed={!auxiliaryView} onClick={showGraph}><Network className="mr-1 h-4 w-4" />{t("流程图")}</Button>
+        <Button size="sm" variant={bioView ? "secondary" : "ghost"} aria-pressed={bioView} onClick={openBioView}><PanelsTopLeft className="mr-1 h-4 w-4" />{t("实验呈现")}</Button>
+        {(hasPlatePlanning || plateView) && <Button size="sm" variant={plateView ? "secondary" : "ghost"} aria-pressed={plateView} onClick={() => openPlates()} disabled={dirty} title={dirty ? t("请先保存流程图") : undefined}><LayoutGrid className="mr-1 h-4 w-4" />{t("孔板与样本")}</Button>}
         {activePlatePlan && <span className="ml-auto text-xs text-muted-foreground">{t("已保存排板：{n} 样本 / {p} 板", { n: activePlatePlan.sampleCount, p: activePlatePlan.plateCount })} · V{activePlatePlan.version}</span>}
         {dirty && <span className="text-xs text-amber-700">{t("请先保存流程图")}</span>}
-      </div>}
-      <div className={cn("min-h-0 flex-1 gap-3", plateView ? "hidden" : "flex")} inert={plateView}>
+      </div>
+      <div className={cn("min-h-0 flex-1 gap-3", auxiliaryView ? "hidden" : "flex")} inert={auxiliaryView}>
 
         {/* 左侧：节点调色板（可隐藏） */}
         {!leftOpen && (
@@ -716,7 +744,7 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
               dirty={dirty}
               onPatch={(p) => patchNode(selNode.id, p)}
               onDelete={() => deleteNode(selNode.id)}
-              onOpenSubflow={() => navigate(`/workflows/${selNode.data.childWorkflowId}`)}
+              onOpenSubflow={() => navigate(`/workflows/${selNode.data.childWorkflowId}/edit`)}
               onCreateSubflow={() => createSubflow(selNode)}
               creatingSubflow={createSubMut.isPending}
             />
@@ -783,10 +811,24 @@ function EditorInner({ id, wf }: { id: number; wf: WorkflowDetail }) {
         )}
       </div>
       {(platesVisited || plateView) && <div className={cn("min-h-0 flex-1 overflow-y-auto", !plateView && "hidden")} inert={!plateView}>
+        <SamplePlateWorkspace key={id} workflowId={id} nodes={wf.nodes} stage={wf.methodSpec?.stage} initialNodeKey={viewParams.get("nodeKey") ?? undefined}/>
+        <details className="m-5 rounded-lg border p-3" open={!!viewParams.get("planId")}><summary className="cursor-pointer font-medium">{t("分子克隆 A–P 虚拟来源规划")}</summary>
         <WorkflowPlateWorkspace workflow={wf} nodeKey={viewParams.get("nodeKey") ?? undefined} planId={Number(viewParams.get("planId")) || undefined} onShowGraph={showGraph} onVersionSelect={planId => {
           setPlatesVisited(true);
           setViewParams(p => { const next = new URLSearchParams(p); next.set("view", "plates"); next.set("planId", String(planId)); return next; });
-        }} />
+        }} /></details>
+      </div>}
+      {(bioViewVisited || bioView) && <div className={cn("min-h-0 flex-1 overflow-y-auto", !bioView && "hidden")} inert={!bioView}>
+        <WorkflowBioViewWorkspace
+          workflow={wf}
+          nodes={displayNodes}
+          edges={edges}
+          cloningLayoutPlan={activePlatePlan}
+          graphDirty={dirty}
+          expectedGraphHash={baseHash}
+          onGraphHashChange={setBaseHash}
+          onShowGraph={showGraph}
+        />
       </div>}
     </div>
   );
@@ -965,6 +1007,7 @@ function NodeInspector({
   onOpenPlatePlan: () => void;
 }) {
   const { t, lang } = useI18n();
+  const members = trpc.runDraft.operators.useQuery();
   const navigate = useNavigate();
   const meta = FLOW_NODE_TYPES[node.data.nodeType];
   const driverNode = driverNodes.find((entry) => entry.templateKey === node.data.templateKey);
@@ -994,8 +1037,8 @@ function NodeInspector({
           onChange={(e) => onPatch({ owner: e.target.value || null })}
         />
         <datalist id="team-members">
-          {TEAM_SUGGESTIONS.map((m) => (
-            <option key={m} value={m} />
+          {members.data?.map((m) => (
+            <option key={m.id} value={m.name ?? ""} />
           ))}
         </datalist>
       </div>

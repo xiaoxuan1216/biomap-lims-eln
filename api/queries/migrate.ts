@@ -1,4 +1,5 @@
 import path from "node:path";
+import { assertMigrationOrder } from "./migrationOrder";
 import { sql } from "drizzle-orm";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { migrate } from "drizzle-orm/mysql2/migrator";
@@ -154,6 +155,7 @@ export function migrateDatabase(): Promise<void> {
 }
 
 async function runMigrations(): Promise<void> {
+  assertMigrationOrder(readMigrationFiles({ migrationsFolder }));
   const isLegacy = await tableExists("users");
   if (isLegacy) await assertNoLegacyKeyConflicts();
   if (isLegacy && (await migrationCount()) === 0) {

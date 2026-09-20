@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/providers/trpc";
-import { useParams, useNavigate } from "react-router";
+import { useParams, useNavigate, useSearchParams } from "react-router";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +60,8 @@ export default function EquipmentDetail() {
   const { id } = useParams<{ id: string }>();
   const equipId = Number(id);
   const navigate = useNavigate();
+  const [workspaceParams] = useSearchParams();
+  const workspaceSuffix = workspaceParams.get("workspace") === "configuration" ? "?workspace=configuration" : "";
   const { user } = useAuth();
   const utils = trpc.useUtils();
   const { data: eqp, isLoading } = trpc.equipment.byId.useQuery({ id: equipId });
@@ -106,7 +108,7 @@ export default function EquipmentDetail() {
   const deleteMut = trpc.equipment.delete.useMutation({
     onSuccess: () => {
       toast.success(t("设备已删除"));
-      navigate("/equipment");
+      navigate(`/equipment${workspaceSuffix}`);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -129,7 +131,7 @@ export default function EquipmentDetail() {
     <div className="space-y-6">
       <div>
         <button
-          onClick={() => navigate("/equipment")}
+          onClick={() => navigate(`/equipment${workspaceSuffix}`)}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-3"
         >
           <ArrowLeft className="h-4 w-4" /> {t("返回设备列表")}

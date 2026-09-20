@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { trpc } from "@/providers/trpc";
-import { useParams, useNavigate, Link } from "react-router";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +50,8 @@ export default function BoxDetail() {
   const { id } = useParams<{ id: string }>();
   const boxId = Number(id);
   const navigate = useNavigate();
+  const [workspaceParams] = useSearchParams();
+  const workspaceSuffix = workspaceParams.get("workspace") === "configuration" ? "?workspace=configuration" : "";
   const utils = trpc.useUtils();
   const { data: box, isLoading } = trpc.storage.boxDetail.useQuery({ id: boxId });
   const { data: allSamples } = trpc.sample.options.useQuery();
@@ -107,7 +109,7 @@ export default function BoxDetail() {
     <div className="space-y-6">
       <div>
         <button
-          onClick={() => navigate("/storage")}
+          onClick={() => navigate(`/storage${workspaceSuffix}`)}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-3"
         >
           <ArrowLeft className="h-4 w-4" /> {t("返回存储管理")}

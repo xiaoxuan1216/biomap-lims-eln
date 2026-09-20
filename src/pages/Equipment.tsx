@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/providers/trpc";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,6 +59,8 @@ const EMPTY_FORM = {
 export default function Equipment() {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
+  const [workspaceParams] = useSearchParams();
+  const workspaceSuffix = workspaceParams.get("workspace") === "configuration" ? "?workspace=configuration" : "";
   const utils = trpc.useUtils();
   const [category, setCategory] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
@@ -154,7 +156,7 @@ export default function Equipment() {
                   <Card
                     key={e.id}
                     className="cursor-pointer hover:shadow-md hover:border-teal-200 transition-all"
-                    onClick={() => navigate(`/equipment/${e.id}`)}
+                    onClick={() => navigate(`/equipment/${e.id}${workspaceSuffix}`)}
                   >
                     <CardContent className="p-4">
                       <div className="flex items-start gap-3">

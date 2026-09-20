@@ -219,7 +219,7 @@ export default function ExperimentDetail() {
           </span>
           <Badge variant="outline" className={st.cls}>
             {exp.status === "signed" && <Lock className="h-3 w-3 mr-1" />}
-            {st.label}
+            {t(st.label)}
           </Badge>
           {exp.project && (
             <Link
@@ -385,7 +385,7 @@ export default function ExperimentDetail() {
                     <SelectItem value="completed">{t("已完成")}</SelectItem>
                   </SelectContent>
                 </Select>
-                {canSign && exp.status === "completed" && (
+                {canSign && exp.status === "completed" && !exp.sourceRun && (
                   <Button
                     className="w-full bg-violet-600 hover:bg-violet-500"
                     onClick={() => setSignOpen(true)}
@@ -393,8 +393,9 @@ export default function ExperimentDetail() {
                     <Lock className="h-4 w-4 mr-1.5" /> {t("复核并签署实验")}
                   </Button>
                 )}
+                {exp.sourceRun && <Button asChild className="w-full"><Link to={`/runs/${exp.sourceRun.id}`}>{t("返回任务复核结果并签署")}</Link></Button>}
                 <p className="text-xs text-muted-foreground">
-                  {canSign
+                  {exp.sourceRun ? t("此记录由实验任务生成，请在任务中一并复核样本结果、原始证据和实验记录。") : canSign
                     ? t("实验完成后可复核签署。签署不可撤销；后续更正必须创建追加修订。")
                     : t("实验完成后需由复核人或管理员签署。")}
                 </p>
@@ -441,12 +442,15 @@ export default function ExperimentDetail() {
             </Card>
           )}
 
-          {/* 样本消耗 */}
+          {/* Linked tasks already record inventory issue through the fulfillment ledger. */}
+          {exp.sourceRun && <Card><CardHeader><CardTitle className="text-base">{t("关联实验任务")}</CardTitle></CardHeader><CardContent className="space-y-2 text-sm"><Link className="block text-teal-700 underline" to={`/runs/${exp.sourceRun.id}`}>{exp.sourceRun.runNo} · {exp.sourceRun.name}</Link><p>{t("样本与物料领用记录保存在关联任务中。")}</p>{exp.sourceRun.sampleRequestId && <Link className="block text-teal-700 underline" to={`/sample-requests/${exp.sourceRun.sampleRequestId}`}>{t("查看领用详情")}</Link>}</CardContent></Card>}
+
+          {/* Additional usage remains separate from task stock issue. */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <TestTubes className="h-4 w-4 text-teal-600" />
-                {t("样本消耗")}
+                {t(exp.sourceRun ? "补充样本消耗" : "样本消耗")}
                 {!signed && canEdit && (
                   <Button
                     variant="ghost"
@@ -487,7 +491,7 @@ export default function ExperimentDetail() {
                 ))
               ) : (
                 <p className="text-sm text-muted-foreground py-3 text-center">
-                  {t("尚未登记样本消耗")}
+                  {t(exp.sourceRun ? "没有额外登记的消耗；任务领用见上方记录。" : "尚未登记样本消耗")}
                 </p>
               )}
             </CardContent>

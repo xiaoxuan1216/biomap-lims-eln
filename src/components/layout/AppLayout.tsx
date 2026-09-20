@@ -1,3 +1,4 @@
+import { trpc } from "@/providers/trpc";
 import { useAuth } from "@/hooks/useAuth";
 import { LOGIN_PATH } from "@/const";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -29,6 +30,7 @@ import {
   Cpu,
   ClipboardList,
   PlayCircle,
+  Settings2,
 } from "lucide-react";
 import { lazy, Suspense, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -40,50 +42,60 @@ import { LanguageSwitcher } from "@/i18n/LanguageSwitcher";
 
 const Copilot = lazy(() => import("../copilot/Copilot"));
 
-const NAV_GROUPS = [
-  {
-    label: "工作台",
-    items: [
-      { icon: LayoutDashboard, label: "仪表盘", path: "/" },
-      { icon: PlayCircle, label: "实验运行", path: "/runs" },
-      { icon: Bot, label: "Lab Agent", path: "/lab-agent" },
-      { icon: Cpu, label: "仪器属性智能体", path: "/instrument-agent" },
-      { icon: History, label: "活动日志", path: "/activity" },
-    ],
-  },
-  {
-    label: "研究",
-    items: [
-      { icon: FolderKanban, label: "项目管理", path: "/projects" },
-      { icon: NotebookPen, label: "实验记录本", path: "/experiments" },
-      { icon: Network, label: "BioFlow 工作流", path: "/workflows" },
-      { icon: ClipboardList, label: "样品请求与履约", path: "/sample-requests" },
-      { icon: Handshake, label: "外部委托", path: "/external-orders" },
-      { icon: Dna, label: "序列库", path: "/sequences" },
-    ],
-  },
-  {
-    label: "资源",
-    items: [
-      { icon: TestTubes, label: "样本库存", path: "/samples" },
-      { icon: Snowflake, label: "存储管理", path: "/storage" },
-      { icon: MonitorCog, label: "设备管理", path: "/equipment" },
-    ],
-  },
+const FRONT_NAV = [
+  { label: "日常实验", items: [
+    { icon: LayoutDashboard, label: "我的工作", path: "/" },
+    { icon: PlayCircle, label: "实验任务", path: "/runs" },
+    { icon: Network, label: "已发布方法", path: "/workflows" },
+    { icon: NotebookPen, label: "实验记录本", path: "/experiments" },
+    { icon: TestTubes, label: "样本与物料", path: "/samples" },
+    { icon: MonitorCog, label: "设备与排期", path: "/equipment" },
+  ] },
+  { label: "更多工具", items: [
+    { icon: FolderKanban, label: "项目管理", path: "/projects" },
+    { icon: ClipboardList, label: "样品请求与履约", path: "/sample-requests" },
+    { icon: Handshake, label: "外部委托", path: "/external-orders" },
+    { icon: Dna, label: "序列库", path: "/sequences" },
+  ] },
+];
+const BACK_NAV = [
+  { label: "方法与资源配置", items: [
+    { icon: Network, label: "方法与流程画布", path: "/configuration/methods" },
+    { icon: MonitorCog, label: "设备配置", path: "/equipment?workspace=configuration" },
+    { icon: Snowflake, label: "存储管理", path: "/storage?workspace=configuration" },
+  ] },
+  { label: "管理与集成", items: [
+    { icon: LayoutDashboard, label: "实验室总览", path: "/overview" },
+    { icon: Bot, label: "高级指令台", path: "/lab-agent" },
+    { icon: Cpu, label: "仪器属性智能体", path: "/instrument-agent" },
+    { icon: MonitorCog, label: "驱动中心", path: "/drivers" },
+    { icon: History, label: "活动日志", path: "/activity" },
+  ] },
 ];
 
 function isActive(pathname: string, path: string): boolean {
   if (path === "/") return pathname === "/";
-  return pathname.startsWith(path);
+  return pathname === path.split("?")[0] || pathname.startsWith(`${path.split("?")[0]}/`);
 }
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { user, isLoading, logout } = useAuth();
+  const workspace = trpc.workspace.useQuery(undefined, { staleTime: Infinity });
+  const [showAllTools, setShowAllTools] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  const [selectedWorkspace, setSelectedWorkspace] = useState<"front" | "back">("front");
+  const query = new URLSearchParams(location.search);
+  const backRoute = location.pathname.startsWith("/configuration") || /^\/workflows\/[^/]+\/(edit|cloning-qc)$/.test(location.pathname) || ["/overview", "/drivers", "/lab-agent", "/instrument-agent", "/activity"].some(path => location.pathname === path || location.pathname.startsWith(`${path}/`)) || query.get("workspace") === "configuration" || (/^\/workflows\/[^/]+$/.test(location.pathname) && (query.has("view") || query.has("nodeKey")));
+  const frontRoute = ["/", "/runs", "/experiments", "/workflows"].some(path => path === "/" ? location.pathname === "/" : location.pathname === path || location.pathname.startsWith(`${path}/`));
+  const mode = backRoute ? "back" : frontRoute ? "front" : selectedWorkspace;
+  const groups = mode === "back" ? BACK_NAV : FRONT_NAV;
+  const switchWorkspace = (next: "front" | "back") => { setSelectedWorkspace(next); navigate(next === "back" ? "/configuration/methods" : "/"); setMobileOpen(false); };
+
   const { t } = useI18n();
   const [searchQ, setSearchQ] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
 
   if (isLoading) return <AuthLayoutSkeleton />;
 
@@ -130,20 +142,27 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <div className="text-[10px] text-slate-500 mt-1 tracking-wider">LIMS · ELN SUITE</div>
         </div>
       </div>
+      <div className="px-3 pt-4">
+        <div className="grid grid-cols-2 gap-1 rounded-lg bg-white/5 p-1" role="group" aria-label={t("工作区切换")}>
+          {(["front", "back"] as const).map(value => <button key={value} aria-pressed={mode === value} onClick={() => switchWorkspace(value)} className={cn("rounded-md px-2 py-2 text-xs transition-colors", mode === value ? "bg-teal-600 text-white" : "text-slate-400 hover:text-white")}>{t(value === "front" ? "实验工作台" : "配置后台")}</button>)}
+        </div>
+        <p className="px-2 pt-2 text-[11px] leading-relaxed text-slate-500">{t(mode === "front" ? "准备实验、执行任务与查看结果" : "配置方法、流程画布与实验资源")}</p>
+      </div>
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-5">
-        {NAV_GROUPS.map((group) => (
+        {groups.filter(group => group.label !== "管理与集成" || user.role === "admin" || user.role === "reviewer").map((group, groupIndex) => (
           <div key={group.label}>
-            <div className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+            <button type="button" aria-expanded={groupIndex === 0 || expandedGroups.includes(group.label)} onClick={() => setExpandedGroups(current => current.includes(group.label) ? current.filter(label => label !== group.label) : [...current, group.label])} className="w-full px-3 mb-1.5 text-left text-[10px] font-semibold uppercase tracking-widest text-slate-500">
               {t(group.label)}
-            </div>
-            <div className="space-y-0.5">
-              {group.items.map((item) => {
-                const active = isActive(location.pathname, item.path);
+            </button>
+            <div className="space-y-0.5" hidden={groupIndex !== 0 && !expandedGroups.includes(group.label) && !group.items.some(item => isActive(location.pathname, item.path))}>
+              {group.items.filter(item => group.label !== "更多工具" || showAllTools || workspace.data?.optionalNavigation.includes(item.path.slice(1)) || isActive(location.pathname, item.path)).map((item) => {
+                const active = isActive(location.pathname, item.path) || (item.path === "/configuration/methods" && location.pathname.startsWith("/workflows/"));
                 return (
                   <button
                     key={item.path}
                     onClick={() => {
+                      setSelectedWorkspace(mode);
                       navigate(item.path);
                       setMobileOpen(false);
                     }}
@@ -155,7 +174,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                     )}
                   >
                     <item.icon className={cn("h-4 w-4 shrink-0", active && "text-teal-400")} />
-                    {t(item.label)}
+                    {t(item.path === "/" ? "我的工作" : item.label)}
                   </button>
                 );
               })}
@@ -163,6 +182,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </div>
         ))}
       </nav>
+      {mode === "front" && <Button variant="ghost" className="mx-3 mb-3 text-xs text-slate-400" onClick={() => { setShowAllTools(v => !v); setExpandedGroups(current => [...current, "更多工具"]); }}>{t(showAllTools ? "收起专业工具" : "显示全部专业工具")}</Button>}
       {/* User */}
       <div className="p-3 border-t border-white/5 shrink-0">
         <DropdownMenu>
@@ -214,13 +234,17 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
+        {workspace.data?.kind === "preview" && <div role="status" className="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-1 text-xs text-amber-900">{workspace.data.name || t("预览工作区")} · {t("演示与验证数据，请勿作为正式实验结果")}</div>}
         {/* Header */}
         <header className="h-16 shrink-0 border-b bg-white flex items-center gap-4 px-4 md:px-6 sticky top-0 z-30">
-          <button className="md:hidden text-slate-600" onClick={() => setMobileOpen(true)}>
+          <button aria-label={t("打开导航菜单")} className="md:hidden text-slate-600" onClick={() => setMobileOpen(true)}>
             <Menu className="h-5 w-5" />
           </button>
+          <Button variant="ghost" size="sm" className="shrink-0 gap-2" onClick={() => switchWorkspace(mode === "front" ? "back" : "front")} title={t(mode === "front" ? "进入配置后台" : "返回实验工作台")}>
+            {mode === "back" ? <Settings2 className="h-4 w-4"/> : <FlaskConical className="h-4 w-4"/>}<span>{t(mode === "back" ? "配置后台" : "实验工作台")}</span>
+          </Button>
           <form
-            className="relative flex-1 max-w-md"
+            className="relative min-w-0 flex-1 max-w-md"
             onSubmit={(e) => {
               e.preventDefault();
               if (searchQ.trim()) {
