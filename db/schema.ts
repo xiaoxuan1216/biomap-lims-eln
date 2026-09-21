@@ -33,6 +33,38 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+// Independent identity review of existing inventory. This is not a laboratory run.
+export const sampleIdentities = mysqlTable("sample_identities", {
+  id: serial("id").primaryKey(),
+  sampleId: bigint("sampleId", { mode: "number", unsigned: true }).notNull(),
+  source: mysqlEnum("source", ["external", "historical"]).notNull(),
+  sourceReference: text("sourceReference").notNull(),
+  lot: varchar("lot", { length: 200 }).notNull(),
+  antibodyId: varchar("antibodyId", { length: 100 }).notNull(),
+  chain: varchar("chain", { length: 20 }).notNull(),
+  sequenceId: bigint("sequenceId", { mode: "number", unsigned: true }),
+  sequenceSnapshot: longtext("sequenceSnapshot"),
+  sampleSnapshot: text("sampleSnapshot").notNull(),
+  verification: text("verification").notNull(),
+  status: mysqlEnum("status", ["review", "approved", "rejected", "retired"]).default("review").notNull(),
+  submittedBy: bigint("submittedBy", { mode: "number", unsigned: true }).notNull(),
+  submittedByName: varchar("submittedByName", { length: 255 }).notNull(),
+  submittedAt: timestamp("submittedAt", { fsp: 3 }).defaultNow().notNull(),
+  requestKey: varchar("requestKey", { length: 36 }).notNull(),
+  requestHash: varchar("requestHash", { length: 64 }).notNull(),
+  reviewedBy: bigint("reviewedBy", { mode: "number", unsigned: true }),
+  reviewedByName: varchar("reviewedByName", { length: 255 }),
+  reviewedAt: timestamp("reviewedAt", { fsp: 3 }),
+  reviewNote: text("reviewNote"),
+  reviewRequestKey: varchar("reviewRequestKey", { length: 36 }),
+  reviewRequestHash: varchar("reviewRequestHash", { length: 64 }),
+  retiredBy: bigint("retiredBy", { mode: "number", unsigned: true }),
+  retiredAt: timestamp("retiredAt", { fsp: 3 }),
+  retirementNote: text("retirementNote"),
+  retirementRequestKey: varchar("retirementRequestKey", { length: 36 }),
+  retirementRequestHash: varchar("retirementRequestHash", { length: 64 }),
+}, table => ({ sampleIdx: index("sample_identity_sample_idx").on(table.sampleId), requestUnique: uniqueIndex("sample_identity_request_unique").on(table.requestKey) }));
+
 // ─── 项目 ───────────────────────────────────────────────────────────────
 export const projects = mysqlTable("projects", {
   id: serial("id").primaryKey(),
@@ -1084,6 +1116,10 @@ export const workflows = mysqlTable("workflows", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
+  /** BioView VisualizationBlueprint JSON; validated by workflowRouter before persistence. */
+  visualizationSpec: longtext("visualizationSpec"),
+  /** Working-copy execution requirements; only a reviewed release is executable. */
+  methodSpec: longtext("methodSpec"),
   scenario: varchar("scenario", { length: 64 }).default("synbio").notNull(),
   status: mysqlEnum("status", ["draft", "active", "completed", "archived"]).default("draft").notNull(),
   projectId: bigint("projectId", { mode: "number", unsigned: true }),
@@ -1164,6 +1200,23 @@ export const workflowEdges = mysqlTable(
 
 export type WorkflowEdge = typeof workflowEdges.$inferSelect;
 
+/** Immutable method contents. Review changes status only, never the submitted payload. */
+export const methodReleases = mysqlTable("method_releases", {
+  id: serial("id").primaryKey(),
+  workflowId: bigint("workflowId", { mode: "number", unsigned: true }).notNull(),
+  version: int("version").notNull(),
+  status: mysqlEnum("status", ["review", "published", "retired"]).default("review").notNull(),
+  snapshot: longtext("snapshot").notNull(),
+  snapshotHash: varchar("snapshotHash", { length: 64 }).notNull(),
+  submittedById: bigint("submittedById", { mode: "number", unsigned: true }).notNull(),
+  submittedByName: varchar("submittedByName", { length: 255 }).notNull(),
+  reviewedById: bigint("reviewedById", { mode: "number", unsigned: true }),
+  reviewedByName: varchar("reviewedByName", { length: 255 }),
+  reviewNote: text("reviewNote"),
+  createdAt: timestamp("createdAt", { fsp: 3 }).defaultNow().notNull(),
+  reviewedAt: timestamp("reviewedAt", { fsp: 3 }),
+}, table => ({ versionUnique: uniqueIndex("method_release_version_unique").on(table.workflowId, table.version) }));
+
 // ─── 实验运行（Workflow Template → immutable Run snapshot）────────────
 /**
  * workflows 保存可复用的流程定义；lab_runs 保存一次具体执行的受控快照。
@@ -1182,7 +1235,7 @@ export const labRuns = mysqlTable(
     snapshotHash: varchar("snapshotHash", { length: 64 }).notNull(),
     projectId: bigint("projectId", { mode: "number", unsigned: true }),
     sampleRequestId: bigint("sampleRequestId", { mode: "number", unsigned: true }),
-    executionMode: mysqlEnum("executionMode", ["simulation", "edge"])
+    executionMode: mysqlEnum("executionMode", ["simulation", "edge", "manual"])
       .default("simulation")
       .notNull(),
     status: mysqlEnum("status", [
@@ -1226,6 +1279,92 @@ export const labRuns = mysqlTable(
 );
 
 export type LabRun = typeof labRuns.$inferSelect;
+
+export const labRunDrafts = mysqlTable("lab_run_drafts", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  workflowId: bigint("workflowId", { mode: "number", unsigned: true }).notNull(),
+  ownerId: bigint("ownerId", { mode: "number", unsigned: true }).notNull(),
+  ownerName: varchar("ownerName", { length: 255 }).notNull(),
+  payload: longtext("payload").notNull(),
+  revision: int("revision").default(1).notNull(),
+  runId: bigint("runId", { mode: "number", unsigned: true }),
+  createdAt: timestamp("createdAt", { fsp: 3 }).defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt", { fsp: 3 }).defaultNow().notNull(),
+}, table => ({ ownerIdx: index("lab_run_draft_owner_idx").on(table.ownerId, table.updatedAt) }));
+
+export const labRunExecution = mysqlTable("lab_run_execution", {
+  runId: bigint("runId", { mode: "number", unsigned: true }).primaryKey(),
+  ownerId: bigint("ownerId", { mode: "number", unsigned: true }).notNull(),
+  ownerName: varchar("ownerName", { length: 255 }).notNull(),
+  paused: boolean("paused").default(false).notNull(),
+  pauseReason: text("pauseReason"),
+  resultState: mysqlEnum("resultState", ["collecting", "review", "changes_requested", "approved"]).default("collecting").notNull(),
+  experimentId: bigint("experimentId", { mode: "number", unsigned: true }),
+  updatedAt: timestamp("updatedAt", { fsp: 3 }).defaultNow().notNull(),
+});
+export const labRunEvents = mysqlTable("lab_run_events", {
+  id: serial("id").primaryKey(),
+  runId: bigint("runId", { mode: "number", unsigned: true }).notNull(),
+  action: varchar("action", { length: 40 }).notNull(),
+  nodeKey: varchar("nodeKey", { length: 64 }),
+  actorId: bigint("actorId", { mode: "number", unsigned: true }).notNull(),
+  actorName: varchar("actorName", { length: 255 }).notNull(),
+  payload: longtext("payload").notNull(),
+  idempotencyKey: varchar("idempotencyKey", { length: 36 }).notNull(),
+  requestHash: varchar("requestHash", { length: 64 }).notNull(),
+  result: text("result").notNull(),
+  createdAt: timestamp("createdAt", { fsp: 3 }).defaultNow().notNull(),
+}, table => ({ requestUnique: uniqueIndex("lab_run_event_request_unique").on(table.runId, table.idempotencyKey) }));
+export const labRunEvidence = mysqlTable("lab_run_evidence", {
+  id: serial("id").primaryKey(),
+  runId: bigint("runId", { mode: "number", unsigned: true }).notNull(),
+  nodeKey: varchar("nodeKey", { length: 64 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  byteSize: int("byteSize").notNull(),
+  sha256: varchar("sha256", { length: 64 }).notNull(),
+  contentBase64: longtext("contentBase64"),
+  storageKey: varchar("storageKey", { length: 128 }),
+  uploadedById: bigint("uploadedById", { mode: "number", unsigned: true }).notNull(),
+  uploadedByName: varchar("uploadedByName", { length: 255 }).notNull(),
+  createdAt: timestamp("createdAt", { fsp: 3 }).defaultNow().notNull(),
+}, table => ({ runIdx: index("lab_run_evidence_run_idx").on(table.runId) }));
+export const labRunResults = mysqlTable("lab_run_results", {
+  id: serial("id").primaryKey(),
+  runId: bigint("runId", { mode: "number", unsigned: true }).notNull(),
+  nodeKey: varchar("nodeKey", { length: 64 }).notNull(),
+  metricKey: varchar("metricKey", { length: 50 }).default("result").notNull(),
+  sampleId: bigint("sampleId", { mode: "number", unsigned: true }).notNull(),
+  outcome: mysqlEnum("outcome", ["pass", "fail"]).notNull(),
+  value: text("value").notNull(),
+  unit: varchar("unit", { length: 50 }).notNull(),
+  evidenceId: bigint("evidenceId", { mode: "number", unsigned: true }).notNull(),
+  supersedesId: bigint("supersedesId", { mode: "number", unsigned: true }),
+  recordedById: bigint("recordedById", { mode: "number", unsigned: true }).notNull(),
+  recordedByName: varchar("recordedByName", { length: 255 }).notNull(),
+  note: text("note").notNull(),
+  createdAt: timestamp("createdAt", { fsp: 3 }).defaultNow().notNull(),
+}, table => ({ runSampleIdx: index("lab_run_result_sample_idx").on(table.runId, table.sampleId) }));
+
+/** Registered physical outputs stay quarantined until independent result review. */
+export const labRunOutputs = mysqlTable("lab_run_outputs", {
+  id: serial("id").primaryKey(),
+  runId: bigint("runId", { mode: "number", unsigned: true }).notNull(),
+  nodeKey: varchar("nodeKey", { length: 64 }).notNull(),
+  sampleId: bigint("sampleId", { mode: "number", unsigned: true }).notNull(),
+  antibodyId: varchar("antibodyId", { length: 100 }).notNull(),
+  chain: varchar("chain", { length: 20 }).notNull(),
+  quantity: decimal("quantity", { precision: 14, scale: 3, mode: "number" }).notNull(),
+  unit: varchar("unit", { length: 20 }).notNull(),
+  parentSampleIds: text("parentSampleIds").notNull(),
+  metadata: longtext("metadata").notNull(),
+  sampleSnapshot: longtext("sampleSnapshot").notNull(),
+  evidenceId: bigint("evidenceId", { mode: "number", unsigned: true }).notNull(),
+  status: mysqlEnum("status", ["pending_review", "released", "voided"]).default("pending_review").notNull(),
+  createdById: bigint("createdById", { mode: "number", unsigned: true }).notNull(),
+  createdByName: varchar("createdByName", { length: 255 }).notNull(),
+  createdAt: timestamp("createdAt", { fsp: 3 }).defaultNow().notNull(),
+  releasedAt: timestamp("releasedAt", { fsp: 3 }),
+}, table => ({ sampleUnique: uniqueIndex("lab_run_output_sample_unique").on(table.sampleId), runIdx: index("lab_run_output_run_idx").on(table.runId) }));
 
 /**
  * Run 状态转换的独立幂等账本。请求键在同一 Run + 动作内永久唯一，
@@ -1370,4 +1509,23 @@ export const cloningLayoutPlans = mysqlTable("cloning_layout_plans", {
   workflowVersion: uniqueIndex("cloning_workflow_version_unique").on(table.workflowId, table.version),
   idempotency: uniqueIndex("cloning_idempotency_unique").on(table.idempotencyKey),
   projectIdx: index("cloning_project_idx").on(table.projectId),
+}));
+
+// Versioned actual-sample layouts; inventory and physical occupancy are recorded by execution.
+export const samplePlatePlans = mysqlTable("sample_plate_plans", {
+  id: serial("id").primaryKey(),
+  workflowId: bigint("workflowId", { mode: "number", unsigned: true }).notNull(),
+  nodeKey: varchar("nodeKey", { length: 64 }),
+  name: varchar("name", { length: 255 }).notNull(),
+  version: int("version").notNull(),
+  stage: varchar("stage", { length: 32 }).notNull(),
+  snapshot: longtext("snapshot").notNull(),
+  snapshotHash: varchar("snapshotHash", { length: 64 }).notNull(),
+  requestHash: varchar("requestHash", { length: 64 }).notNull(),
+  idempotencyKey: varchar("idempotencyKey", { length: 128 }).notNull(),
+  createdById: bigint("createdById", { mode: "number", unsigned: true }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  version: uniqueIndex("sample_plate_workflow_version").on(table.workflowId, table.version),
+  idempotency: uniqueIndex("sample_plate_idempotency").on(table.idempotencyKey),
 }));

@@ -1,3 +1,5 @@
+import { currentReadiness, parseFrozenRunPlan } from "./labRunRouter";
+import { labTaskLabel } from "@contracts/labRun";
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { and, eq, gte, isNotNull, like, lte, lt, sql } from "drizzle-orm";
@@ -12,6 +14,7 @@ import {
   sequences,
   workflows,
   workflowNodes,
+  labRuns, labRunNodes, labRunExecution,
 } from "@db/schema";
 import {
   designGibsonPrimers,
@@ -320,6 +323,20 @@ export const aiRouter = createRouter({
       const db = getDb();
       const msg = input.message;
       const actions: { label: string; url?: string; kind?: string; templateKey?: string; name?: string }[] = [];
+
+      if (input.context?.entityType === "lab_run" && input.context.entityId && /当前|下一|缺|方法|结果|设备|复核|current|next|missing|method|result|instrument|review/i.test(msg)) {
+        const id = input.context.entityId;
+        const [run] = await db.select().from(labRuns).where(eq(labRuns.id, id)).limit(1);
+        if (!run) return { reply: R("当前任务不存在或无法读取。", "This task is unavailable."), actions };
+        const [execution] = await db.select().from(labRunExecution).where(eq(labRunExecution.runId, id)).limit(1);
+        const nodes = await db.select().from(labRunNodes).where(eq(labRunNodes.runId, id));
+        const readiness = await db.transaction(tx => currentReadiness(run, tx, { nodes }));
+        const plan = parseFrozenRunPlan(run);
+        const blockers = readiness.issues.filter(issue => issue.level === "blocking").map(issue => en ? issue.labelEn ?? issue.label : issue.label);
+        const status = en ? (execution?.resultState === "approved" ? "Results approved" : execution?.resultState === "review" ? "Awaiting review" : execution?.paused ? "Paused" : ({ draft: "Draft", preparing: "Preparing", ready: "Ready to start", running: "In progress", completed: "Execution ended", failed: "Needs attention", cancelled: "Cancelled" })[run.status]) : labTaskLabel({ ...run, paused: execution?.paused, resultState: execution?.resultState });
+        const next = run.executionMode === "simulation" ? R("此任务仅用于演练，不产生真实实验结果。", "This is a rehearsal and does not produce experimental results.") : execution?.paused ? R("先核对现场状态并填写恢复说明。", "Reconcile the physical state and record the reason before resuming.") : run.status === "ready" ? R("完成领料及现场准备，在任务页确认开始。", "Complete material issue and preparation, then confirm start on the task page.") : execution?.resultState === "review" ? R("由另一位复核人阅读结果、原始文件及 ELN 后签署。", "An independent reviewer must read the results, raw files and ELN before signing.") : run.status === "completed" && execution?.resultState !== "approved" ? R("补齐逐样本结果与原始文件，再提交复核。", "Complete the sample results and raw-file links, then submit for review.") : run.status === "running" ? R("按完成标准执行当前步骤，并记录证据。", "Follow the completion criteria for the current steps and record evidence.") : R("打开任务查看完整记录。", "Open the task to read the complete record.");
+        return { reply: [`${run.runNo} · ${status}`, plan?.method ? R(`方法版本 V${plan.method.version}`, `Method V${plan.method.version}`) : "", next, ...nodes.filter(node => node.status === "running").map(node => `• ${node.label}`), ...blockers.map(reason => `• ${reason}`), R("以上来自当前任务记录；现场动作仍需操作人员核对确认。", "This summary uses current task records. Physical actions require operator verification.")].filter(Boolean).join("\n"), actions: [{ label: R("查看任务与证据", "View task and evidence"), url: `/runs/${id}` }, ...(run.sampleRequestId && run.status === "ready" ? [{ label: R("核对领料", "Review material issue"), url: `/sample-requests/${run.sampleRequestId}` }] : [])] };
+      }
 
       // ── 效期/过期查询 ──
       if (/过期|临期|效期|到期|expir|due soon/i.test(msg)) {

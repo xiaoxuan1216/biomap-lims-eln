@@ -13,6 +13,8 @@ import {
   inventoryReservations,
   projects,
   samples,
+  labRunOutputs,
+  sampleIdentities,
   stockTransactions,
   storageLocations,
   serviceProviders,
@@ -290,6 +292,11 @@ export const sampleRouter = createRouter({
           .limit(1)
           .for("update");
         if (!before) throw new TRPCError({ code: "NOT_FOUND", message: "样本不存在" });
+        const [output] = await tx.select().from(labRunOutputs).where(eq(labRunOutputs.sampleId, id)).limit(1);
+        if (output && output.status !== "released") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "待复核产物请在实验任务中作废后重新登记，不能直接修改" });
+        if (output && ["type", "unit"].some(key => key in data && data[key as keyof typeof data] !== before[key as keyof typeof before])) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "已放行实验产物不能修改类型或计量单位" });
+        const [identity] = await tx.select().from(sampleIdentities).where(and(eq(sampleIdentities.sampleId, id), eq(sampleIdentities.status, "approved"))).limit(1);
+        if (identity && ["type", "unit"].some(key => key in data && data[key as keyof typeof data] !== before[key as keyof typeof before])) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "已确认来样不能直接修改类型或计量单位，请先处理身份确认记录" });
         await tx.update(samples).set(data).where(eq(samples.id, id));
         await appendActivity(tx, {
           userId: ctx.user.id,

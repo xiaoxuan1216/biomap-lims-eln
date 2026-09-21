@@ -145,7 +145,7 @@ const RUN_STATUS_LABELS: Record<string, string> = {
 
 const NODE_STATUS_LABELS: Record<string, string> = {
   pending: "待执行",
-  running: "模拟执行中",
+  running: "运行中",
   completed: "已完成",
   skipped: "已跳过",
   failed: "异常",
@@ -178,10 +178,22 @@ const SOURCE_LABELS: Record<string, string> = {
   sample_lineage: "样本谱系记录",
   lab_run_node: "运行节点记录",
   equipment_booking: "设备预约记录",
+  lab_run_output: "实验产物登记",
+  lab_run_result: "样本结果记录",
+  raw_file: "原始文件",
+  eln: "实验记录",
   none: "待接入",
 };
 
 const FACT_STATUS_LABELS: Record<string, string> = {
+  pass: "合格",
+  fail: "异常",
+  review: "结果待复核",
+  released: "已释放",
+  pending_review: "待复核，未入可用库存",
+  collecting: "结果收集中",
+  changes_requested: "结果已退回处理",
+  approved: "结果已确认并签署",
   locked: "已锁定",
   integrity_failed: "完整性校验失败",
   snapshot_only: "仅快照",
@@ -401,7 +413,7 @@ function EvidenceList({ evidence }: { evidence: readonly RunDataFlowEvidence[] }
             {item.immutable ? <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-teal-600" /> : <CircleDashed className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
           </div>
           <div className="mt-1 break-all font-mono text-[9px] text-slate-400">{t(SOURCE_LABELS[item.source] ?? item.source)} · {item.ref}</div>
-          {item.status ? <Badge variant="outline" className={cn("mt-2 text-[9px]", statusTone(item.status))}>{t(FACT_STATUS_LABELS[item.status] ?? item.status)}</Badge> : null}
+          {item.status ? <Badge variant="outline" className={cn("mt-2 text-[9px]", statusTone(item.status))}>{t(item.source === "lab_run_output" && item.status === "released" ? "已复核入库" : FACT_STATUS_LABELS[item.status] ?? item.status)}</Badge> : null}
         </div>
       ))}
     </div>
@@ -428,9 +440,11 @@ export function RunDataFlow({ run, dataFlow: dataFlowOverride, className }: RunD
   const progress = runNodes.length ? Math.round((completedNodes / runNodes.length) * 100) : 0;
   const isSimulation = run.executionMode === "simulation";
   const isEdge = run.executionMode === "edge";
+  const isManual = run.executionMode === "manual";
   const nodeStatusText = (status?: string | null) => t(
     isSimulation && status === "completed"
       ? "模拟已推进"
+      : isSimulation && status === "running" ? "模拟执行中"
       : NODE_STATUS_LABELS[status ?? ""] ?? status ?? "待执行",
   );
 
@@ -455,6 +469,12 @@ export function RunDataFlow({ run, dataFlow: dataFlowOverride, className }: RunD
   const materialLineageNodes = flowNodesByPhase("materials").filter((node) => node.kind === "lineage");
   const resultNodes = flowNodesByPhase("results");
   const resultRecorded = resultNodes.length > 0 && dataFlow?.resultState?.status !== "not_recorded";
+  const resultStatus = resultRecorded ? FACT_STATUS_LABELS[dataFlow?.resultState?.status ?? ""] ?? "结果已记录" : "尚未生成结果包";
+  const outputNodes = resultNodes.filter((node) => node.source === "lab_run_output");
+  const releasedOutputs = outputNodes.filter((node) => node.status === "released").length;
+  const outputStockStatus = isSimulation ? t("模拟快照，不占用真实库存")
+    : outputNodes.length ? t("{released} 份已复核入库，{pending} 份待复核", { released: releasedOutputs, pending: outputNodes.length - releasedOutputs })
+    : t("未登记新产物");
   const stageStatus: Record<StageKey, string> = {
     context: run.purpose || run.projectName ? "上下文已记录" : "待补充",
     materials: resources.length ? "资源快照已冻结" : "待补充",
@@ -462,14 +482,14 @@ export function RunDataFlow({ run, dataFlow: dataFlowOverride, className }: RunD
     execution: isSimulation && run.status === "completed"
       ? "模拟状态推进完成"
       : RUN_STATUS_LABELS[run.status ?? ""] ?? run.status ?? "待执行",
-    results: resultRecorded ? "结果已记录" : "结果待接入",
+    results: resultRecorded ? resultStatus : "结果待接入",
   };
   const stageToneStatus: Record<StageKey, string> = {
     context: run.purpose || run.projectName ? "recorded" : "not_recorded",
     materials: resources.length ? "frozen" : "not_recorded",
     plan: run.integrityValid === false ? "invalid" : run.integrityValid ? "verified" : "frozen",
     execution: run.status ?? "pending",
-    results: resultRecorded ? "recorded" : "not_recorded",
+    results: resultRecorded ? dataFlow?.resultState?.status ?? "recorded" : "not_recorded",
   };
 
   const snapshot = asRecord(run.workflowSnapshot);
@@ -529,7 +549,7 @@ export function RunDataFlow({ run, dataFlow: dataFlowOverride, className }: RunD
           [t("设备"), node.equipmentName || textValue(equipmentSnapshot.name) || t("未绑定设备")],
           [t("型号"), node.equipmentModel || textValue(equipmentSnapshot.model) || "—"],
           [t("驱动"), node.driverKey ? `${node.driverKey}@${node.driverVersion ?? "—"}` : t("未绑定驱动"), true],
-          [t("执行通道"), node.driverMode ? t(node.driverMode === "simulation" ? "模拟运行" : "现场执行") : "—"],
+          [t("执行通道"), isManual ? t("人工执行") : node.driverMode ? t(node.driverMode === "simulation" ? "模拟运行" : "现场执行") : "—"],
           [t("方法文件"), textValue(parameterSnapshot.methodRef) || "—"],
         ] as Array<[string, ReactNode, boolean?]>,
         parameters: parameters.map(([key, value]) => ({ key, value: String(value), unit: textValue(units[key]) })),
@@ -542,12 +562,12 @@ export function RunDataFlow({ run, dataFlow: dataFlowOverride, className }: RunD
       return {
         eyebrow: t("谱系对象"),
         title: node.title,
-        status: t(FACT_STATUS_LABELS[node.status] ?? node.status),
+        status: t(node.source === "lab_run_output" && node.status === "released" ? "已复核入库" : FACT_STATUS_LABELS[node.status] ?? node.status),
         icon: node.kind === "lineage" ? RotateCcw : Database,
         rows: [
           [t("对象标识"), node.id, true],
           [t("对象类型"), t(node.kind)],
-          [t("来源"), node.source, true],
+          [t("来源"), t(SOURCE_LABELS[node.source] ?? node.source)],
           [t("说明"), node.subtitle || "—"],
         ] as Array<[string, ReactNode, boolean?]>,
         evidence: node.evidence,
@@ -576,7 +596,7 @@ export function RunDataFlow({ run, dataFlow: dataFlowOverride, className }: RunD
         [t("实验样本"), t("{n} 项", { n: sampleCount })],
         [t("物料与对照"), t("{n} 项", { n: materialCount })],
         [t("资源总数"), t("{n} 项", { n: resources.length })],
-        [t("库存影响"), t(isSimulation ? "模拟快照，不占用真实库存" : isEdge ? "以样本请求与库存流水为准" : "执行模式待确认，不能判断库存占用")],
+        [t("库存影响"), t(isSimulation ? "模拟快照，不占用真实库存" : isEdge || isManual ? "以样本请求与库存流水为准" : "执行模式待确认，不能判断库存占用")],
       ] as Array<[string, ReactNode, boolean?]>,
     };
     if (stage === "plan") return {
@@ -602,7 +622,7 @@ export function RunDataFlow({ run, dataFlow: dataFlowOverride, className }: RunD
         [t("设备节点"), t("{n} 个节点", { n: equipmentNodes.length })],
         [t("开始时间"), formatDate(run.startedAt, lang)],
         [t("完成时间"), formatDate(run.completedAt, lang)],
-        [t("执行事实"), t(isSimulation ? "仅记录模拟状态推进" : isEdge ? "以 Edge 回执与审计记录为准" : "未记录执行模式，需检查原始 Run 记录")],
+        [t("执行事实"), t(isSimulation ? "仅记录模拟状态推进" : isManual ? "以人工操作记录、原始文件与复核记录为准" : isEdge ? "以 Edge 回执与审计记录为准" : "未记录执行模式，需检查原始 Run 记录")],
       ] as Array<[string, ReactNode, boolean?]>,
     };
     return {
@@ -610,10 +630,10 @@ export function RunDataFlow({ run, dataFlow: dataFlowOverride, className }: RunD
       eyebrow: t("阶段详情"),
       title: t("结果与回库"),
       rows: [
-        [t("结果状态"), t(resultRecorded ? "结果已记录" : "尚未生成结果包")],
+        [t("结果状态"), t(resultStatus)],
         [t("结果对象"), t("{n} 项", { n: resultNodes.length })],
-        [t("回库状态"), t("待接入正式结果与回库记录")],
-        [t("事实边界"), t(isSimulation ? "模拟节点完成不代表已产生实验结果" : isEdge ? "只有受控写回记录可作为结果证据" : "未记录执行模式；只有受控写回记录可作为结果证据")],
+        [t("回库状态"), outputStockStatus],
+        [t("事实边界"), t(isSimulation ? "模拟节点完成不代表已产生实验结果" : isManual ? "以人工操作记录、原始文件与复核记录为准" : isEdge ? "只有受控写回记录可作为结果证据" : "未记录执行模式；只有受控写回记录可作为结果证据")],
       ] as Array<[string, ReactNode, boolean?]>,
     };
   })();
@@ -628,13 +648,13 @@ export function RunDataFlow({ run, dataFlow: dataFlowOverride, className }: RunD
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           <Badge className={cn("border", isSimulation ? "border-blue-400/40 bg-blue-400/15 text-blue-200" : "border-teal-400/40 bg-teal-400/15 text-teal-200")}>
-            {t(isSimulation ? "模拟链路" : isEdge ? "现场执行链路" : "执行模式待确认")}
+            {t(isSimulation ? "模拟链路" : isManual ? "人工执行链路" : isEdge ? "现场执行链路" : "执行模式待确认")}
           </Badge>
           <Badge className="border border-white/20 bg-white/10 text-slate-200">{run.runNo || run.id}</Badge>
         </div>
       </div>
 
-      {isSimulation || !isEdge ? (
+      {isSimulation || (!isEdge && !isManual) ? (
         <div className="flex items-start gap-2 border-b border-blue-100 bg-blue-50 px-5 py-3 text-xs leading-5 text-blue-800">
           <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{t(isSimulation ? "当前仅展示受控模拟的计划快照与状态推进，不代表真机已执行，也不代表已产生实验结果。" : "当前运行未记录执行模式，不能据此判断真机执行或实验结果。")}</span>
@@ -694,7 +714,7 @@ export function RunDataFlow({ run, dataFlow: dataFlowOverride, className }: RunD
               </StageColumn>
 
               <StageColumn stage={STAGES[4]} status={stageStatus.results} toneStatus={stageToneStatus.results} selected={selectedKey === "stage:results"} evidenceCount={stageEvidence("results").length} isLast onSelect={() => setSelection({ kind: "stage", id: "results" })}>
-                {resultNodes.map((node) => <MosaicTile key={node.id} title={node.title} subtitle={node.subtitle} meta={t(FACT_STATUS_LABELS[node.status] ?? node.status)} icon={node.kind === "lineage" ? RotateCcw : Database} selected={selectedKey === `lineage:${node.id}`} onClick={() => setSelection({ kind: "lineage", id: node.id })} />)}
+                {resultNodes.map((node) => <MosaicTile key={node.id} title={node.title} subtitle={node.subtitle} meta={t(node.source === "lab_run_output" && node.status === "released" ? "已复核入库" : FACT_STATUS_LABELS[node.status] ?? node.status)} icon={node.kind === "lineage" ? RotateCcw : Database} selected={selectedKey === `lineage:${node.id}`} onClick={() => setSelection({ kind: "lineage", id: node.id })} />)}
                 {resultNodes.length === 0 ? (
                   <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-emerald-200 bg-white/60 p-4 text-center">
                     <PackageCheck className="h-7 w-7 text-emerald-300" />

@@ -116,6 +116,7 @@ function PlannerWorkspace({ record, workflow, nodeKey: focusNodeKey, onVersionSe
         </div>
         <div className="flex flex-wrap items-center gap-2"><Badge variant="secondary">{t("虚拟来源 · 规划草稿")}</Badge>
           {phase && <Button variant="outline" size="sm" onClick={() => workspaceRef.current?.querySelector(`[data-phase="${phase}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" })}>{t("定位节点孔板")}</Button>}
+          {layoutUnchanged && record ? <Button variant="outline" size="sm" asChild><Link to={`/workflows/${workflowId}/cloning-qc?planId=${record.id}&stage=F&workspace=configuration`}>{t("逐孔 QC")}</Link></Button> : <span className="text-xs text-muted-foreground">{t("保存排板后可查看逐孔 QC")}</span>}
           <Button variant="outline" size="sm" onClick={onShowGraph}>{t("查看流程图")}</Button>
           <Button variant="outline" size="sm" onClick={() => downloadFile(`cloning-${config.samples}.json`, JSON.stringify({ association: { workflowId, nodeKey, projectId: workflow.projectId, savedPlanId: unchanged ? record?.id : null, version: unchanged ? record?.version : null }, plan }, null, 2), "application/json")}><Download className="mr-1 h-4 w-4" />JSON</Button>
         </div>

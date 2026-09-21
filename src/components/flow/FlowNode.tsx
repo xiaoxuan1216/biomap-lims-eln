@@ -32,6 +32,7 @@ export type FlowNodeData = {
   config?: string | null;
   params?: NodeParams | null;
   status: FlowNodeStatus;
+  definitionOnly?: boolean;
   dbId?: number;
   /** 子流程挂接：存在时节点可下钻到物理执行层子 DAG */
   childWorkflowId?: number | null;
@@ -84,13 +85,13 @@ export default function FlowNode({ data, selected }: NodeProps<RFNode>) {
         <span className="text-[11px] font-semibold" style={{ color: meta.color }}>
           {t(meta.label)}
         </span>
-        <span className="ml-auto flex items-center gap-1 text-[10px] text-slate-500">
+        {!data.definitionOnly && <span className="ml-auto flex items-center gap-1 text-[10px] text-slate-500">
           <span
             className={`h-2 w-2 rounded-full ${data.status === "in_progress" ? "animate-pulse" : ""}`}
             style={{ background: st.color }}
           />
           {t(st.label)}
-        </span>
+        </span>}
       </div>
       {/* 主体 */}
       <div className="px-3 py-2.5">

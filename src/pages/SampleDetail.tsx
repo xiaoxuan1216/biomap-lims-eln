@@ -1,4 +1,5 @@
 import { useState } from "react";
+import SampleIdentity from "@/components/lab-run/SampleIdentity";
 import { trpc } from "@/providers/trpc";
 import { useParams, useNavigate, Link } from "react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -153,6 +154,7 @@ export default function SampleDetail() {
         </div>
       </div>
 
+      {["plasmid", "protein", "antibody"].includes(sample.type) && <SampleIdentity sampleId={sampleId} sampleType={sample.type}/>}
       <div className="grid lg:grid-cols-3 gap-6 items-start">
         {/* 左：信息 */}
         <Card className="lg:col-span-1">

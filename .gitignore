@@ -12,6 +12,9 @@ media_demo/
 tmp/
 docs/customer-sop-feishu/
 verifier/runs/
+# Machine-specific QA fixture IDs and readback outputs are generated locally.
+verifier/v*/*.json
+.data/
 
 # Local databases, backups, and private keys must never be shared with source.
 *.sqlite

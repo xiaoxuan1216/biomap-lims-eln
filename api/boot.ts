@@ -9,6 +9,7 @@ import { env } from "./lib/env";
 import { migrateDatabase } from "./queries/migrate";
 import { v1App } from "./v1";
 import { isTrustedOrigin } from "./security/origin";
+import { runFilesApp } from "./runFiles";
 
 const app = new Hono<{ Bindings: HttpBindings }>();
 
@@ -17,10 +18,16 @@ app.use(secureHeaders({
   referrerPolicy: "strict-origin-when-cross-origin",
   permissionsPolicy: { camera: false, microphone: false, geolocation: false },
 }));
-app.use(bodyLimit({ maxSize: 5 * 1024 * 1024 }));
+const standardBodyLimit = bodyLimit({ maxSize: 5 * 1024 * 1024 });
+app.use(async (c, next) => {
+  // Binary uploads enforce their own streaming limit after authentication.
+  if (c.req.method === "POST" && c.req.path === "/api/run-files/upload") return next();
+  return standardBodyLimit(c, next);
+});
 app.get("/healthz", (c) => c.json({ ok: true }));
 /* 开放 REST API（Bearer Token 鉴权，供外部系统与 AI Agent 调用） */
 app.route("/api/v1", v1App);
+app.route("/api/run-files", runFilesApp);
 app.use("/api/trpc/*", async (c) => {
   if (c.req.method !== "GET" && !isTrustedOrigin(c.req.raw, env.publicBaseUrl)) {
     return c.json({ error: "Forbidden", message: "请求来源校验失败" }, 403);

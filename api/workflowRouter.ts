@@ -1,16 +1,26 @@
+import { antibodyMethodDraft } from "@contracts/antibodyMethods";
+import { methodStageSchema } from "@contracts/methodOutputs";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { and, asc, eq, inArray } from "drizzle-orm";
-import { adminQuery, authedQuery, createRouter, writeQuery } from "./middleware";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { adminQuery, authedQuery, createRouter, reviewerQuery, writeQuery } from "./middleware";
+import { methodSpecSchema, parseMethodSpec } from "@contracts/method";
+import { compileMethod, methodHash, workflowGraphHash } from "./services/methodService";
 import { getDb } from "./queries/connection";
 import {
+  cloningLayoutPlans,
+  experiments,
   externalOrderItems,
   externalOrders,
   driverReleases,
   equipmentDriverBindings,
+  labRunDrafts,
+  labRuns,
   projects,
+  samplePlatePlans,
   serviceProviders,
   workflows,
+  methodReleases,
   workflowEdges,
   workflowNodes,
 } from "@db/schema";
@@ -23,6 +33,10 @@ import {
   validateDriverActionForBinding,
   validateDriverValues,
 } from "@contracts/deviceDriver";
+import {
+  bioViewVisualizationSpecSchema,
+  parseBioViewVisualizationSpec,
+} from "@contracts/bioView";
 import { en } from "@/i18n/en";
 
 /** 实例化模板时的英文翻译：优先 en 词典，其次人名映射，未命中保留原文 */
@@ -48,6 +62,21 @@ function trParams(params: Record<string, string | number | boolean> | undefined,
 
 const NODE_TYPES = ["manual", "equipment", "decision", "data", "timer", "external"] as const;
 const NODE_STATUS = ["pending", "in_progress", "done", "skipped"] as const;
+
+export type WorkflowRemovalReferences = {
+  cloningLayoutPlans: number;
+  experiments: number;
+  methodReleases: number;
+  labRuns: number;
+  labRunDrafts: number;
+  samplePlatePlans: number;
+};
+
+export function workflowRemovalDisposition(
+  references: WorkflowRemovalReferences,
+): "archive" | "delete" {
+  return Object.values(references).some((count) => count > 0) ? "archive" : "delete";
+}
 
 const nodeInput = z.object({
   nodeKey: z.string().min(1).max(64),
@@ -129,16 +158,79 @@ export async function instantiateTemplate(workflowId: number, templateKey: strin
 }
 
 export const workflowRouter = createRouter({
+  createAntibodyMethod: writeQuery.input(z.object({ stage: methodStageSchema, projectId: z.number().int().positive().optional(), lang: z.enum(["zh", "en"]).default("zh") })).mutation(async ({ ctx, input }) => getDb().transaction(async tx => {
+    const draft = antibodyMethodDraft(input.stage, input.lang);
+    const [workflow] = await tx.insert(workflows).values({ name: draft.name, description: draft.description, projectId: input.projectId, scenario: "antibody", status: "draft", methodSpec: JSON.stringify(draft.spec), createdByName: ctx.user.name }).$returningId();
+    await tx.insert(workflowNodes).values(draft.nodes.map(node => ({ ...node, workflowId: workflow.id })));
+    await tx.insert(workflowEdges).values(draft.edges.map(edge => ({ ...edge, workflowId: workflow.id })));
+    await appendActivity(tx, { userId: ctx.user.id, userName: ctx.user.name, action: "创建抗体阶段方法草稿", entityType: "workflow", entityId: workflow.id, entityName: draft.name });
+    return { id: workflow.id };
+  })),
+  releases: authedQuery.input(z.object({ workflowId: z.number().int().positive() })).query(async ({ input }) => {
+    return getDb().select().from(methodReleases).where(eq(methodReleases.workflowId, input.workflowId)).orderBy(desc(methodReleases.version));
+  }),
+  saveMethodSpec: writeQuery.input(z.object({ workflowId: z.number().int().positive(), expectedSpecHash: z.string().length(64), expectedGraphHash: z.string().length(64), spec: methodSpecSchema })).mutation(async ({ ctx, input }) => {
+    return getDb().transaction(async tx => {
+      const [wf] = await tx.select().from(workflows).where(eq(workflows.id, input.workflowId)).limit(1).for("update");
+      if (!wf) throw new TRPCError({ code: "NOT_FOUND", message: "方法不存在" });
+      const nodes = await tx.select().from(workflowNodes).where(eq(workflowNodes.workflowId, wf.id));
+      const edges = await tx.select().from(workflowEdges).where(eq(workflowEdges.workflowId, wf.id));
+      if (workflowGraphHash(wf, nodes, edges) !== input.expectedGraphHash) throw new TRPCError({ code: "CONFLICT", message: "方法步骤已在其他窗口更新，请刷新并核对执行要求后再保存" });
+      const currentHash = methodHash(JSON.stringify(parseMethodSpec(wf.methodSpec)));
+      const methodSpecHash = methodHash(JSON.stringify(input.spec));
+      if (currentHash === methodSpecHash) return { ok: true, methodSpecHash, replayed: true };
+      if (currentHash !== input.expectedSpecHash) throw new TRPCError({ code: "CONFLICT", message: "执行要求已在其他窗口更新，请核对最新版本后再保存" });
+      await tx.update(workflows).set({ methodSpec: JSON.stringify(input.spec), updatedAt: new Date() }).where(eq(workflows.id, wf.id));
+      await appendActivity(tx, { userId: ctx.user.id, userName: ctx.user.name ?? "用户", action: "更新了方法执行要求", entityType: "workflow", entityId: wf.id, entityName: wf.name });
+      return { ok: true, methodSpecHash, replayed: false };
+    });
+  }),
+  submitMethod: writeQuery.input(z.object({ workflowId: z.number().int().positive(), expectedSpecHash: z.string().length(64), expectedGraphHash: z.string().length(64) })).mutation(async ({ ctx, input }) => {
+    return getDb().transaction(async tx => {
+      const [wf] = await tx.select().from(workflows).where(eq(workflows.id, input.workflowId)).limit(1).for("update");
+      if (!wf) throw new TRPCError({ code: "NOT_FOUND", message: "方法不存在" });
+      const nodes = await tx.select().from(workflowNodes).where(eq(workflowNodes.workflowId, wf.id));
+      const edges = await tx.select().from(workflowEdges).where(eq(workflowEdges.workflowId, wf.id));
+      if (methodHash(JSON.stringify(parseMethodSpec(wf.methodSpec))) !== input.expectedSpecHash || workflowGraphHash(wf, nodes, edges) !== input.expectedGraphHash) throw new TRPCError({ code: "CONFLICT", message: "方法已在其他窗口更新，请核对最新要求后再提交复核" });
+      const snapshot = await compileMethod(tx, input.workflowId);
+      const [latest] = await tx.select().from(methodReleases).where(eq(methodReleases.workflowId, input.workflowId)).orderBy(desc(methodReleases.version)).limit(1);
+      const raw = JSON.stringify(snapshot);
+      const hash = methodHash(raw);
+      if (latest?.snapshotHash === hash && latest.status !== "retired") return { id: latest.id, version: latest.version };
+      const version = (latest?.version ?? 0) + 1;
+      const [row] = await tx.insert(methodReleases).values({ workflowId: input.workflowId, version, snapshot: raw, snapshotHash: hash, submittedById: ctx.user.id, submittedByName: ctx.user.name ?? "用户" }).$returningId();
+      await appendActivity(tx, { userId: ctx.user.id, userName: ctx.user.name ?? "用户", action: "提交了方法版本复核", entityType: "workflow", entityId: input.workflowId, entityName: snapshot.workflow.name, detail: `V${version}` });
+      return { id: row.id, version };
+    });
+  }),
+  reviewMethod: reviewerQuery.input(z.object({ id: z.number().int().positive(), decision: z.enum(["publish", "retire"]), note: z.string().trim().min(1).max(2000) })).mutation(async ({ ctx, input }) => {
+    return getDb().transaction(async tx => {
+      const [release] = await tx.select().from(methodReleases).where(eq(methodReleases.id, input.id)).limit(1).for("update");
+      if (!release) throw new TRPCError({ code: "NOT_FOUND", message: "方法版本不存在" });
+      if (input.decision === "publish" && release.status !== "review") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "仅待复核版本可以发布" });
+      if (input.decision === "publish" && release.submittedById === ctx.user.id && ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "请由另一位复核人发布；管理员例外须写明依据" });
+      if (methodHash(release.snapshot) !== release.snapshotHash) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "方法版本完整性检查失败" });
+      await tx.update(methodReleases).set({ status: input.decision === "publish" ? "published" : "retired", reviewedById: ctx.user.id, reviewedByName: ctx.user.name, reviewNote: input.note, reviewedAt: new Date() }).where(eq(methodReleases.id, release.id));
+      await appendActivity(tx, { userId: ctx.user.id, userName: ctx.user.name ?? "用户", action: input.decision === "publish" ? "发布了方法版本" : "停用了方法版本", entityType: "workflow", entityId: release.workflowId, entityName: `V${release.version}`, detail: input.note });
+      return { ok: true };
+    });
+  }),
   /** 业务流列表（含节点统计） */
   list: authedQuery.query(async () => {
     const db = getDb();
     const wfs = await db.select().from(workflows).orderBy(asc(workflows.id));
     const allNodes = await db.select().from(workflowNodes);
+    const releases = await db.select({ id: methodReleases.id, workflowId: methodReleases.workflowId, version: methodReleases.version, status: methodReleases.status, snapshot: methodReleases.snapshot }).from(methodReleases).orderBy(desc(methodReleases.version));
     return wfs.map((w) => {
       const ns = allNodes.filter((n) => n.workflowId === w.id);
       const active = ns.filter((n) => n.status !== "skipped");
+      const published = w.status === "archived" ? undefined : releases.find(r => r.workflowId === w.id && r.status === "published");
       return {
         ...w,
+        publishedRelease: published ? { id: published.id, workflowId: published.workflowId, version: published.version, status: published.status, stage: (JSON.parse(published.snapshot) as { spec: { stage?: string } }).spec.stage ?? null } : null,
+        stage: parseMethodSpec(w.methodSpec).stage,
+        methodState: w.status === "archived" ? "retired" : releases.find(r => r.workflowId === w.id)?.status ?? "draft",
+        visualizationSpec: parseBioViewVisualizationSpec(w.visualizationSpec),
         nodeCount: ns.length,
         doneCount: active.filter((n) => n.status === "done").length,
         activeCount: active.length,
@@ -208,6 +300,10 @@ export const workflowRouter = createRouter({
     }
     return {
       ...wf,
+      graphHash: workflowGraphHash(wf, nodes, edges),
+      methodSpec: parseMethodSpec(wf.methodSpec),
+      methodSpecHash: methodHash(JSON.stringify(parseMethodSpec(wf.methodSpec))),
+      visualizationSpec: parseBioViewVisualizationSpec(wf.visualizationSpec),
       projectName,
       nodes: nodes.map((node) => ({
         ...node,
@@ -374,10 +470,84 @@ export const workflowRouter = createRouter({
       return { ok: true };
     }),
 
+  /** Save the governed BioView blueprint independently from graph topology. */
+  saveVisualizationSpec: writeQuery
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        expectedGraphHash: z.string().length(64),
+        visualizationSpec: bioViewVisualizationSpecSchema.nullable(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return getDb().transaction(async (tx) => {
+        const [workflow] = await tx
+          .select()
+          .from(workflows)
+          .where(eq(workflows.id, input.id))
+          .limit(1)
+          .for("update");
+        if (!workflow) throw new TRPCError({ code: "NOT_FOUND", message: "业务流不存在" });
+
+        const nodes = await tx
+          .select()
+          .from(workflowNodes)
+          .where(eq(workflowNodes.workflowId, input.id));
+        const edges = await tx
+          .select()
+          .from(workflowEdges)
+          .where(eq(workflowEdges.workflowId, input.id));
+        if (workflowGraphHash(workflow, nodes, edges) !== input.expectedGraphHash) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "方法已在其他窗口更新，请刷新后再保存实验视图",
+          });
+        }
+        const nodeKeys = new Set(nodes.map((node) => node.nodeKey));
+        const unknownBinding = input.visualizationSpec?.semanticBindings.find(
+          (binding) => !nodeKeys.has(binding.nodeKey),
+        );
+        if (unknownBinding) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `BioView 语义绑定指向了未知节点：${unknownBinding.nodeKey}`,
+          });
+        }
+
+        const rawSpec = input.visualizationSpec ? JSON.stringify(input.visualizationSpec) : null;
+        const updatedAt = new Date();
+        await tx
+          .update(workflows)
+          .set({ visualizationSpec: rawSpec, updatedAt })
+          .where(eq(workflows.id, input.id));
+        await appendActivity(tx, {
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? "未知用户",
+          action: input.visualizationSpec ? "更新了 BioView 视图配置" : "恢复了 BioView 默认视图",
+          entityType: "workflow",
+          entityId: input.id,
+          entityName: workflow.name,
+          detail: input.visualizationSpec
+            ? `${input.visualizationSpec.domainPack} · ${input.visualizationSpec.views.length} 个受控视图`
+            : "运行实例将使用通用降级视图",
+        });
+        return {
+          ok: true,
+          visualizationSpec: input.visualizationSpec,
+          graphHash: workflowGraphHash(
+            { ...workflow, visualizationSpec: rawSpec, updatedAt },
+            nodes,
+            edges,
+          ),
+        };
+      });
+    }),
+
   /** 保存整张图（节点 + 边，全量替换；含 DAG 环校验，保留节点执行状态） */
   saveGraph: writeQuery
     .input(z.object({
       id: z.number(),
+      expectedGraphHash: z.string().length(64).optional(),
       name: z.string().min(1).max(255).optional(),
       description: z.string().nullish(),
       status: z.enum(["draft", "active", "completed", "archived"]).optional(),
@@ -412,7 +582,17 @@ export const workflowRouter = createRouter({
           .select()
           .from(workflowNodes)
           .where(eq(workflowNodes.workflowId, input.id));
+        const hashEdges = await tx.select().from(workflowEdges).where(eq(workflowEdges.workflowId, input.id));
+        if (input.expectedGraphHash && input.expectedGraphHash !== workflowGraphHash(wf, existingNodes, hashEdges)) throw new TRPCError({ code: "CONFLICT", message: "方法已在其他窗口修改。请先保留本地草稿，再重新载入核对" });
         const nodesByKey = new Map(existingNodes.map((node) => [node.nodeKey, node]));
+        const currentVisualizationSpec = parseBioViewVisualizationSpec(wf.visualizationSpec);
+        const retainedSemanticBindings = currentVisualizationSpec?.semanticBindings.filter(
+          (binding) => keys.includes(binding.nodeKey),
+        );
+        const prunedVisualizationSpec = currentVisualizationSpec && retainedSemanticBindings &&
+          retainedSemanticBindings.length !== currentVisualizationSpec.semanticBindings.length
+          ? { ...currentVisualizationSpec, semanticBindings: retainedSemanticBindings }
+          : null;
         const removedNodes = existingNodes.filter((node) => !keys.includes(node.nodeKey));
         const linkedRemovedNode = removedNodes.find((node) => node.childWorkflowId);
         if (linkedRemovedNode) {
@@ -604,6 +784,9 @@ export const workflowRouter = createRouter({
             ...(input.description !== undefined ? { description: input.description } : {}),
             ...(input.status !== undefined ? { status: input.status } : {}),
             ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+            ...(prunedVisualizationSpec
+              ? { visualizationSpec: JSON.stringify(prunedVisualizationSpec) }
+              : {}),
             updatedAt: new Date(),
           })
           .where(eq(workflows.id, input.id));
@@ -616,7 +799,10 @@ export const workflowRouter = createRouter({
           entityName: input.name ?? wf.name,
           detail: `${input.nodes.length} 个节点 · ${input.edges.length} 条连线`,
         });
-        return { ok: true };
+        const [savedWorkflow] = await tx.select().from(workflows).where(eq(workflows.id, input.id));
+        const savedNodes = await tx.select().from(workflowNodes).where(eq(workflowNodes.workflowId, input.id));
+        const savedEdges = await tx.select().from(workflowEdges).where(eq(workflowEdges.workflowId, input.id));
+        return { ok: true, graphHash: workflowGraphHash(savedWorkflow, savedNodes, savedEdges) };
       });
     }),
 
@@ -640,22 +826,112 @@ export const workflowRouter = createRouter({
       return { ok: true };
     }),
 
-  /** 删除业务流（级联删除其下所有子流程，并解除父节点挂接） */
-  remove: adminQuery.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
-    const db = getDb();
-    const deleteTree = async (wfId: number) => {
-      const children = (await db.select().from(workflows)).filter((w) => w.parentWorkflowId === wfId);
-      for (const c of children) await deleteTree(c.id);
-      // 解除父节点上的挂接
-      const wf = await db.query.workflows.findFirst({ where: eq(workflows.id, wfId) });
-      if (wf?.parentNodeId) {
-        await db.update(workflowNodes).set({ childWorkflowId: null }).where(eq(workflowNodes.id, wf.parentNodeId));
+  /**
+   * 移除业务流。已被方法版本、ELN 记录、实验运行、实验草稿或排板方案引用的流程只能归档；
+   * 整棵子流程一起归档，以保留运行来源与父子流程链接。仅完全无历史引用时物理删除。
+   */
+  remove: adminQuery.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+    return getDb().transaction(async (tx) => {
+      const allWorkflows = await tx.select().from(workflows).orderBy(asc(workflows.id)).for("update");
+      const root = allWorkflows.find((workflow) => workflow.id === input.id);
+      if (!root) throw new TRPCError({ code: "NOT_FOUND", message: "业务流不存在" });
+
+      const childrenByParent = new Map<number, number[]>();
+      for (const workflow of allWorkflows) {
+        if (!workflow.parentWorkflowId) continue;
+        const children = childrenByParent.get(workflow.parentWorkflowId) ?? [];
+        children.push(workflow.id);
+        childrenByParent.set(workflow.parentWorkflowId, children);
       }
-      await db.delete(workflowEdges).where(eq(workflowEdges.workflowId, wfId));
-      await db.delete(workflowNodes).where(eq(workflowNodes.workflowId, wfId));
-      await db.delete(workflows).where(eq(workflows.id, wfId));
-    };
-    await deleteTree(input.id);
-    return { ok: true };
+      const workflowIds: number[] = [];
+      const pending = [root.id];
+      while (pending.length) {
+        const workflowId = pending.pop()!;
+        workflowIds.push(workflowId);
+        pending.push(...(childrenByParent.get(workflowId) ?? []));
+      }
+
+      const releaseReferences = await tx
+        .select({ id: methodReleases.id })
+        .from(methodReleases)
+        .where(inArray(methodReleases.workflowId, workflowIds))
+        .for("update");
+      const experimentReferences = await tx
+        .select({ id: experiments.id })
+        .from(experiments)
+        .where(inArray(experiments.workflowId, workflowIds))
+        .for("update");
+      const runReferences = await tx
+        .select({ id: labRuns.id })
+        .from(labRuns)
+        .where(inArray(labRuns.workflowId, workflowIds))
+        .for("update");
+      const draftReferences = await tx
+        .select({ id: labRunDrafts.id })
+        .from(labRunDrafts)
+        .where(inArray(labRunDrafts.workflowId, workflowIds))
+        .for("update");
+      const plateReferences = await tx
+        .select({ id: samplePlatePlans.id })
+        .from(samplePlatePlans)
+        .where(inArray(samplePlatePlans.workflowId, workflowIds))
+        .for("update");
+      const cloningLayoutReferences = await tx
+        .select({ id: cloningLayoutPlans.id })
+        .from(cloningLayoutPlans)
+        .where(inArray(cloningLayoutPlans.workflowId, workflowIds))
+        .for("update");
+      const references: WorkflowRemovalReferences = {
+        cloningLayoutPlans: cloningLayoutReferences.length,
+        experiments: experimentReferences.length,
+        methodReleases: releaseReferences.length,
+        labRuns: runReferences.length,
+        labRunDrafts: draftReferences.length,
+        samplePlatePlans: plateReferences.length,
+      };
+
+      if (workflowRemovalDisposition(references) === "archive") {
+        const archivedAt = new Date();
+        await tx
+          .update(workflows)
+          .set({ status: "archived", updatedAt: archivedAt })
+          .where(inArray(workflows.id, workflowIds));
+        await appendActivity(tx, {
+          userId: ctx.user.id,
+          userName: ctx.user.name ?? "未知用户",
+          action: "归档了受历史记录保护的业务流",
+          entityType: "workflow",
+          entityId: root.id,
+          entityName: root.name,
+          detail: `保留 ${workflowIds.length} 个流程；方法版本 ${references.methodReleases}、ELN 实验记录 ${references.experiments}、实验运行 ${references.labRuns}、实验草稿 ${references.labRunDrafts}、分子克隆排板方案 ${references.cloningLayoutPlans}、样本孔板方案 ${references.samplePlatePlans}`,
+          before: { workflowIds, statuses: allWorkflows.filter((workflow) => workflowIds.includes(workflow.id)).map((workflow) => ({ id: workflow.id, status: workflow.status })) },
+          after: { workflowIds, status: "archived", references },
+          reason: "流程树存在历史引用，禁止物理删除",
+        });
+        return { ok: true, disposition: "archived" as const, workflowIds, references };
+      }
+
+      if (root.parentNodeId) {
+        await tx
+          .update(workflowNodes)
+          .set({ childWorkflowId: null })
+          .where(eq(workflowNodes.id, root.parentNodeId));
+      }
+      await tx.delete(workflowEdges).where(inArray(workflowEdges.workflowId, workflowIds));
+      await tx.delete(workflowNodes).where(inArray(workflowNodes.workflowId, workflowIds));
+      await tx.delete(workflows).where(inArray(workflows.id, workflowIds));
+      await appendActivity(tx, {
+        userId: ctx.user.id,
+        userName: ctx.user.name ?? "未知用户",
+        action: "删除了无历史引用的业务流",
+        entityType: "workflow",
+        entityId: root.id,
+        entityName: root.name,
+        detail: `删除 ${workflowIds.length} 个流程`,
+        before: { workflowIds },
+        after: { deleted: true },
+      });
+      return { ok: true, disposition: "deleted" as const, workflowIds, references };
+    });
   }),
 });

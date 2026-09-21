@@ -1,5 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
-import { inventoryReservations, samples, stockTransactions } from "@db/schema";
+import { inventoryReservations, labRunOutputs, samples, stockTransactions } from "@db/schema";
 import { appendActivity, type DatabaseTransaction } from "../queries/labHelpers";
 import { getDb } from "../queries/connection";
 
@@ -111,6 +111,8 @@ export async function changeInventoryInTransaction(
       }
     }
 
+    const [output] = await tx.select({ status: labRunOutputs.status }).from(labRunOutputs).where(eq(labRunOutputs.sampleId, sample.id)).limit(1);
+    if (output && output.status !== "released") throw new InventoryError("invalid", "实验产物尚未复核放行，不能调整或使用库存");
     const quantityBefore = roundQuantity(Number(sample.quantity));
     const quantityAfter = roundQuantity(quantityBefore + delta);
     if (quantityAfter < 0) {

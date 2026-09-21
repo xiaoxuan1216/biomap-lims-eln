@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { trpc } from "@/providers/trpc";
 import { useLocation, useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import {
   Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getCopilotContext, insertBlocksToExperiment } from "@/lib/copilotContext";
+import { getCopilotContext, subscribeCopilotContext, insertBlocksToExperiment } from "@/lib/copilotContext";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n";
 
@@ -35,6 +35,7 @@ interface ChatMessage {
 }
 
 const SUGGESTIONS: Record<string, string[]> = {
+  lab_run: ["当前实验下一步做什么？", "这个任务还缺什么？", "结果为什么还没有通过复核？"],
   default: ["哪些样本快过期了？", "实验室现在什么情况？", "设备今天有预约吗？"],
   experiment: ["生成 Gibson 组装方案", "生成 qPCR 方案", "生成流式检测方案"],
   sequence: ["帮我分析这条序列", "Gibson 引物怎么设计？", "这条序列有什么酶切位点？"],
@@ -44,6 +45,7 @@ const SUGGESTIONS: Record<string, string[]> = {
 };
 
 function suggestionsFor(pathname: string, ctxType?: string): string[] {
+  if (ctxType === "lab_run" || /^\/runs\/\d+/.test(pathname)) return SUGGESTIONS.lab_run;
   if (ctxType === "experiment") return SUGGESTIONS.experiment;
   if (ctxType === "sequence") return SUGGESTIONS.sequence;
   if (pathname.startsWith("/samples")) return SUGGESTIONS.sample;
@@ -164,7 +166,7 @@ export default function Copilot() {
     }
   };
 
-  const ctx = getCopilotContext();
+  const ctx = useSyncExternalStore(subscribeCopilotContext, getCopilotContext);
   const suggestions = suggestionsFor(location.pathname, ctx.entityType);
 
   return (

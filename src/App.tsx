@@ -4,6 +4,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import Login from "@/pages/Login";
 
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const MyWork = lazy(() => import("@/pages/MyWork"));
 const Projects = lazy(() => import("@/pages/Projects"));
 const ProjectDetail = lazy(() => import("@/pages/ProjectDetail"));
 const Experiments = lazy(() => import("@/pages/Experiments"));
@@ -18,7 +19,9 @@ const Equipment = lazy(() => import("@/pages/Equipment"));
 const EquipmentDetail = lazy(() => import("@/pages/EquipmentDetail"));
 const DriverCenter = lazy(() => import("@/pages/DriverCenter"));
 const Workflows = lazy(() => import("@/pages/Workflows"));
+const CloningQc = lazy(() => import("@/pages/CloningQc"));
 const WorkflowEditor = lazy(() => import("@/pages/WorkflowEditor"));
+const MethodDetail = lazy(() => import("@/pages/MethodDetail"));
 const CloningPlanner = lazy(() => import("@/pages/CloningPlanner"));
 const ActivityLog = lazy(() => import("@/pages/ActivityLog"));
 const SearchResults = lazy(() => import("@/pages/SearchResults"));
@@ -59,7 +62,8 @@ export default function App() {
           <AppLayout>
             <Suspense fallback={<PageFallback />}>
               <Routes>
-                <Route path="/" element={<Dashboard />} />
+                <Route path="/" element={<MyWork />} />
+                <Route path="/overview" element={<Dashboard />} />
                 <Route path="/lab-agent" element={<LabAgent />} />
                 <Route path="/instrument-agent" element={<InstrumentAgent />} />
                 <Route path="/runs" element={<LabRuns />} />
@@ -78,9 +82,12 @@ export default function App() {
                 <Route path="/equipment" element={<Equipment />} />
                 <Route path="/equipment/:id" element={<EquipmentDetail />} />
                 <Route path="/drivers" element={<DriverCenter />} />
-                <Route path="/workflows" element={<Workflows />} />
+                <Route path="/workflows" element={<Workflows key="front" />} />
+                <Route path="/configuration/methods" element={<Workflows key="configuration" configuration />} />
                 <Route path="/cloning-planner" element={<CloningPlanner />} />
-                <Route path="/workflows/:id" element={<WorkflowEditor />} />
+                <Route path="/workflows/:id" element={<MethodDetail />} />
+                <Route path="/workflows/:id/cloning-qc" element={<CloningQc />} />
+                <Route path="/workflows/:id/edit" element={<WorkflowEditor />} />
                 <Route path="/external-orders" element={<ExternalOrders />} />
                 <Route path="/external-orders/:id" element={<ExternalOrderDetail />} />
                 <Route path="/sample-requests" element={<SampleRequests />} />

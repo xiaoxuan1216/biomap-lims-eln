@@ -1,5 +1,20 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import {
+  plateCoverage,
+  PLATE_STAGE_LABELS,
+} from "@contracts/samplePlateLayout";
+import { SamplePlateView } from "@/features/cloning-planner/SamplePlateWorkspace";
+import { useCallback, useMemo, useState } from "react";
+import {
+  assessMethodEquipment,
+  methodMaterialDemand,
+  methodParameterIssues,
+} from "@contracts/method";
+import { runDraftPayloadSchema } from "@contracts/runDraft";
+import { resolveSampleBatch } from "@contracts/sampleBatch";
+import { useAuth } from "@/hooks/useAuth";
+import { useRunDraft, type DraftInitial } from "@/hooks/useRunDraft";
+import PairedSamplePicker from "@/components/lab-run/PairedSamplePicker";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   ArrowLeft,
   ArrowRight,
@@ -7,9 +22,7 @@ import {
   CheckCircle2,
   ChevronRight,
   CircleAlert,
-  ClipboardList,
   ExternalLink,
-  FileClock,
   FileLock2,
   Grid2X2,
   Info,
@@ -48,8 +61,8 @@ import {
   parseDriverTemplateKey,
   type DriverField,
 } from "@contracts/deviceDriver";
-import { EQUIP_STATUS } from "@/lib/labels";
 import CloningPlateFlowViewer from "@/features/cloning-planner/CloningPlateFlowViewer";
+import { BioViewRuntime } from "@/features/bioview";
 import { toast } from "sonner";
 
 type Primitive = string | number | boolean;
@@ -62,28 +75,15 @@ type NodeSetup = {
 type FieldLike = ParamField | DriverField;
 type PlanPreviewResource = {
   id: number;
+  sampleId: number;
   sku: string;
   name: string;
+  type: string;
   role: LabRunResourceRole;
   amount: number;
   unit: string;
 };
-type PlanPreviewNode = { nodeKey: string; label: string; type: string };
-type PlanPreviewEquipment = {
-  nodeKey: string;
-  nodeLabel: string;
-  deviceName: string | null;
-  deviceStatus: string | null;
-  configured: boolean;
-};
-
-const STEPS = [
-  "运行信息",
-  "样本与物料",
-  "流程与孔板",
-  "设备与参数",
-  "确认发起",
-] as const;
+const STEPS = ["选择方法", "准备本批", "检查并确认"];
 
 function toLocalInput(date: Date) {
   const offset = date.getTimezoneOffset() * 60_000;
@@ -92,8 +92,7 @@ function toLocalInput(date: Date) {
 
 function initialSchedule() {
   const start = new Date();
-  start.setMinutes(0, 0, 0);
-  start.setHours(start.getHours() + 1);
+  start.setSeconds(0, 0);
   const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
   return { start: toLocalInput(start), end: toLocalInput(end) };
 }
@@ -153,358 +152,199 @@ function fieldValueIsValid(field: FieldLike, value: Primitive | undefined) {
   return true;
 }
 
-const PREVIEW_TILE_TONES = {
-  slate: "border-slate-200 bg-white",
-  cyan: "border-cyan-200 bg-cyan-50/50",
-  teal: "border-teal-200 bg-teal-50/50",
-  violet: "border-violet-200 bg-violet-50/50",
-  amber: "border-amber-200 bg-amber-50/60",
-} as const;
-
-function PlanPreviewTile({
-  icon: Icon,
-  eyebrow,
-  title,
-  tone,
-  children,
-}: {
-  icon: typeof Network;
-  eyebrow: string;
-  title: string;
-  tone: keyof typeof PREVIEW_TILE_TONES;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className={`flex min-h-44 min-w-0 flex-col rounded-2xl border p-3.5 shadow-sm ${PREVIEW_TILE_TONES[tone]}`}
-    >
-      <div className="flex items-start gap-2.5">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/80 bg-white/80 text-slate-700 shadow-sm">
-          <Icon className="h-4 w-4" />
-        </div>
-        <div className="min-w-0">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-            {eyebrow}
-          </div>
-          <div className="mt-0.5 line-clamp-2 text-sm font-semibold leading-snug text-slate-950">
-            {title}
-          </div>
-        </div>
-      </div>
-      <div className="mt-3 min-w-0 flex-1 text-xs text-slate-600">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function PlanPreviewArrow() {
-  return (
-    <div
-      className="flex items-center justify-center text-slate-300"
-      aria-hidden="true"
-    >
-      <div className="h-px flex-1 bg-slate-200" />
-      <ArrowRight className="h-4 w-4 shrink-0" />
-    </div>
-  );
-}
-
-function RunPlanDataFlowPreview({
-  projectName,
-  purpose,
-  workflowName,
-  resources,
-  nodes,
-  equipment,
-  showEquipmentDetails,
-}: {
-  projectName: string | null;
-  purpose: string;
-  workflowName: string;
-  resources: PlanPreviewResource[];
-  nodes: PlanPreviewNode[];
-  equipment: PlanPreviewEquipment[];
-  showEquipmentDetails: boolean;
-}) {
-  const { t } = useI18n();
-  const sampleCount = resources.filter(
-    resource => resource.role === "sample"
-  ).length;
-  const materialCount = resources.filter(
-    resource => resource.role === "material"
-  ).length;
-  const controlCount = resources.filter(
-    resource => resource.role === "control"
-  ).length;
-  const selectedEquipmentCount = equipment.filter(
-    item => !!item.deviceName
-  ).length;
-  const configuredEquipmentCount = equipment.filter(
-    item => item.configured
-  ).length;
-  const equipmentHeadline =
-    equipment.length === 0
-      ? t("无设备节点")
-      : configuredEquipmentCount === equipment.length
-        ? t("设备已配置")
-        : selectedEquipmentCount > 0
-          ? t("设备配置中")
-          : t("设备待配置");
-
-  return (
-    <Card className="overflow-hidden border-amber-300 bg-[linear-gradient(135deg,rgba(255,251,235,0.92),rgba(248,250,252,0.96))] shadow-sm">
-      <CardHeader className="border-b border-amber-200/80 pb-3">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge className="border border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-100">
-                {t("计划预览 · 尚未冻结")}
-              </Badge>
-              <span className="text-xs text-slate-600">
-                {t(
-                  "当前仅展示表单中的计划关系，不代表已创建 Run 或已产生任何业务记录。"
-                )}
-              </span>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {["未保存", "未预占", "未预约", "未执行"].map(label => (
-              <Badge
-                key={label}
-                variant="outline"
-                className="border-amber-300 bg-white/80 text-amber-800"
-              >
-                {t(label)}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="p-4">
-        <div className="overflow-x-auto pb-1">
-          <div className="grid min-w-[1080px] grid-cols-[minmax(180px,1fr)_34px_minmax(210px,1.15fr)_34px_minmax(190px,1fr)_34px_minmax(210px,1.15fr)_34px_minmax(180px,1fr)] items-stretch">
-            <PlanPreviewTile
-              icon={ClipboardList}
-              eyebrow={t("项目 / 目的")}
-              title={projectName ?? t("项目待选择")}
-              tone="slate"
-            >
-              <p className="line-clamp-3 leading-relaxed">
-                {purpose.trim() || t("未填写实验目的")}
-              </p>
-            </PlanPreviewTile>
-            <PlanPreviewArrow />
-
-            <PlanPreviewTile
-              icon={TestTubes}
-              eyebrow={t("样本与物料")}
-              title={t("已选 {n} 项", { n: resources.length })}
-              tone="cyan"
-            >
-              <div className="flex flex-wrap gap-1">
-                <span className="rounded-full bg-white/90 px-2 py-0.5">
-                  {t("样本 {n}", { n: sampleCount })}
-                </span>
-                <span className="rounded-full bg-white/90 px-2 py-0.5">
-                  {t("物料 {n}", { n: materialCount })}
-                </span>
-                <span className="rounded-full bg-white/90 px-2 py-0.5">
-                  {t("对照 {n}", { n: controlCount })}
-                </span>
-              </div>
-              <div className="mt-2 space-y-1.5">
-                {resources.slice(0, 2).map(resource => (
-                  <div
-                    key={resource.id}
-                    className="truncate"
-                    title={`${resource.sku} · ${resource.name}`}
-                  >
-                    <span className="font-mono text-[10px] text-cyan-700">
-                      {resource.sku}
-                    </span>
-                    <span>
-                      {" "}
-                      · {resource.name} · {resource.amount} {resource.unit}
-                    </span>
-                  </div>
-                ))}
-                {resources.length > 2 && (
-                  <div className="text-slate-500">
-                    {t("另 {n} 项", { n: resources.length - 2 })}
-                  </div>
-                )}
-              </div>
-            </PlanPreviewTile>
-            <PlanPreviewArrow />
-
-            <PlanPreviewTile
-              icon={Network}
-              eyebrow={t("BioFlow 节点")}
-              title={workflowName}
-              tone="teal"
-            >
-              <div className="mb-2 font-medium text-teal-800">
-                {t("流程节点 {n}", { n: nodes.length })}
-              </div>
-              <div className="space-y-1.5">
-                {nodes.slice(0, 3).map((node, index) => (
-                  <div
-                    key={node.nodeKey}
-                    className="flex min-w-0 items-center gap-1.5"
-                  >
-                    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-teal-100 text-[9px] font-semibold text-teal-700">
-                      {index + 1}
-                    </span>
-                    <span className="truncate" title={node.label}>
-                      {node.label}
-                    </span>
-                  </div>
-                ))}
-                {nodes.length > 3 && (
-                  <div className="pl-5 text-slate-500">
-                    {t("另 {n} 个节点", { n: nodes.length - 3 })}
-                  </div>
-                )}
-              </div>
-            </PlanPreviewTile>
-            <PlanPreviewArrow />
-
-            <PlanPreviewTile
-              icon={MonitorCog}
-              eyebrow={t("设备与参数")}
-              title={equipmentHeadline}
-              tone="violet"
-            >
-              {equipment.length === 0 ? (
-                <p className="leading-relaxed">
-                  {t("该流程没有设备节点，将按人工流程创建运行。")}
-                </p>
-              ) : (
-                <>
-                  <div className="mb-2 font-medium text-violet-800">
-                    {t("已配置 {configured}/{total}", {
-                      configured: configuredEquipmentCount,
-                      total: equipment.length,
-                    })}
-                  </div>
-                  {showEquipmentDetails ? (
-                    <div className="space-y-1.5">
-                      {equipment.slice(0, 2).map(item => (
-                        <div
-                          key={item.nodeKey}
-                          className="rounded-lg bg-white/75 px-2 py-1.5"
-                        >
-                          <div
-                            className="truncate font-medium"
-                            title={item.nodeLabel}
-                          >
-                            {item.nodeLabel}
-                          </div>
-                          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-slate-500">
-                            <span
-                              className={`h-1.5 w-1.5 shrink-0 rounded-full ${item.configured ? "bg-emerald-500" : item.deviceName ? "bg-amber-500" : "bg-slate-300"}`}
-                            />
-                            <span
-                              className="truncate"
-                              title={item.deviceName ?? t("待配置")}
-                            >
-                              {item.deviceName ?? t("待配置")}
-                            </span>
-                            {item.deviceStatus && (
-                              <span className="shrink-0">
-                                · {t(item.deviceStatus)}
-                              </span>
-                            )}
-                            {item.deviceName && !item.configured && (
-                              <span className="shrink-0">· {t("需复核")}</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                      {equipment.length > 2 && (
-                        <div className="text-slate-500">
-                          {t("另 {n} 个设备节点", { n: equipment.length - 2 })}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="leading-relaxed text-slate-500">
-                      {t("下一步配置设备后，此处将显示已选设备及当前状态。")}
-                    </p>
-                  )}
-                </>
-              )}
-            </PlanPreviewTile>
-            <PlanPreviewArrow />
-
-            <PlanPreviewTile
-              icon={FileClock}
-              eyebrow={t("结果记录")}
-              title={t("结果待回传")}
-              tone="amber"
-            >
-              <p className="leading-relaxed">
-                {t("当前没有结果记录。发起并执行后，结果才会进入回传与记录。")}
-              </p>
-            </PlanPreviewTile>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 export default function LabRunLaunch() {
   const [searchParams] = useSearchParams();
-  const workflowId = Number(searchParams.get("workflowId")) || 0;
-
-  return <LabRunLaunchForm key={workflowId} workflowId={workflowId} />;
+  const { user } = useAuth();
+  const { t } = useI18n();
+  const requestedWorkflowId = Number(searchParams.get("workflowId"));
+  const workflowId =
+    Number.isSafeInteger(requestedWorkflowId) && requestedWorkflowId > 0
+      ? requestedWorkflowId
+      : 0;
+  const requestedReleaseId = Number(searchParams.get("methodReleaseId"));
+  const methodReleaseId =
+    Number.isSafeInteger(requestedReleaseId) && requestedReleaseId > 0
+      ? requestedReleaseId
+      : undefined;
+  const drafts = trpc.runDraft.list.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+    staleTime: Infinity,
+  });
+  if (drafts.isLoading) return <p>{t("正在恢复实验草稿…")}</p>;
+  if (drafts.error) return <p role="alert">{drafts.error.message}</p>;
+  const server = searchParams.get("draftId")
+    ? drafts.data?.find(d => d.id === searchParams.get("draftId"))
+    : drafts.data?.find(d => d.workflowId === workflowId);
+  if (searchParams.has("draftId") && !server)
+    return <p role="alert">{t("草稿不存在或已交接给其他人")}</p>;
+  const storageKey = `biomap-run-draft:${user?.id}:${workflowId}`;
+  let initial: DraftInitial | undefined = server;
+  try {
+    const local = JSON.parse(
+      localStorage.getItem(storageKey) ?? "null"
+    ) as DraftInitial | null;
+    if (
+      local &&
+      ((server &&
+        local.id === server.id &&
+        local.revision === server.revision) ||
+        (!server && local.revision === 0))
+    ) {
+      const payload = runDraftPayloadSchema.parse(local.payload);
+      if (payload.workflowId === workflowId)
+        initial = {
+          ...local,
+          payload,
+          unsaved: JSON.stringify(payload) !== JSON.stringify(server?.payload),
+        };
+    }
+  } catch {
+    /* Invalid or unavailable browser recovery never replaces the server draft. */
+  }
+  return (
+    <LabRunLaunchForm
+      key={`${workflowId}:${methodReleaseId ?? "latest"}`}
+      workflowId={workflowId}
+      methodReleaseId={methodReleaseId}
+      initial={initial}
+      storageKey={storageKey}
+    />
+  );
 }
 
-function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
+function LabRunLaunchForm({
+  workflowId,
+  methodReleaseId,
+  initial,
+  storageKey,
+}: {
+  workflowId: number;
+  methodReleaseId?: number;
+  initial?: DraftInitial;
+  storageKey: string;
+}) {
   const { t, lang } = useI18n();
+  const { user } = useAuth();
   const navigate = useNavigate();
-  const [, setSearchParams] = useSearchParams();
+  const [entryParams, setSearchParams] = useSearchParams();
+  const entrySampleId = Number(entryParams.get("sampleId"));
+  const hasEntrySample =
+    Number.isSafeInteger(entrySampleId) && entrySampleId > 0;
+  const [entryAmount, setEntryAmount] = useState("");
   const { data: workflows, error: workflowsError } =
     trpc.workflow.list.useQuery();
   const { data: driverNodes, error: driverNodesError } =
     trpc.driver.nodeCatalog.useQuery();
   const contextQuery = trpc.labRun.launchContext.useQuery(
-    { workflowId },
+    {
+      workflowId,
+      methodReleaseId: initial?.payload.methodReleaseId ?? methodReleaseId,
+    },
     { enabled: workflowId > 0 }
   );
   const context = contextQuery.data;
   const eligibleWorkflows =
     workflows?.filter(
-      workflow => !workflow.parentWorkflowId && workflow.status === "active"
+      workflow => !workflow.parentWorkflowId && !!workflow.publishedRelease
     ) ?? [];
-  const [step, setStep] = useState(0);
-  const [name, setName] = useState<string | null>(null);
-  const [purpose, setPurpose] = useState("");
-  const [projectId, setProjectId] = useState<string | null>(null);
-  const [operatorName, setOperatorName] = useState("");
-  const [executionMode, setExecutionMode] = useState<LabRunMode>("simulation");
+  const [chooseMethod, setChooseMethod] = useState(!workflowId);
+  const [step, setStep] = useState(Math.min(initial?.payload.step ?? 0, 2));
+  const [name, setName] = useState<string | null>(
+    initial?.payload.name ?? null
+  );
+  const [purpose, setPurpose] = useState(initial?.payload.purpose ?? "");
+  const [projectId, setProjectId] = useState<string | null>(
+    initial?.payload.projectId ?? null
+  );
+  const [operatorName, setOperatorName] = useState(
+    initial?.payload.operatorName || user?.name || ""
+  );
+  const [executionMode, setExecutionMode] = useState<LabRunMode>(
+    initial?.payload.executionMode ?? "manual"
+  );
   const [scheduleDefaults] = useState(initialSchedule);
-  const [scheduledStart, setScheduledStart] = useState(scheduleDefaults.start);
-  const [scheduledEnd, setScheduledEnd] = useState(scheduleDefaults.end);
+  const [scheduledStart, setScheduledStart] = useState(
+    initial?.payload.scheduledStart ?? scheduleDefaults.start
+  );
+  const [scheduledEnd, setScheduledEnd] = useState(
+    initial?.payload.scheduledEnd ?? scheduleDefaults.end
+  );
   const [resourceQuery, setResourceQuery] = useState("");
   const [resourceView, setResourceView] = useState<"all" | LabRunResourceRole>(
     "all"
   );
   const [selectedResources, setSelectedResources] = useState<
     Record<number, ResourceSelection>
-  >({});
+  >(initial?.payload.selectedResources ?? {});
   const [cloningLayoutPlanId, setCloningLayoutPlanId] = useState<number | null>(
-    null
+    initial?.payload.cloningLayoutPlanId ?? null
   );
-  const [skipCloningLayout, setSkipCloningLayout] = useState(false);
+  const [samplePlatePlanIds, setSamplePlatePlanIds] = useState<number[]>(
+    initial?.payload.samplePlatePlanIds ?? []
+  );
+  const samplePlateQuery = trpc.samplePlate.list.useQuery(
+    { workflowId },
+    { enabled: workflowId > 0 }
+  );
+  const selectedSamplePlates = (samplePlateQuery.data ?? []).filter(plan =>
+    samplePlatePlanIds.includes(plan.id)
+  );
+  const [skipCloningLayout, setSkipCloningLayout] = useState(
+    initial?.payload.skipCloningLayout ?? false
+  );
   const cloningLayoutPlanQuery = trpc.cloningLayout.byId.useQuery(
     { id: cloningLayoutPlanId ?? 0 },
     { enabled: cloningLayoutPlanId !== null }
   );
-  const [nodeSetups, setNodeSetups] = useState<Record<string, NodeSetup>>({});
-  const [idempotencyKey] = useState(() => globalThis.crypto.randomUUID());
+  const [nodeSetups, setNodeSetups] = useState<Record<string, NodeSetup>>(
+    initial?.payload.nodeSetups ?? {}
+  );
+  const [idempotencyKey] = useState(
+    () => initial?.payload.idempotencyKey ?? globalThis.crypto.randomUUID()
+  );
+  const [sampleOrder, setSampleOrder] = useState<number[]>(
+    initial?.payload.sampleOrder ?? []
+  );
+  const [batchCodes, setBatchCodes] = useState("");
+  const draft = useRunDraft(
+    context
+      ? {
+          workflowId,
+          methodReleaseId: context.methodRelease.id,
+          step,
+          name,
+          purpose,
+          projectId,
+          operatorName,
+          executionMode,
+          scheduledStart,
+          scheduledEnd,
+          selectedResources,
+          sampleOrder,
+          cloningLayoutPlanId,
+          samplePlatePlanIds,
+          skipCloningLayout,
+          nodeSetups,
+          idempotencyKey,
+          stageSource: initial?.payload.stageSource,
+          reworkSource: initial?.payload.reworkSource,
+        }
+      : null,
+    initial,
+    storageKey
+  );
+  const utils = trpc.useUtils();
+  const operators = trpc.runDraft.operators.useQuery();
+  const [handoffTo, setHandoffTo] = useState("");
+  const [handoffNote, setHandoffNote] = useState("");
+  const handoff = trpc.runDraft.handoff.useMutation({
+    onSuccess: async () => {
+      draft.removeLocal();
+      await utils.runDraft.list.invalidate();
+      navigate("/");
+    },
+    onError: e => toast.error(e.message),
+  });
 
   const driverByTemplate = useMemo(
     () => new Map((driverNodes ?? []).map(entry => [entry.templateKey, entry])),
@@ -536,10 +376,12 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
 
   const createMut = trpc.labRun.create.useMutation({
     onSuccess: result => {
+      draft.removeLocal();
+      void utils.runDraft.list.invalidate();
       toast.success(
         result.repeated ? t("已返回同一次运行") : t("实验运行已锁定并创建")
       );
-      navigate(`/runs/${result.id}`);
+      navigate(`/runs/${result.id}?tab=bio-view`);
     },
     onError: error => toast.error(error.message),
   });
@@ -578,9 +420,53 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
       ),
     })
   );
+  selectedList.sort(
+    (a, b) =>
+      (sampleOrder.includes(a.sampleId)
+        ? sampleOrder.indexOf(a.sampleId)
+        : 10000 + a.sampleId) -
+      (sampleOrder.includes(b.sampleId)
+        ? sampleOrder.indexOf(b.sampleId)
+        : 10000 + b.sampleId)
+  );
   const sampleCount = selectedList.filter(
     resource => resource.role === "sample"
   ).length;
+  const needsIdentity = Object.values(context?.methodSpec.nodes ?? {}).some(
+    rule =>
+      ["paired_hc_lc", "same_antibody"].includes(
+        rule.produces?.parentPolicy ?? ""
+      )
+  );
+  const needsPair = Object.values(context?.methodSpec.nodes ?? {}).some(
+    rule => rule.produces?.parentPolicy === "paired_hc_lc"
+  );
+  const identityInputs = selectedList.filter(
+    resource => resource.role === "sample"
+  );
+  const identities = trpc.sampleIdentity.resolve.useQuery(
+    { sampleIds: identityInputs.map(resource => resource.sampleId) },
+    { enabled: needsIdentity && sampleCount > 0, refetchOnWindowFocus: true }
+  );
+  const identityValid =
+    !needsIdentity ||
+    (!!identities.data &&
+      !identities.error &&
+      identityInputs.every(resource =>
+        identities.data!.some(
+          identity => identity.sampleId === resource.sampleId
+        )
+      ) &&
+      (!needsPair ||
+        identities.data.every(
+          identity =>
+            ["HC", "LC"].includes(identity.chain) &&
+            identities.data!.some(
+              other =>
+                other.antibodyId === identity.antibodyId &&
+                other.chain === (identity.chain === "HC" ? "LC" : "HC")
+            )
+        )));
   const cloningTargetBindings = selectedList
     .flatMap(resource =>
       resource.role === "sample" && resource.source
@@ -623,8 +509,10 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
         ? [
             {
               id: resource.source.id,
+              sampleId: resource.source.id,
               sku: resource.source.sku,
               name: resource.source.name,
+              type: resource.source.type,
               role: resource.role,
               amount: resource.amount,
               unit: resource.source.unit,
@@ -635,20 +523,15 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
 
   const compatibleEquipment = (node: (typeof equipmentNodes)[number]) => {
     if (!context) return [];
-    const ref = parseDriverTemplateKey(node.templateKey);
-    return context.equipment.filter(device => {
-      if (["maintenance", "fault"].includes(device.status)) return false;
-      if (!ref) return true;
-      const expectedStatus =
-        executionMode === "simulation" ? "simulation_ready" : "ready";
-      return (
-        device.binding?.enabled &&
-        device.binding.driverKey === ref.driverKey &&
-        device.binding.driverVersion === ref.version &&
-        device.binding.mode === executionMode &&
-        device.binding.status === expectedStatus
-      );
-    });
+    return context.equipment.filter(
+      device =>
+        assessMethodEquipment(
+          node,
+          device,
+          context.methodSpec.nodes[node.nodeKey],
+          executionMode
+        ).compatible
+    );
   };
 
   const scheduleDuration =
@@ -658,8 +541,19 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
     !!scheduledEnd &&
     scheduleDuration > 0 &&
     scheduleDuration <= 7 * 24 * 60 * 60 * 1_000;
+  const materialDemand = context
+    ? methodMaterialDemand(
+        context.methodSpec,
+        sampleCount,
+        selectedList
+          .filter(r => r.source)
+          .map(r => ({ ...r, sku: r.source!.sku, unit: r.source!.unit }))
+      )
+    : [];
   const resourceValid =
-    sampleCount > 0 &&
+    materialDemand.every(rule => rule.missing === 0) &&
+    sampleCount >= (context?.methodSpec.minSamples ?? 1) &&
+    sampleCount <= (context?.methodSpec.maxSamples ?? 200) &&
     selectedList.every(
       resource =>
         !!resource.source &&
@@ -682,48 +576,75 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
   const equipmentValid = driverEquipmentValid && genericEquipmentValid;
   const parametersValid = equipmentNodes.every(node => {
     const setup = nodeSetupFor(node);
-    return fieldsForNode(node).every(field =>
-      fieldValueIsValid(field, setup.params[field.key])
+    return (
+      !methodParameterIssues(
+        { ...fieldDefaults(fieldsForNode(node)), ...parseParams(node.params) },
+        setup.params,
+        context?.methodSpec.nodes[node.nodeKey]
+      ).length &&
+      fieldsForNode(node).every(field =>
+        fieldValueIsValid(field, setup.params[field.key])
+      )
     );
   });
-  const planPreviewEquipment: PlanPreviewEquipment[] = equipmentNodes.map(
-    node => {
-      const setup = nodeSetupFor(node);
-      const selectedDevice =
-        context?.equipment.find(
+  const bioViewPreviewNodes = (context?.nodes ?? []).map(node => {
+    const equipmentNode = equipmentNodes.find(
+      candidate => candidate.nodeKey === node.nodeKey
+    );
+    const setup = equipmentNode ? nodeSetupFor(equipmentNode) : null;
+    const selectedDevice = setup
+      ? context?.equipment.find(
           device => String(device.id) === setup.equipmentId
-        ) ?? null;
-      return {
-        nodeKey: node.nodeKey,
-        nodeLabel: node.label,
-        deviceName: selectedDevice?.name ?? null,
-        deviceStatus: selectedDevice
-          ? (EQUIP_STATUS[selectedDevice.status]?.label ??
-            selectedDevice.status)
-          : null,
-        configured: equipmentSelectionIsValid(node),
-      };
-    }
-  );
+        )
+      : null;
+    const driverRef = parseDriverTemplateKey(node.templateKey);
+    return {
+      ...node,
+      equipmentId: selectedDevice?.id ?? node.equipmentId,
+      equipmentName: selectedDevice?.name ?? null,
+      equipmentModel: selectedDevice?.model ?? null,
+      driverKey: driverRef?.driverKey ?? null,
+      driverVersion: driverRef?.version ?? null,
+      parameterSnapshot: {
+        effectiveValues: setup?.params ?? parseParams(node.params),
+        ...(node.templateKey ? { methodRef: node.templateKey } : {}),
+        ...(setup?.overrideReason
+          ? { overrideReason: setup.overrideReason }
+          : {}),
+      },
+    };
+  });
   const workflowRunnable =
     workflowId > 0 &&
-    context?.workflow.status === "active" &&
+    !!context?.methodRelease &&
     context.nodes.length > 0 &&
     childWorkflowNodes.length === 0;
+  const samplePlatesValid =
+    samplePlatePlanIds.length > 0 &&
+    !samplePlateQuery.error &&
+    selectedSamplePlates.length === samplePlatePlanIds.length &&
+    plateCoverage(
+      selectedSamplePlates.map(item => item.plan),
+      selectedList
+        .filter(item => item.role === "sample")
+        .map(item => item.sampleId)
+    );
   const stepValid = [
     workflowRunnable &&
       !!effectiveName.trim() &&
       effectiveProjectId !== "none" &&
       scheduleValid,
     resourceValid,
-    cloningLayoutPlans.length === 0 ||
-      skipCloningLayout ||
-      (!!selectedCloningLayoutPlan &&
-        !!loadedCloningLayoutPlan &&
-        cloningLayoutSampleCountMatches &&
-        !cloningLayoutPlanQuery.error),
+    samplePlatePlanIds.length > 0
+      ? samplePlatesValid
+      : (!context?.methodSpec.layoutRequired &&
+          (cloningLayoutPlans.length === 0 || skipCloningLayout)) ||
+        (!!selectedCloningLayoutPlan &&
+          !!loadedCloningLayoutPlan &&
+          cloningLayoutSampleCountMatches &&
+          !cloningLayoutPlanQuery.error),
     equipmentValid && parametersValid,
-    true,
+    identityValid,
   ];
   const launchValid = stepValid.every(Boolean);
 
@@ -736,19 +657,32 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
           suggestedResourceRole(resource.type);
         return resourceView === "all" || currentRole === resourceView;
       })
-      .filter(
-        resource =>
-          !needle ||
-          `${resource.sku} ${resource.name} ${resource.type}`
-            .toLowerCase()
-            .includes(needle)
+      .filter(resource =>
+        needle
+          ? `${resource.sku} ${resource.name} ${resource.type}`
+              .toLowerCase()
+              .includes(needle)
+          : !!selectedResources[resource.id]
       )
       .sort(
         (a, b) =>
-          Number(!!selectedResources[b.id]) - Number(!!selectedResources[a.id])
+          Number(!!selectedResources[b.id]) -
+            Number(!!selectedResources[a.id]) ||
+          (sampleOrder.includes(a.id)
+            ? sampleOrder.indexOf(a.id)
+            : 10000 + a.id) -
+            (sampleOrder.includes(b.id)
+              ? sampleOrder.indexOf(b.id)
+              : 10000 + b.id)
       )
       .slice(0, 200);
-  }, [context?.resources, resourceQuery, resourceView, selectedResources]);
+  }, [
+    context?.resources,
+    resourceQuery,
+    resourceView,
+    selectedResources,
+    sampleOrder,
+  ]);
 
   const updateNode = (nodeKey: string, patch: Partial<NodeSetup>) => {
     const node = equipmentNodes.find(
@@ -763,14 +697,22 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
 
   const selectWorkflow = (id: number) => {
     setCloningLayoutPlanId(null);
+    setSamplePlatePlanIds([]);
     setSkipCloningLayout(false);
-    setSearchParams({ workflowId: String(id) });
+    setSearchParams({
+      workflowId: String(id),
+      ...(hasEntrySample ? { sampleId: String(entrySampleId) } : {}),
+    });
   };
 
   const submit = () => {
-    if (!context || !launchValid) return;
+    if (!context || !launchValid || !draft.saved) return;
     createMut.mutate({
       workflowId: context.workflow.id,
+      methodReleaseId: context.methodRelease.id,
+      draftId: draft.id,
+      stageSource: initial?.payload.stageSource,
+      reworkSource: initial?.payload.reworkSource,
       name: effectiveName.trim(),
       purpose: purpose.trim() || null,
       projectId: Number(effectiveProjectId),
@@ -783,7 +725,10 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
         role: resource.role,
         amount: resource.amount,
       })),
-      cloningLayoutPlanId: selectedCloningLayoutPlan?.id ?? null,
+      cloningLayoutPlanId: samplePlatePlanIds.length
+        ? null
+        : (selectedCloningLayoutPlan?.id ?? null),
+      samplePlatePlanIds,
       nodeBindings: equipmentNodes.map(node => ({
         nodeKey: node.nodeKey,
         equipmentId: Number(nodeSetupFor(node).equipmentId),
@@ -804,18 +749,97 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
           <div className="text-sm font-medium text-teal-700">
             {t("实验执行")}
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            {t("发起实验运行")}
-          </h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("准备实验")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t("把可复用流程实例化为一次独立 Run，并锁定本批资源和设备参数。")}
+            {t("选择方法，填写本批样本，再检查设备与准备事项。")}
           </p>
         </div>
       </div>
 
+      {initial?.payload.stageSource && (
+        <p className="rounded-lg bg-teal-50 p-3 text-sm">
+          {t("本任务使用上一阶段放行的产物。")}
+          <Link
+            className="ml-2 inline-block text-teal-700 underline"
+            to={`/runs/${initial.payload.stageSource.runId}`}
+          >
+            {t("查看上一阶段实验")}
+          </Link>
+        </p>
+      )}
+      {context && (
+        <div className="rounded-lg border bg-slate-50 p-3 text-sm">
+          <div className="flex flex-wrap items-center gap-3">
+            <span>
+              {t(
+                draft.error
+                  ? "草稿保存失败"
+                  : draft.saved
+                    ? "草稿已自动保存"
+                    : "正在保存草稿…"
+              )}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {t("恢复草稿后仍会重新检查库存、设备和预约")}
+            </span>
+            {draft.error && (
+              <>
+                <span role="alert">{draft.error.message}</span>
+                <Button variant="outline" size="sm" onClick={draft.retry}>
+                  {t("重试保存")}
+                </Button>
+              </>
+            )}
+          </div>
+          <details className="mt-2">
+            <summary className="cursor-pointer text-xs">
+              {t("交接准备工作")}
+            </summary>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <select
+                className="rounded border bg-white p-2"
+                aria-label={t("接收人")}
+                value={handoffTo}
+                onChange={e => setHandoffTo(e.target.value)}
+              >
+                <option value="">{t("选择接收人")}</option>
+                {operators.data?.map(operator => (
+                  <option key={operator.id} value={operator.id}>
+                    {operator.name}
+                  </option>
+                ))}
+              </select>
+              <Input
+                className="max-w-sm"
+                placeholder={t("交接说明")}
+                value={handoffNote}
+                onChange={e => setHandoffNote(e.target.value)}
+              />
+              <Button
+                disabled={
+                  !draft.saved ||
+                  !handoffTo ||
+                  !handoffNote.trim() ||
+                  handoff.isPending
+                }
+                onClick={() =>
+                  handoff.mutate({
+                    id: draft.id,
+                    expectedRevision: draft.revision,
+                    ownerId: Number(handoffTo),
+                    note: handoffNote,
+                  })
+                }
+              >
+                {t("确认交接")}
+              </Button>
+            </div>
+          </details>
+        </div>
+      )}
       <Card>
         <CardContent className="p-4 sm:p-5">
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             {STEPS.map((label, index) => (
               <div key={label} className="relative">
                 <div className="flex items-center gap-2">
@@ -858,61 +882,76 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
       )}
 
       {step === 0 && (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.2fr)]">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Network className="h-4 w-4 text-teal-600" />{" "}
-                {t("1. 选择已配置流程")}
+                {t("选择已发布方法")}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {eligibleWorkflows.length === 0 ? (
                 <Alert>
                   <Info className="h-4 w-4" />
-                  <AlertTitle>{t("还没有已启用的流程")}</AlertTitle>
+                  <AlertTitle>{t("还没有已发布方法")}</AlertTitle>
                   <AlertDescription>
-                    {t("请先在 BioFlow 中完成配置并将流程状态设为进行中。")}
+                    {t("请由方法负责人补充执行要求并复核发布。")}
                   </AlertDescription>
                 </Alert>
               ) : (
-                eligibleWorkflows.map(workflow => (
-                  <button
-                    key={workflow.id}
-                    type="button"
-                    onClick={() => selectWorkflow(workflow.id)}
-                    className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition-all ${
-                      workflowId === workflow.id
-                        ? "border-teal-500 bg-teal-50/60 ring-1 ring-teal-500"
-                        : "hover:border-slate-300 hover:bg-slate-50"
-                    }`}
-                  >
-                    <div
-                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${workflowId === workflow.id ? "bg-teal-600 text-white" : "bg-slate-100 text-slate-600"}`}
+                eligibleWorkflows
+                  .filter(
+                    workflow => chooseMethod || workflow.id === workflowId
+                  )
+                  .map(workflow => (
+                    <button
+                      key={workflow.id}
+                      type="button"
+                      onClick={() => selectWorkflow(workflow.id)}
+                      className={`flex w-full items-center gap-4 rounded-xl border p-4 text-left transition-all ${
+                        workflowId === workflow.id
+                          ? "border-teal-500 bg-teal-50/60 ring-1 ring-teal-500"
+                          : "hover:border-slate-300 hover:bg-slate-50"
+                      }`}
                     >
-                      <Network className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium">{workflow.name}</div>
-                      <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">
-                        {workflow.description || t("未填写流程说明")}
+                      <div
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${workflowId === workflow.id ? "bg-teal-600 text-white" : "bg-slate-100 text-slate-600"}`}
+                      >
+                        <Network className="h-5 w-5" />
                       </div>
-                    </div>
-                    <div className="hidden shrink-0 text-right sm:block">
-                      <div className="text-xs font-medium">
-                        {t("{n} 个节点", { n: workflow.nodeCount })}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium">{workflow.name}</div>
+                        <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">
+                          {workflow.description || t("未填写流程说明")}
+                        </div>
                       </div>
-                      <div className="mt-1 text-[11px] text-muted-foreground">
-                        {workflow.projectId ? t("已关联项目") : t("未关联项目")}
+                      <div className="hidden shrink-0 text-right sm:block">
+                        <div className="text-xs font-medium">
+                          {t("{n} 个节点", { n: workflow.nodeCount })}
+                        </div>
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          {workflow.projectId
+                            ? t("已关联项目")
+                            : t("未关联项目")}
+                        </div>
                       </div>
-                    </div>
-                    {workflowId === workflow.id ? (
-                      <CheckCircle2 className="h-5 w-5 text-teal-600" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4 text-slate-300" />
-                    )}
-                  </button>
-                ))
+                      {workflowId === workflow.id ? (
+                        <CheckCircle2 className="h-5 w-5 text-teal-600" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-slate-300" />
+                      )}
+                    </button>
+                  ))
+              )}
+              {workflowId > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setChooseMethod(v => !v)}
+                >
+                  {t(chooseMethod ? "收起方法选择" : "更换方法")}
+                </Button>
               )}
               {childWorkflowNodes.length > 0 && (
                 <Alert variant="destructive">
@@ -976,6 +1015,7 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
                 <Label>{t("运行负责人")}</Label>
                 <Input
                   value={operatorName}
+                  readOnly
                   onChange={event => setOperatorName(event.target.value)}
                   placeholder={t("默认当前用户")}
                 />
@@ -990,8 +1030,11 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="manual">
+                      {t("人工执行与原始证据记录")}
+                    </SelectItem>
                     <SelectItem value="simulation">
-                      {t("模拟运行（推荐用于当前验证）")}
+                      {t("演练步骤路径")}
                     </SelectItem>
                     <SelectItem value="edge" disabled>
                       {t("现场设备（等待 Edge 运行通道）")}
@@ -1032,13 +1075,298 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
 
       {step === 1 && context && (
         <div className="space-y-4">
+          {hasEntrySample &&
+            (() => {
+              const sample = context.resources.find(
+                item => item.id === entrySampleId
+              );
+              const selected = selectedResources[entrySampleId];
+              return (
+                <Card>
+                  <CardContent className="space-y-3 p-4">
+                    <h2 className="font-semibold">{t("从样本页继续准备")}</h2>
+                    {!sample ? (
+                      <p role="alert" className="text-sm text-amber-700">
+                        {t(
+                          "此样本当前不可用于实验，请返回样本页检查库存和状态。"
+                        )}
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-sm">
+                          {sample.sku} · {sample.name}
+                        </p>
+                        {selected ? (
+                          <p className="text-sm">
+                            {t(
+                              "此样本已在本批清单中，请在清单核对角色和用量。"
+                            )}
+                          </p>
+                        ) : (
+                          <div className="flex flex-wrap items-end gap-3">
+                            <Label className="block">
+                              {t("本次取用量")} ({sample.unit})
+                              <Input
+                                className="mt-1"
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={entryAmount}
+                                onChange={event =>
+                                  setEntryAmount(event.target.value)
+                                }
+                              />
+                            </Label>
+                            <Button
+                              variant="outline"
+                              disabled={
+                                !Number.isFinite(Number(entryAmount)) ||
+                                Number(entryAmount) <= 0 ||
+                                Number(entryAmount) > sample.availableQuantity
+                              }
+                              onClick={() => {
+                                setSelectedResources(current => ({
+                                  ...current,
+                                  [sample.id]: {
+                                    role: "sample",
+                                    amount: Number(entryAmount),
+                                  },
+                                }));
+                                setSampleOrder(current =>
+                                  current.includes(sample.id)
+                                    ? current
+                                    : [...current, sample.id]
+                                );
+                              }}
+                            >
+                              {t("加入本批样本")}
+                            </Button>
+                          </div>
+                        )}
+                        <Link
+                          className="text-sm text-teal-700 underline"
+                          to={`/samples/${sample.id}`}
+                        >
+                          {t("查看来源及身份")}
+                        </Link>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })()}
+          {needsIdentity && sampleCount > 0 && (
+            <Card>
+              <CardContent className="space-y-3 p-4">
+                <h2 className="font-semibold">{t("本批身份与链别")}</h2>
+                {identityInputs.map(resource => {
+                  const identity = identities.data?.find(
+                    value => value.sampleId === resource.sampleId
+                  );
+                  return (
+                    <div
+                      key={resource.sampleId}
+                      className="flex flex-wrap items-center justify-between gap-2 text-sm"
+                    >
+                      <span>
+                        {resource.source?.sku} ·{" "}
+                        {identity
+                          ? `${identity.antibodyId} · ${identity.chain}`
+                          : t(
+                              identities.isLoading
+                                ? "正在核对身份"
+                                : "尚无有效身份确认"
+                            )}
+                      </span>
+                      <Link
+                        className="text-teal-700 underline"
+                        to={`/samples/${resource.sampleId}`}
+                      >
+                        {t("查看来源及身份")}
+                      </Link>
+                    </div>
+                  );
+                })}
+                {!identityValid && (
+                  <p className="text-sm text-amber-700">
+                    {t(
+                      needsPair
+                        ? "请补齐同一抗体的已确认重链与轻链质粒。"
+                        : "请先确认每份输入样本的抗体身份。"
+                    )}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+          {needsPair && sampleCount > 0 && !identityValid && (
+            <Card>
+              <CardContent className="p-4">
+                <PairedSamplePicker
+                  sampleIds={identityInputs.map(resource => resource.sampleId)}
+                  selectedIds={selectedList.map(resource => resource.sampleId)}
+                  resources={context.resources}
+                  scheduledEnd={scheduledEnd}
+                  onAdd={(sampleId, amount) => {
+                    setSelectedResources(current =>
+                      current[sampleId]
+                        ? current
+                        : { ...current, [sampleId]: { role: "sample", amount } }
+                    );
+                    setSampleOrder(current =>
+                      current.includes(sampleId)
+                        ? current
+                        : [...current, sampleId]
+                    );
+                  }}
+                />
+              </CardContent>
+            </Card>
+          )}
+          {!!materialDemand.length && (
+            <Card>
+              <CardContent className="space-y-3 p-4">
+                <h2 className="font-semibold">{t("本批物料需求")}</h2>
+                {materialDemand.map((rule, index) => (
+                  <div
+                    key={index}
+                    className="flex flex-wrap items-center justify-between gap-3 border-t pt-3 text-sm"
+                  >
+                    <div>
+                      <strong>{rule.name}</strong>
+                      <p>
+                        {t("需要 {amount} {unit}，已选 {selected}", {
+                          amount: rule.required,
+                          unit: rule.unit,
+                          selected: rule.allocated,
+                        })}
+                      </p>
+                      {rule.missing > 0 && (
+                        <p className="text-amber-700">
+                          {t("还缺 {amount} {unit}", {
+                            amount: rule.missing,
+                            unit: rule.unit,
+                          })}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {context.resources
+                        .filter(
+                          item =>
+                            rule.approvedSkus.includes(item.sku) &&
+                            item.unit === rule.unit
+                        )
+                        .map(item => (
+                          <Button
+                            key={item.id}
+                            variant="outline"
+                            size="sm"
+                            disabled={
+                              rule.missing === 0 ||
+                              (!!selectedResources[item.id] &&
+                                selectedResources[item.id].role !==
+                                  "material") ||
+                              item.availableQuantity -
+                                (selectedResources[item.id]?.amount ?? 0) <
+                                rule.missing ||
+                              (!!item.expiryDate &&
+                                item.expiryDate < scheduledEnd.slice(0, 10))
+                            }
+                            onClick={() =>
+                              setSelectedResources(current => ({
+                                ...current,
+                                [item.id]: {
+                                  role: "material",
+                                  amount:
+                                    (current[item.id]?.amount ?? 0) +
+                                    rule.missing,
+                                },
+                              }))
+                            }
+                          >
+                            {t("补齐用量")} · {item.sku}
+                          </Button>
+                        ))}
+                    </div>
+                  </div>
+                ))}
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "按方法批准的库存编号和单位核对；库存不足时请先补货或联系方法负责人。"
+                  )}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+          <Card>
+            <CardContent className="space-y-3 p-4">
+              <Label>{t("扫码或批量粘贴样本编号")}</Label>
+              <Textarea
+                value={batchCodes}
+                onChange={e => setBatchCodes(e.target.value)}
+                placeholder={t(
+                  "每行一个完整 Sample ID，也支持逗号分隔。按输入顺序建立映射。"
+                )}
+              />
+              <div className="flex flex-wrap gap-3">
+                <input
+                  type="file"
+                  accept=".txt,.csv,.tsv"
+                  aria-label={t("导入样本编号文件")}
+                  onChange={async e => {
+                    const file = e.target.files?.[0];
+                    if (file && file.size <= 100000)
+                      setBatchCodes(await file.text());
+                    else if (file)
+                      toast.error(
+                        t("文件过大，请导入不超过 100 KB 的编号列表")
+                      );
+                  }}
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const batch = resolveSampleBatch(
+                      batchCodes,
+                      context.resources
+                    );
+                    if (batch.errors.length) {
+                      toast.error(
+                        t("无法唯一识别以下编号：{codes}", {
+                          codes: batch.errors.join(", "),
+                        })
+                      );
+                      return;
+                    }
+                    setSelectedResources(current => ({
+                      ...current,
+                      ...Object.fromEntries(
+                        batch.samples.map(sample => [
+                          sample.id,
+                          {
+                            role: "sample" as const,
+                            amount: current[sample.id]?.amount ?? 1,
+                          },
+                        ])
+                      ),
+                    }));
+                    setSampleOrder(batch.samples.map(sample => sample.id));
+                    setBatchCodes("");
+                  }}
+                >
+                  {t("加入本批样本")}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader className="pb-3">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <CardTitle className="flex items-center gap-2 text-base">
                     <TestTubes className="h-4 w-4 text-teal-600" />{" "}
-                    {t("2. 选择本批样本与物料")}
+                    {t("本批样本与物料")}
                   </CardTitle>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {t(
@@ -1128,6 +1456,11 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
                 </div>
               </div>
 
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "默认仅显示本批已选内容。扫码、导入或搜索编号可添加样本与物料。"
+                )}
+              </p>
               <div className="overflow-x-auto rounded-xl border">
                 <div className="min-w-[680px] grid grid-cols-[40px_minmax(180px,1fr)_130px_120px_130px] gap-3 border-b bg-slate-50 px-4 py-2.5 text-[11px] font-semibold text-slate-500">
                   <span />
@@ -1262,337 +1595,461 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
               )}
             </CardContent>
           </Card>
-          {sampleCount > 0 && (
-            <RunPlanDataFlowPreview
-              projectName={
-                context.projects.find(
-                  project => String(project.id) === effectiveProjectId
-                )?.name ?? null
-              }
-              purpose={purpose}
-              workflowName={context.workflow.name}
-              resources={planPreviewResources}
-              nodes={context.nodes}
-              equipment={planPreviewEquipment}
-              showEquipmentDetails={false}
-            />
-          )}
         </div>
       )}
 
-      {step === 2 && context && (
-        <div className="space-y-4">
-          <Alert className="border-sky-200 bg-sky-50">
-            <FileLock2 className="h-4 w-4 text-sky-700" />
-            <AlertTitle>{t("选择要随 Run 冻结的孔板方案")}</AlertTitle>
-            <AlertDescription>
-              {t(
-                "这里只能选择当前流程已经保存的版本。Run 创建后会保留所选快照，不会自动跟随 BioFlow 中的新版本。"
-              )}
-            </AlertDescription>
-          </Alert>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Grid2X2 className="h-4 w-4 text-teal-600" />{" "}
-                    {t("3. 选择流程与孔板")}
-                  </CardTitle>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {t(
-                      "排板中的目标号、容器和孔位是规划数据；运行节点状态、实际样本位置与实验结果仍以 Run 业务记录为准。"
-                    )}
-                  </p>
-                </div>
-                {cloningLayoutPlans.length > 0 && (
-                  <Badge variant="secondary">
-                    {t("{n} 个已保存版本", { n: cloningLayoutPlans.length })}
-                  </Badge>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {cloningLayoutPlans.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
-                  <Grid2X2 className="mx-auto h-9 w-9 text-slate-300" />
-                  <h3 className="mt-3 text-sm font-semibold">
-                    {t("当前流程还没有已保存的排板方案")}
-                  </h3>
-                  <p className="mx-auto mt-2 max-w-xl text-xs leading-5 text-muted-foreground">
-                    {t(
-                      "可以继续创建不带孔板快照的通用 Run；其详情页会明确显示“未关联排板”，不会临时生成或套用其他版本。"
-                    )}
-                  </p>
-                  <Button
-                    className="mt-4"
-                    variant="outline"
-                    onClick={() =>
-                      navigate(`/workflows/${workflowId}?view=plates`)
-                    }
-                  >
-                    {t("返回 BioFlow 配置孔板")}{" "}
-                    <ExternalLink className="ml-1 h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <p className="text-xs text-amber-700">
-                    {skipCloningLayout
-                      ? t(
-                          "已明确选择不关联孔板方案；最终确认前仍可改选已保存版本。"
-                        )
-                      : selectedCloningLayoutPlan
-                        ? t("已显式选择 V{version}；最终确认前仍可改选。", {
-                            version: selectedCloningLayoutPlan.version,
-                          })
-                        : t(
-                            "请选择一个明确版本；系统不会默认把最新版本悄悄写入 Run。"
-                          )}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {t(
-                      "分子克隆 / Gibson Run 建议关联已保存方案；只有确实不需要孔板追溯时，才选择不关联。"
-                    )}
-                  </p>
-                  <div className="grid gap-3 lg:grid-cols-2">
-                    {cloningLayoutPlans.map(plan => {
-                      const selected =
-                        plan.id === selectedCloningLayoutPlan?.id;
-                      return (
-                        <button
-                          key={plan.id}
-                          type="button"
-                          aria-pressed={selected}
-                          onClick={() => {
-                            setSkipCloningLayout(false);
-                            setCloningLayoutPlanId(plan.id);
-                          }}
-                          className={`rounded-xl border p-4 text-left transition-all ${
-                            selected
-                              ? "border-teal-500 bg-teal-50/60 ring-1 ring-teal-500"
-                              : "bg-white hover:border-slate-300 hover:bg-slate-50"
-                          }`}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div
-                              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-teal-600 text-white" : "bg-slate-100 text-slate-500"}`}
-                            >
-                              {selected ? (
-                                <Check className="h-4 w-4" />
-                              ) : (
-                                <Grid2X2 className="h-4 w-4" />
-                              )}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-semibold">
-                                  {plan.name}
-                                </span>
-                                <Badge variant="outline">V{plan.version}</Badge>
-                              </div>
-                              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                                <span>
-                                  {t("{n} 个目标", { n: plan.sampleCount })}
-                                </span>
-                                <span>
-                                  {t("{n} 块孔板", { n: plan.plateCount })}
-                                </span>
-                                <span>
-                                  {plan.nodeLabel
-                                    ? t("来源节点：{node}", {
-                                        node: plan.nodeLabel,
-                                      })
-                                    : t("流程级方案")}
-                                </span>
-                              </div>
-                              <div className="mt-2 text-[10px] text-muted-foreground">
-                                {new Date(plan.createdAt).toLocaleString(
-                                  lang === "en" ? "en-US" : "zh-CN"
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </button>
+      {step === 1 && context && sampleCount > 0 && (
+        <details
+          className="rounded-xl border bg-white p-4"
+          open={context.methodSpec.layoutRequired}
+        >
+          <summary className="cursor-pointer font-medium">
+            {t("核对本批样本映射")}
+          </summary>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {t(
+              context.methodSpec.layoutRequired
+                ? "此顺序决定布局目标编号。可调整顺序，并在下方布局中核对容器和孔位。"
+                : "此顺序用于本批样本记录，可在此核对编号和调整顺序。"
+            )}
+          </p>
+          <div className="mt-3 max-h-72 overflow-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr>
+                  <th>{t("目标编号")}</th>
+                  <th>Sample ID</th>
+                  <th>{t("样本名称")}</th>
+                  <th>{t("调整顺序")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cloningTargetBindings.map((sample, index) => (
+                  <tr key={sample.sampleId} className="border-t">
+                    <td className="py-2">{sample.target}</td>
+                    <td>{sample.sku}</td>
+                    <td>{sample.name}</td>
+                    <td>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={index === 0}
+                        onClick={() => {
+                          const order = cloningTargetBindings.map(
+                            binding => binding.sampleId
+                          );
+                          [order[index - 1], order[index]] = [
+                            order[index],
+                            order[index - 1],
+                          ];
+                          setSampleOrder(order);
+                        }}
+                      >
+                        {t("上移")}
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
+      {step === 1 && context && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("本次实验孔板方案")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {t("勾选后台保存的孔板版本；创建实验后固定样本、孔位及来源。")}
+            </p>
+            <Link
+              className="text-sm text-teal-700 underline"
+              to={`/workflows/${workflowId}/edit?view=plates`}
+            >
+              {t("到后台配置孔板与样本")}
+            </Link>
+            {samplePlateQuery.error && (
+              <p role="alert">
+                {t(samplePlateQuery.error.message)}{" "}
+                <Button
+                  variant="outline"
+                  onClick={() => samplePlateQuery.refetch()}
+                >
+                  {t("重试")}
+                </Button>
+              </p>
+            )}
+            {(samplePlateQuery.data ?? [])
+              .filter(
+                item =>
+                  !context.methodSpec.stage ||
+                  item.plan.config.stage === context.methodSpec.stage
+              )
+              .map(item => (
+                <label
+                  className="flex items-start gap-2 rounded border p-3 text-sm"
+                  key={item.id}
+                >
+                  <input
+                    type="checkbox"
+                    checked={samplePlatePlanIds.includes(item.id)}
+                    onChange={event => {
+                      setSamplePlatePlanIds(current =>
+                        event.target.checked
+                          ? [...current, item.id]
+                          : current.filter(id => id !== item.id)
                       );
-                    })}
-                  </div>
-                  <button
-                    type="button"
-                    aria-pressed={skipCloningLayout}
-                    onClick={() => {
                       setCloningLayoutPlanId(null);
                       setSkipCloningLayout(true);
                     }}
-                    className={`w-full rounded-xl border p-4 text-left transition-all ${
-                      skipCloningLayout
-                        ? "border-amber-500 bg-amber-50/70 ring-1 ring-amber-500"
-                        : "border-dashed bg-white hover:border-amber-300 hover:bg-amber-50/40"
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div
-                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-                          skipCloningLayout
-                            ? "bg-amber-600 text-white"
-                            : "bg-amber-50 text-amber-700"
-                        }`}
-                      >
-                        {skipCloningLayout ? (
-                          <Check className="h-4 w-4" />
-                        ) : (
-                          <FileLock2 className="h-4 w-4" />
-                        )}
-                      </div>
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-semibold">
-                            {t("不关联孔板方案")}
-                          </span>
-                          <Badge variant="outline">{t("通用 Run")}</Badge>
-                        </div>
-                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                          {t(
-                            "本次 Run 不冻结孔板快照；详情页会保留未关联空态，不会套用当前或最新方案。"
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {selectedCloningLayoutPlan && (
-            <Alert
-              className={
-                cloningLayoutSampleCountMatches
-                  ? "border-teal-200 bg-teal-50"
-                  : "border-amber-300 bg-amber-50"
-              }
-            >
-              {cloningLayoutSampleCountMatches ? (
-                <CheckCircle2 className="h-4 w-4 text-teal-700" />
-              ) : (
-                <CircleAlert className="h-4 w-4 text-amber-700" />
-              )}
-              <AlertTitle>
-                {t("实验样本绑定：{selected} / {required}", {
-                  selected: sampleCount,
-                  required: selectedCloningLayoutPlan.sampleCount,
-                })}
-              </AlertTitle>
-              <AlertDescription className="space-y-3">
-                <p>
-                  {cloningLayoutSampleCountMatches
-                    ? t("数量已匹配；创建 Run 时会冻结 TGT→sample 顺序映射。")
-                    : t(
-                        "所选方案需要 {required} 个目标，当前绑定了 {selected} 个实验样本。数量一致后才能继续。",
-                        {
-                          selected: sampleCount,
-                          required: selectedCloningLayoutPlan.sampleCount,
-                        }
-                      )}
-                </p>
-                {!cloningLayoutSampleCountMatches && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setStep(1)}
-                  >
-                    <ArrowLeft className="mr-1 h-3.5 w-3.5" />
-                    {t("返回上一步选择样本")}
-                  </Button>
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {skipCloningLayout && cloningLayoutPlans.length > 0 && (
-            <Alert className="border-amber-300 bg-amber-50">
-              <Info className="h-4 w-4 text-amber-700" />
-              <AlertTitle>{t("本次明确不关联孔板方案")}</AlertTitle>
+                  />
+                  <span>
+                    V{item.version} · {item.name} ·{" "}
+                    {t(PLATE_STAGE_LABELS[item.plan.config.stage])} ·{" "}
+                    {item.plan.samples.map(sample => sample.sku).join(", ")}
+                  </span>
+                </label>
+              ))}
+            {samplePlatePlanIds.length > 0 && !samplePlatesValid && (
+              <p role="alert" className="text-sm text-amber-700">
+                {t("孔板方案必须完整覆盖本次实验样本，且不能包含额外样本")}
+              </p>
+            )}
+            {selectedSamplePlates.map(item => (
+              <details key={item.id} className="rounded border p-3">
+                <summary>
+                  {item.name} · V{item.version}
+                </summary>
+                <SamplePlateView plan={item.plan} />
+              </details>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+      {step === 1 &&
+        context &&
+        !samplePlatePlanIds.length &&
+        (context.methodSpec.layoutRequired ||
+          cloningLayoutPlans.length > 0) && (
+          <div className="space-y-4">
+            <Alert className="border-sky-200 bg-sky-50">
+              <FileLock2 className="h-4 w-4 text-sky-700" />
+              <AlertTitle>{t("确认本批样本与孔位对应关系")}</AlertTitle>
               <AlertDescription>
                 {t(
-                  "将创建通用 Run，不包含流程与孔板快照。若本次是分子克隆 / Gibson 执行，建议改选上方已保存方案。"
+                  "请核对样本身份、目标编号、容器和孔位。本次确认的布局将随实验计划保存，方法后续修订不会改变它。"
                 )}
               </AlertDescription>
             </Alert>
-          )}
 
-          {selectedCloningLayoutPlan && (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Grid2X2 className="h-4 w-4 text-teal-600" />
-                  {t("所选方案预览")}
-                  <Badge variant="outline">
-                    V{selectedCloningLayoutPlan.version}
-                  </Badge>
-                </CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  {t(
-                    "请在继续前核对流程节点、孔板和所选目标详情；Run 将冻结这里显示的已保存版本。"
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Grid2X2 className="h-4 w-4 text-teal-600" />{" "}
+                      {t("确认本批样本布局")}
+                    </CardTitle>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t(
+                        "排板中的目标号、容器和孔位是规划数据；运行节点状态、实际样本位置与实验结果仍以 Run 业务记录为准。"
+                      )}
+                    </p>
+                  </div>
+                  {cloningLayoutPlans.length > 0 && (
+                    <Badge variant="secondary">
+                      {t("{n} 个已保存版本", { n: cloningLayoutPlans.length })}
+                    </Badge>
                   )}
-                </p>
+                </div>
               </CardHeader>
               <CardContent>
-                {cloningLayoutPlanQuery.isLoading && (
-                  <div
-                    className="flex min-h-36 items-center justify-center gap-2 text-sm text-muted-foreground"
-                    role="status"
-                  >
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    {t("加载中…")}
+                {cloningLayoutPlans.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
+                    <Grid2X2 className="mx-auto h-9 w-9 text-slate-300" />
+                    <h3 className="mt-3 text-sm font-semibold">
+                      {t("当前流程还没有已保存的排板方案")}
+                    </h3>
+                    <p className="mx-auto mt-2 max-w-xl text-xs leading-5 text-muted-foreground">
+                      {t(
+                        context.methodSpec.layoutRequired
+                          ? "本方法要求孔板布局，请先在 BioFlow 中保存覆盖本批样本的孔板方案。"
+                          : "可以继续创建不带孔板快照的通用 Run；其详情页会明确显示“未关联排板”，不会临时生成或套用其他版本。"
+                      )}
+                    </p>
+                    <Button
+                      className="mt-4"
+                      variant="outline"
+                      onClick={() =>
+                        navigate(`/workflows/${workflowId}/edit?view=plates`)
+                      }
+                    >
+                      {t("返回 BioFlow 配置孔板")}{" "}
+                      <ExternalLink className="ml-1 h-3.5 w-3.5" />
+                    </Button>
                   </div>
-                )}
-
-                {(cloningLayoutPlanQuery.error ||
-                  cloningLayoutPlanMismatch) && (
-                  <Alert variant="destructive">
-                    <CircleAlert className="h-4 w-4" />
-                    <AlertTitle>{t("无法加载所选孔板方案")}</AlertTitle>
-                    <AlertDescription className="space-y-3">
-                      <p>
-                        {cloningLayoutPlanMismatch
-                          ? t("所选方案不属于当前流程，请重新选择。")
-                          : t(cloningLayoutPlanQuery.error?.message ?? "")}
-                      </p>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => void cloningLayoutPlanQuery.refetch()}
-                      >
-                        {t("重新加载")}
-                      </Button>
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                {loadedCloningLayoutPlan && !cloningLayoutPlanQuery.error && (
-                  <CloningPlateFlowViewer
-                    plan={loadedCloningLayoutPlan.plan}
-                    showJsonExport={false}
-                    targetBindings={
-                      cloningLayoutSampleCountMatches &&
-                      cloningTargetBindings.length ===
-                        selectedCloningLayoutPlan.sampleCount
-                        ? cloningTargetBindings
-                        : undefined
-                    }
-                  />
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-xs text-amber-700">
+                      {skipCloningLayout
+                        ? t(
+                            "已明确选择不关联孔板方案；最终确认前仍可改选已保存版本。"
+                          )
+                        : selectedCloningLayoutPlan
+                          ? t("已显式选择 V{version}；最终确认前仍可改选。", {
+                              version: selectedCloningLayoutPlan.version,
+                            })
+                          : t(
+                              "请选择一个明确版本；系统不会默认把最新版本悄悄写入 Run。"
+                            )}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t(
+                        "分子克隆 / Gibson Run 建议关联已保存方案；只有确实不需要孔板追溯时，才选择不关联。"
+                      )}
+                    </p>
+                    <div className="grid gap-3 lg:grid-cols-2">
+                      {cloningLayoutPlans.map(plan => {
+                        const selected =
+                          plan.id === selectedCloningLayoutPlan?.id;
+                        return (
+                          <button
+                            key={plan.id}
+                            type="button"
+                            aria-pressed={selected}
+                            onClick={() => {
+                              setSkipCloningLayout(false);
+                              setCloningLayoutPlanId(plan.id);
+                            }}
+                            className={`rounded-xl border p-4 text-left transition-all ${
+                              selected
+                                ? "border-teal-500 bg-teal-50/60 ring-1 ring-teal-500"
+                                : "bg-white hover:border-slate-300 hover:bg-slate-50"
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <div
+                                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-teal-600 text-white" : "bg-slate-100 text-slate-500"}`}
+                              >
+                                {selected ? (
+                                  <Check className="h-4 w-4" />
+                                ) : (
+                                  <Grid2X2 className="h-4 w-4" />
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-semibold">
+                                    {plan.name}
+                                  </span>
+                                  <Badge variant="outline">
+                                    V{plan.version}
+                                  </Badge>
+                                </div>
+                                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                  <span>
+                                    {t("{n} 个目标", { n: plan.sampleCount })}
+                                  </span>
+                                  <span>
+                                    {t("{n} 块孔板", { n: plan.plateCount })}
+                                  </span>
+                                  <span>
+                                    {plan.nodeLabel
+                                      ? t("来源节点：{node}", {
+                                          node: plan.nodeLabel,
+                                        })
+                                      : t("流程级方案")}
+                                  </span>
+                                </div>
+                                <div className="mt-2 text-[10px] text-muted-foreground">
+                                  {new Date(plan.createdAt).toLocaleString(
+                                    lang === "en" ? "en-US" : "zh-CN"
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={context.methodSpec.layoutRequired}
+                      aria-pressed={skipCloningLayout}
+                      onClick={() => {
+                        setCloningLayoutPlanId(null);
+                        setSkipCloningLayout(true);
+                      }}
+                      className={`w-full rounded-xl border p-4 text-left transition-all ${
+                        skipCloningLayout
+                          ? "border-amber-500 bg-amber-50/70 ring-1 ring-amber-500"
+                          : "border-dashed bg-white hover:border-amber-300 hover:bg-amber-50/40"
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                            skipCloningLayout
+                              ? "bg-amber-600 text-white"
+                              : "bg-amber-50 text-amber-700"
+                          }`}
+                        >
+                          {skipCloningLayout ? (
+                            <Check className="h-4 w-4" />
+                          ) : (
+                            <FileLock2 className="h-4 w-4" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold">
+                              {t("不关联孔板方案")}
+                            </span>
+                            <Badge variant="outline">{t("通用 Run")}</Badge>
+                          </div>
+                          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                            {t(
+                              "本次 Run 不冻结孔板快照；详情页会保留未关联空态，不会套用当前或最新方案。"
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
                 )}
               </CardContent>
             </Card>
-          )}
-        </div>
-      )}
 
-      {step === 3 && context && (
+            {selectedCloningLayoutPlan && (
+              <Alert
+                className={
+                  cloningLayoutSampleCountMatches
+                    ? "border-teal-200 bg-teal-50"
+                    : "border-amber-300 bg-amber-50"
+                }
+              >
+                {cloningLayoutSampleCountMatches ? (
+                  <CheckCircle2 className="h-4 w-4 text-teal-700" />
+                ) : (
+                  <CircleAlert className="h-4 w-4 text-amber-700" />
+                )}
+                <AlertTitle>
+                  {t("实验样本绑定：{selected} / {required}", {
+                    selected: sampleCount,
+                    required: selectedCloningLayoutPlan.sampleCount,
+                  })}
+                </AlertTitle>
+                <AlertDescription className="space-y-3">
+                  <p>
+                    {cloningLayoutSampleCountMatches
+                      ? t("数量已匹配；创建 Run 时会冻结 TGT→sample 顺序映射。")
+                      : t(
+                          "所选方案需要 {required} 个目标，当前绑定了 {selected} 个实验样本。数量一致后才能继续。",
+                          {
+                            selected: sampleCount,
+                            required: selectedCloningLayoutPlan.sampleCount,
+                          }
+                        )}
+                  </p>
+                  {!cloningLayoutSampleCountMatches && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setStep(1)}
+                    >
+                      <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+                      {t("返回上一步选择样本")}
+                    </Button>
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {skipCloningLayout && cloningLayoutPlans.length > 0 && (
+              <Alert className="border-amber-300 bg-amber-50">
+                <Info className="h-4 w-4 text-amber-700" />
+                <AlertTitle>{t("本次明确不关联孔板方案")}</AlertTitle>
+                <AlertDescription>
+                  {t(
+                    "将创建通用 Run，不包含流程与孔板快照。若本次是分子克隆 / Gibson 执行，建议改选上方已保存方案。"
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {selectedCloningLayoutPlan && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Grid2X2 className="h-4 w-4 text-teal-600" />
+                    {t("所选方案预览")}
+                    <Badge variant="outline">
+                      V{selectedCloningLayoutPlan.version}
+                    </Badge>
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "请在继续前核对流程节点、孔板和所选目标详情；Run 将冻结这里显示的已保存版本。"
+                    )}
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  {cloningLayoutPlanQuery.isLoading && (
+                    <div
+                      className="flex min-h-36 items-center justify-center gap-2 text-sm text-muted-foreground"
+                      role="status"
+                    >
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      {t("加载中…")}
+                    </div>
+                  )}
+
+                  {(cloningLayoutPlanQuery.error ||
+                    cloningLayoutPlanMismatch) && (
+                    <Alert variant="destructive">
+                      <CircleAlert className="h-4 w-4" />
+                      <AlertTitle>{t("无法加载所选孔板方案")}</AlertTitle>
+                      <AlertDescription className="space-y-3">
+                        <p>
+                          {cloningLayoutPlanMismatch
+                            ? t("所选方案不属于当前流程，请重新选择。")
+                            : t(cloningLayoutPlanQuery.error?.message ?? "")}
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void cloningLayoutPlanQuery.refetch()}
+                        >
+                          {t("重新加载")}
+                        </Button>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  {loadedCloningLayoutPlan && !cloningLayoutPlanQuery.error && (
+                    <CloningPlateFlowViewer
+                      plan={loadedCloningLayoutPlan.plan}
+                      showJsonExport={false}
+                      targetBindings={
+                        cloningLayoutSampleCountMatches &&
+                        cloningTargetBindings.length ===
+                          selectedCloningLayoutPlan.sampleCount
+                          ? cloningTargetBindings
+                          : undefined
+                      }
+                    />
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
+
+      {step === 1 && context && (
         <div className="space-y-4">
           <Alert
             className={
@@ -1606,31 +2063,54 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
               {t(
                 executionMode === "simulation"
                   ? "当前创建模拟运行"
-                  : "当前申请现场设备运行"
+                  : "本次按人工操作执行"
               )}
             </AlertTitle>
             <AlertDescription>
               {t(
                 executionMode === "simulation"
-                  ? "驱动节点仅显示通过 simulation_ready 校验的设备；通用设备节点需人工确认能力与型号。"
-                  : "驱动节点仅显示真实 ready 的设备；通用设备节点需人工确认能力与型号，最终启动仍由 Edge 门禁控制。"
+                  ? "演练只用于检查步骤路径，不占用真实库存，不产生实验结果。"
+                  : "请选择方法批准的设备。执行时需要记录操作说明、原始文件和样本结果。"
               )}
             </AlertDescription>
           </Alert>
           {sampleCount > 0 && (
-            <RunPlanDataFlowPreview
-              projectName={
-                context.projects.find(
-                  project => String(project.id) === effectiveProjectId
-                )?.name ?? null
-              }
-              purpose={purpose}
-              workflowName={context.workflow.name}
-              resources={planPreviewResources}
-              nodes={context.nodes}
-              equipment={planPreviewEquipment}
-              showEquipmentDetails
-            />
+            <details className="rounded-xl border bg-white p-4">
+              <summary className="cursor-pointer text-sm">
+                {t("预览本次实验视图")}
+              </summary>
+              <BioViewRuntime
+                className="mt-4"
+                showHeader={false}
+                manifest={{
+                  bioView: context.workflow.visualizationSpec,
+                  workflow: {
+                    id: context.workflow.id,
+                    name: context.workflow.name,
+                  },
+                }}
+                nodes={bioViewPreviewNodes}
+                edges={context.edges}
+                samples={planPreviewResources.filter(
+                  resource => resource.role !== "material"
+                )}
+                materials={planPreviewResources.filter(
+                  resource => resource.role === "material"
+                )}
+                samplePlatePlans={selectedSamplePlates}
+                parameters={{
+                  effectiveValues: {
+                    executionMode,
+                    scheduledStart,
+                    scheduledEnd,
+                    operatorName: operatorName || t("当前用户"),
+                  },
+                }}
+                cloningPlan={loadedCloningLayoutPlan}
+                targetBindings={cloningTargetBindings}
+                mode="draft"
+              />
+            </details>
           )}
           {equipmentNodes.length === 0 ? (
             <Card>
@@ -1725,18 +2205,18 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
                         ) : isDriverNode ? (
                           <p className="text-xs text-muted-foreground">
                             {t(
-                              "驱动节点仅列出状态、驱动版本和执行模式均匹配的设备。"
+                              "此处仅列出经过本方法验证且满足当前执行模式的设备。"
                             )}
                           </p>
                         ) : setup.equipmentId !== "none" ? (
                           <p className="text-xs text-amber-700">
                             {t(
-                              "已选择通用设备，需人工确认设备能力与型号适配本步骤。"
+                              "所选设备已在方法发布时通过适配确认，开始前仍会检查现场可用性。"
                             )}
                           </p>
                         ) : (
                           <p className="text-xs text-amber-700">
-                            {t("请选择通用设备，并人工确认设备能力与型号。")}
+                            {t("选择经过方法验证的设备")}
                           </p>
                         )}
                       </div>
@@ -1748,97 +2228,171 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
                           </div>
                         ) : (
                           <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                            {fields.map(field => {
-                              const value = setup.params[field.key] ?? "";
-                              return (
-                                <div key={field.key} className="space-y-1.5">
-                                  <Label className="text-xs">
-                                    {t(
-                                      "labelEn" in field && lang === "en"
-                                        ? (field.labelEn ?? field.label)
-                                        : field.label
+                            {fields
+                              .filter(
+                                field =>
+                                  context.methodSpec.nodes[node.nodeKey]
+                                    ?.parameters[field.key]?.adjustable
+                              )
+                              .map(field => {
+                                const value = setup.params[field.key] ?? "";
+                                const policy =
+                                  context.methodSpec.nodes[node.nodeKey]
+                                    ?.parameters[field.key];
+                                return (
+                                  <div key={field.key} className="space-y-1.5">
+                                    <Label className="text-xs">
+                                      {t(
+                                        "labelEn" in field && lang === "en"
+                                          ? (field.labelEn ?? field.label)
+                                          : field.label
+                                      )}
+                                      {"required" in field && field.required
+                                        ? " *"
+                                        : ""}
+                                      {field.unit ? ` (${field.unit})` : ""}
+                                      {(policy?.min !== undefined ||
+                                        policy?.max !== undefined) && (
+                                        <span className="ml-2 text-muted-foreground">
+                                          {t("允许范围：{min}–{max}", {
+                                            min: policy?.min ?? "—",
+                                            max: policy?.max ?? "—",
+                                          })}
+                                        </span>
+                                      )}
+                                    </Label>
+                                    {field.type === "select" ||
+                                    field.type === "boolean" ? (
+                                      <Select
+                                        disabled={
+                                          !context?.methodSpec.nodes[
+                                            node.nodeKey
+                                          ]?.parameters[field.key]?.adjustable
+                                        }
+                                        value={String(value)}
+                                        onValueChange={next =>
+                                          updateNode(node.nodeKey, {
+                                            params: {
+                                              ...setup.params,
+                                              [field.key]:
+                                                field.type === "boolean"
+                                                  ? next === "true"
+                                                  : next,
+                                            },
+                                          })
+                                        }
+                                      >
+                                        <SelectTrigger className="h-9">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {field.type === "boolean" ? (
+                                            <>
+                                              <SelectItem value="true">
+                                                {t("是")}
+                                              </SelectItem>
+                                              <SelectItem value="false">
+                                                {t("否")}
+                                              </SelectItem>
+                                            </>
+                                          ) : (
+                                            field.options?.map(option => (
+                                              <SelectItem
+                                                key={option}
+                                                value={option}
+                                              >
+                                                {t(option)}
+                                              </SelectItem>
+                                            ))
+                                          )}
+                                        </SelectContent>
+                                      </Select>
+                                    ) : (
+                                      <Input
+                                        readOnly={
+                                          !context?.methodSpec.nodes[
+                                            node.nodeKey
+                                          ]?.parameters[field.key]?.adjustable
+                                        }
+                                        type={
+                                          field.type === "number"
+                                            ? "number"
+                                            : "text"
+                                        }
+                                        value={String(value)}
+                                        min={
+                                          policy?.min ??
+                                          ("min" in field
+                                            ? field.min
+                                            : undefined)
+                                        }
+                                        max={
+                                          policy?.max ??
+                                          ("max" in field
+                                            ? field.max
+                                            : undefined)
+                                        }
+                                        onChange={event =>
+                                          updateNode(node.nodeKey, {
+                                            params: {
+                                              ...setup.params,
+                                              [field.key]:
+                                                field.type === "number"
+                                                  ? Number(event.target.value)
+                                                  : event.target.value,
+                                            },
+                                          })
+                                        }
+                                      />
                                     )}
-                                    {"required" in field && field.required
-                                      ? " *"
-                                      : ""}
-                                    {field.unit ? ` (${field.unit})` : ""}
-                                  </Label>
-                                  {field.type === "select" ||
-                                  field.type === "boolean" ? (
-                                    <Select
-                                      value={String(value)}
-                                      onValueChange={next =>
-                                        updateNode(node.nodeKey, {
-                                          params: {
-                                            ...setup.params,
-                                            [field.key]:
-                                              field.type === "boolean"
-                                                ? next === "true"
-                                                : next,
-                                          },
-                                        })
-                                      }
-                                    >
-                                      <SelectTrigger className="h-9">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {field.type === "boolean" ? (
-                                          <>
-                                            <SelectItem value="true">
-                                              {t("是")}
-                                            </SelectItem>
-                                            <SelectItem value="false">
-                                              {t("否")}
-                                            </SelectItem>
-                                          </>
-                                        ) : (
-                                          field.options?.map(option => (
-                                            <SelectItem
-                                              key={option}
-                                              value={option}
-                                            >
-                                              {t(option)}
-                                            </SelectItem>
-                                          ))
-                                        )}
-                                      </SelectContent>
-                                    </Select>
-                                  ) : (
-                                    <Input
-                                      type={
-                                        field.type === "number"
-                                          ? "number"
-                                          : "text"
-                                      }
-                                      value={String(value)}
-                                      min={
-                                        "min" in field ? field.min : undefined
-                                      }
-                                      max={
-                                        "max" in field ? field.max : undefined
-                                      }
-                                      onChange={event =>
-                                        updateNode(node.nodeKey, {
-                                          params: {
-                                            ...setup.params,
-                                            [field.key]:
-                                              field.type === "number"
-                                                ? Number(event.target.value)
-                                                : event.target.value,
-                                          },
-                                        })
-                                      }
-                                    />
-                                  )}
-                                </div>
-                              );
-                            })}
+                                  </div>
+                                );
+                              })}
                           </div>
                         )}
                       </div>
                     </div>
-                    {fields.length > 0 && (
+                    {fields.some(
+                      field =>
+                        !context.methodSpec.nodes[node.nodeKey]?.parameters[
+                          field.key
+                        ]?.adjustable
+                    ) && (
+                      <details className="rounded border bg-slate-50 p-3">
+                        <summary className="cursor-pointer text-xs">
+                          {t("查看方法固定参数")}
+                        </summary>
+                        <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+                          {fields
+                            .filter(
+                              field =>
+                                !context.methodSpec.nodes[node.nodeKey]
+                                  ?.parameters[field.key]?.adjustable
+                            )
+                            .map(field => (
+                              <div key={field.key}>
+                                <dt className="text-xs text-muted-foreground">
+                                  {t(
+                                    "labelEn" in field && lang === "en"
+                                      ? (field.labelEn ?? field.label)
+                                      : field.label
+                                  )}
+                                </dt>
+                                <dd>
+                                  {t(String(setup.params[field.key] ?? "—"))}{" "}
+                                  {field.unit}
+                                </dd>
+                              </div>
+                            ))}
+                        </dl>
+                      </details>
+                    )}
+                    {fields.some(
+                      field =>
+                        context.methodSpec.nodes[node.nodeKey]?.parameters[
+                          field.key
+                        ]?.adjustable
+                    ) && (
                       <div className="space-y-1.5">
                         <Label className="text-xs">
                           {t("参数调整说明（可选）")}
@@ -1869,27 +2423,72 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
         </div>
       )}
 
-      {step === 4 && context && (
+      {step === 2 && context && (
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="space-y-4">
             <Alert className="border-teal-200 bg-teal-50">
               <ShieldCheck className="h-4 w-4 text-teal-700" />
-              <AlertTitle>{t("将创建不可变 Run 快照")}</AlertTitle>
+              <AlertTitle>{t("确认本批实验计划")}</AlertTitle>
               <AlertDescription>
                 {t(
-                  selectedCloningLayoutPlan
-                    ? "流程节点、所选孔板方案、样本与物料、设备实例、驱动版本和最终有效参数都会固化；后续修改不会回写本次运行。"
-                    : "流程节点、样本与物料、设备实例、驱动版本和最终有效参数都会固化；本次未关联孔板方案，详情页将保留诚实空态。"
+                  "保存后会锁定本次方法版本、样本、物料、设备和参数。实验尚未开始，请在任务页完成准备后确认开始。"
                 )}
               </AlertDescription>
             </Alert>
+            <section className="space-y-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wider text-teal-700">
+                  {t("3. 确认实验视图与布局")}
+                </div>
+                <h2 className="mt-1 text-lg font-semibold">
+                  {t("确认本次运行的实验视图与布局")}
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  {t(
+                    "系统会根据已发布方法、本次样本与物料、孔板布局及设备参数自动生成实验视图。创建 Run 后将与运行计划一起冻结，不随方法模板后续修改。"
+                  )}
+                </p>
+              </div>
+              <BioViewRuntime
+                manifest={{
+                  bioView: context.workflow.visualizationSpec,
+                  workflow: {
+                    id: context.workflow.id,
+                    name: context.workflow.name,
+                  },
+                }}
+                nodes={bioViewPreviewNodes}
+                edges={context.edges}
+                samples={planPreviewResources.filter(
+                  resource => resource.role !== "material"
+                )}
+                materials={planPreviewResources.filter(
+                  resource => resource.role === "material"
+                )}
+                samplePlatePlans={selectedSamplePlates}
+                parameters={{
+                  effectiveValues: {
+                    executionMode,
+                    scheduledStart,
+                    scheduledEnd,
+                    operatorName: operatorName || t("当前用户"),
+                  },
+                }}
+                cloningPlan={loadedCloningLayoutPlan}
+                targetBindings={cloningTargetBindings}
+                mode="draft"
+              />
+            </section>
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">{t("运行计划")}</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-4 sm:grid-cols-2">
                 {[
-                  [t("来源流程"), context.workflow.name],
+                  [
+                    t("方法版本"),
+                    `${context.workflow.name} · V${context.methodRelease.version}`,
+                  ],
                   [t("运行名称"), effectiveName],
                   [
                     t("关联项目"),
@@ -1899,21 +2498,27 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
                   ],
                   [
                     t("执行模式"),
-                    t(executionMode === "simulation" ? "模拟运行" : "现场执行"),
+                    t(
+                      executionMode === "simulation"
+                        ? "模拟运行"
+                        : executionMode === "manual"
+                          ? "人工执行"
+                          : "自动设备执行"
+                    ),
                   ],
                   [
                     t("计划时段"),
                     `${new Date(scheduledStart).toLocaleString(lang === "en" ? "en-US" : "zh-CN")} — ${new Date(scheduledEnd).toLocaleString(lang === "en" ? "en-US" : "zh-CN")}`,
                   ],
                   [t("运行负责人"), operatorName || t("当前用户")],
-                  [
-                    t("冻结孔板方案"),
-                    selectedCloningLayoutPlan
-                      ? `${selectedCloningLayoutPlan.name} · V${selectedCloningLayoutPlan.version}`
-                      : skipCloningLayout
-                        ? t("已明确不关联（通用 Run）")
-                        : t("未关联排板"),
-                  ],
+                  ...(selectedCloningLayoutPlan
+                    ? [
+                        [
+                          t("孔板方案"),
+                          `${selectedCloningLayoutPlan.name} · V${selectedCloningLayoutPlan.version}`,
+                        ],
+                      ]
+                    : []),
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-lg bg-slate-50 p-3">
                     <div className="text-[11px] font-medium text-muted-foreground">
@@ -1931,6 +2536,19 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
+                <details>
+                  <summary className="cursor-pointer font-medium">
+                    {t("查看样本与用量")}
+                  </summary>
+                  <div className="mt-2 max-h-56 space-y-2 overflow-auto">
+                    {planPreviewResources.map(resource => (
+                      <p key={resource.id} className="border-t pt-2 text-xs">
+                        {resource.sku} · {resource.name} · {resource.amount}{" "}
+                        {resource.unit}
+                      </p>
+                    ))}
+                  </div>
+                </details>
                 <div className="flex items-center justify-between rounded-lg border p-3">
                   <span>{t("实验样本")}</span>
                   <strong>{sampleCount}</strong>
@@ -1957,8 +2575,8 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
             <CardContent className="space-y-3">
               {[
                 {
-                  ok: context.workflow.status === "active",
-                  label: t("流程已启用并保存"),
+                  ok: !!context.methodRelease,
+                  label: t("使用已复核的发布版本"),
                 },
                 {
                   ok: context.nodes.length > 0,
@@ -1966,11 +2584,19 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
                 },
                 {
                   ok: childWorkflowNodes.length === 0,
-                  label: t("流程不含未展开的物理子流程"),
+                  label: t("方法步骤与子方法已完整展开"),
                 },
                 { ok: sampleCount > 0, label: t("已绑定实验样本") },
                 { ok: resourceValid, label: t("库存可用量满足本次计划") },
-                ...(cloningLayoutPlans.length > 0
+                ...(needsIdentity
+                  ? [
+                      {
+                        ok: identityValid,
+                        label: t("输入身份与链别符合本方法"),
+                      },
+                    ]
+                  : []),
+                ...(cloningLayoutPlans.length > 0 && !samplePlatePlanIds.length
                   ? [
                       {
                         ok: skipCloningLayout || !!selectedCloningLayoutPlan,
@@ -2008,11 +2634,11 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
                   ? [
                       {
                         ok: genericEquipmentValid,
-                        label: t("通用设备节点已选择；能力与型号需人工确认"),
+                        label: t("设备已通过方法适配确认"),
                       },
                     ]
                   : []),
-                { ok: parametersValid, label: t("当次参数通过字段校验") },
+                { ok: parametersValid, label: t("本批参数在方法允许范围内") },
                 { ok: scheduleValid, label: t("运行时段有效") },
               ].map(check => (
                 <div
@@ -2033,34 +2659,38 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
                   {t("本次未选择试剂或物料；若流程确实不消耗库存，可继续。")}
                 </div>
               )}
-              {cloningLayoutPlans.length === 0 && (
-                <div className="flex items-start gap-2 text-xs text-amber-700">
-                  <Info className="mt-0.5 h-4 w-4 shrink-0" />
-                  {t(
-                    "当前流程没有已保存排板；本次 Run 不会包含流程与孔板快照。"
-                  )}
-                </div>
-              )}
+              {context.methodSpec.layoutRequired &&
+                cloningLayoutPlans.length === 0 &&
+                !samplePlatesValid && (
+                  <div className="flex items-start gap-2 text-xs text-amber-700">
+                    <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                    {t(
+                      "本方法要求孔板布局，请先在 BioFlow 中保存覆盖本批样本的孔板方案。"
+                    )}
+                  </div>
+                )}
               <div className="rounded-lg bg-slate-950 p-3 text-xs leading-relaxed text-slate-300">
                 {t(
                   executionMode === "simulation"
-                    ? "“发起”只会锁定模拟计划，不预占真实库存、不预约真实设备，也不会下发物理命令。"
-                    : "“发起”只会锁定计划、预占库存并预约设备，不会直接向 Hamilton、酶标仪或其他真机下发命令。"
+                    ? "保存演练计划后，还需在任务页启动演练。演练不占用库存和设备，也不产生真实实验结果。"
+                    : "保存计划会预占库存并预约设备；执行需在任务页单独确认开始。"
                 )}
               </div>
               <Button
                 className="w-full bg-teal-600 hover:bg-teal-500"
-                disabled={!launchValid || createMut.isPending}
+                disabled={!launchValid || !draft.saved || createMut.isPending}
                 onClick={submit}
               >
-                {createMut.isPending ? t("正在锁定资源…") : t("锁定并发起运行")}
+                {createMut.isPending
+                  ? t("正在保存计划…")
+                  : t("保存本次实验计划")}
               </Button>
             </CardContent>
           </Card>
         </div>
       )}
 
-      <div className="flex items-center justify-between border-t pt-4">
+      <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 border-t bg-white/95 px-3 py-3 shadow-sm">
         <Button
           variant="outline"
           disabled={step === 0}
@@ -2068,9 +2698,26 @@ function LabRunLaunchForm({ workflowId }: { workflowId: number }) {
         >
           <ArrowLeft className="mr-1 h-4 w-4" /> {t("上一步")}
         </Button>
+        {step === 1 && !launchValid && (
+          <p className="flex-1 text-right text-xs text-amber-700">
+            {t(
+              !resourceValid
+                ? "请核对样本数量、物料用量与库存"
+                : !equipmentValid
+                  ? "请选择本方法批准的设备"
+                  : !parametersValid
+                    ? "请将参数调整到方法允许范围"
+                    : "请补齐本批必需的准备事项"
+            )}
+          </p>
+        )}
         {step < STEPS.length - 1 && (
           <Button
-            disabled={!stepValid[step] || contextQuery.isLoading}
+            disabled={
+              !(step === 0
+                ? stepValid[0]
+                : stepValid.slice(1).every(Boolean)) || contextQuery.isLoading
+            }
             onClick={() =>
               setStep(current => Math.min(STEPS.length - 1, current + 1))
             }

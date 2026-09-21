@@ -113,6 +113,62 @@
       "when": 1788943936770,
       "tag": "0015_glamorous_sunfire",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "5",
+      "when": 1789632000000,
+      "tag": "0016_bioview_blueprint",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1789632000001,
+      "tag": "0017_method_releases",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1789632000002,
+      "tag": "0018_run_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1789632231181,
+      "tag": "0019_manual_execution_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1789640136033,
+      "tag": "0020_antibody_outputs",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1789643949663,
+      "tag": "0021_streamed_run_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "5",
+      "when": 1789665714286,
+      "tag": "0022_sample_identity_intake",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "5",
+      "when": 1789723099120,
+      "tag": "0023_sample_plate_plans",
+      "breakpoints": true
     }
   ]
 }

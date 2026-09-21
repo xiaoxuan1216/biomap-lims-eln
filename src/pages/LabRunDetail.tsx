@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { setCopilotContext } from "@/lib/copilotContext";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   ArrowLeft,
   CalendarClock,
@@ -8,13 +9,12 @@ import {
   ExternalLink,
   FileLock2,
   FlaskConical,
-  Grid2X2,
   Info,
   ListChecks,
   MonitorCog,
+  PanelsTopLeft,
   PackageCheck,
   Play,
-  Route,
   ShieldCheck,
   TestTubes,
   XCircle,
@@ -36,11 +36,13 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import RunDataFlow from "@/components/lab-run/RunDataFlow";
-import CloningPlateFlowViewer from "@/features/cloning-planner/CloningPlateFlowViewer";
+import ManualExecutionWorkspace from "@/components/lab-run/ManualExecutionWorkspace";
+import { BioViewRuntime } from "@/features/bioview";
 import {
   LAB_RUN_ROLE_META,
   LAB_RUN_STATUS_META,
+  labTaskLabel,
+  labRunModeLabel,
   type LabRunResourceRole,
   type LabRunStatus,
 } from "@contracts/labRun";
@@ -55,7 +57,7 @@ type ParameterSnapshot = {
 
 const RUN_NODE_STATUS_LABELS: Record<string, string> = {
   pending: "待执行",
-  running: "模拟执行中",
+  running: "执行中",
   completed: "已完成",
   skipped: "已跳过",
   failed: "异常",
@@ -94,6 +96,7 @@ export default function LabRunDetail() {
   const { t, lang } = useI18n();
   const navigate = useNavigate();
   const { id } = useParams();
+  const [viewParams, setViewParams] = useSearchParams();
   const runId = Number(id);
   const utils = trpc.useUtils();
   const {
@@ -101,6 +104,9 @@ export default function LabRunDetail() {
     isLoading,
     error,
   } = trpc.labRun.byId.useQuery({ id: runId }, { enabled: runId > 0 });
+  useEffect(() => { setCopilotContext({ entityType: "lab_run", entityId: runId, entityName: run?.name }); return () => setCopilotContext({}); }, [runId, run?.name]);
+  const [simulationDecisions, setSimulationDecisions] = useState<Record<string, "yes" | "no">>({});
+  const [skipWait, setSkipWait] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const cancelMut = trpc.labRun.cancel.useMutation({
@@ -135,6 +141,7 @@ export default function LabRunDetail() {
   });
   const advanceSimulationMut = trpc.labRun.advanceSimulation.useMutation({
     onSuccess: async result => {
+      setSimulationDecisions({}); setSkipWait(false);
       toast.success(
         t(
           result.status === "completed"
@@ -160,10 +167,7 @@ export default function LabRunDetail() {
   }
 
   const meta = LAB_RUN_STATUS_META[run.status as LabRunStatus];
-  const runStatusLabel =
-    run.executionMode === "simulation" && run.status === "completed"
-      ? "模拟状态推进完成"
-      : meta.label;
+  const runStatusLabel = labTaskLabel(run);
   const issueText = (issue: (typeof run.readiness.issues)[number]) =>
     lang === "en" ? (issue.labelEn ?? issue.label) : issue.label;
   const equipmentNodes = run.nodes.filter(node => node.type === "equipment");
@@ -177,8 +181,14 @@ export default function LabRunDetail() {
     ["draft", "preparing", "ready"].includes(run.status) ||
     (run.executionMode === "simulation" && run.status === "running");
   const cloningLayoutPlan = run.cloningLayoutPlan;
-  const defaultTab =
-    cloningLayoutPlan && run.integrityValid ? "plate-flow" : "data-flow";
+  const requestedTab = viewParams.get("tab");
+  // Historical data-flow deep links now open the integrated experiment view,
+  // where the same authoritative LIMS evidence is rendered in context.
+  const activeTab = requestedTab === "data-flow"
+    ? "bio-view"
+    : ["bio-view", "execution"].includes(requestedTab ?? "")
+      ? requestedTab!
+      : "execution";
   const preparation = [
     {
       label: t("流程快照"),
@@ -215,9 +225,9 @@ export default function LabRunDetail() {
       label: t("启动执行"),
       detail: t(
         run.status === "completed"
-          ? "模拟执行已完成"
+          ? (run.executionMode === "simulation" ? "模拟执行已完成" : "执行结束")
           : run.status === "running"
-            ? "模拟执行已启动"
+            ? (run.executionMode === "simulation" ? "模拟执行已启动" : "执行中")
             : "等待受控启动动作"
       ),
       ok: ["running", "completed"].includes(run.status),
@@ -249,7 +259,7 @@ export default function LabRunDetail() {
               </Badge>
               <Badge variant="secondary">
                 {t(
-                  run.executionMode === "simulation" ? "模拟运行" : "现场执行"
+                  labRunModeLabel(run.executionMode)
                 )}
               </Badge>
             </div>
@@ -263,14 +273,14 @@ export default function LabRunDetail() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" asChild>
-            <Link to={`/workflows/${run.workflowId}`}>
+            <Link to={`/workflows/${run.workflowId}${run.method?.id ? `?releaseId=${run.method.id}` : ""}`}>
               <ExternalLink className="mr-1 h-4 w-4" />
-              {t("查看来源流程")}
+              {t("查看来源方法")}{run.method?.version ? ` V${run.method.version}` : ""}
             </Link>
           </Button>
           {canCancel && (
             <Button
-              variant="outline"
+              variant="ghost"
               className="text-red-600 hover:text-red-700"
               onClick={() => setCancelOpen(true)}
             >
@@ -308,28 +318,31 @@ export default function LabRunDetail() {
             {t(
               run.executionMode === "simulation"
                 ? "样本、物料、设备和当次参数已冻结为模拟快照；未占用真实库存或设备时段。"
-                : "样本与物料已预占、设备时段已预约、当次参数已冻结。创建运行不等于已经向真机下发命令。"
+                : run.executionMode === "manual" ? "本次方法版本、样本、设备和参数已锁定。请按当前步骤操作，并保留原始文件与样本结果。" : "样本与物料已预占、设备时段已预约、当次参数已冻结。创建运行不等于已经向真机下发命令。"
             )}
           </AlertDescription>
         </Alert>
       )}
 
-      <Tabs defaultValue={defaultTab} className="gap-5">
+      <Tabs
+        value={activeTab}
+        onValueChange={tab =>
+          setViewParams(current => {
+            const next = new URLSearchParams(current);
+            next.set("tab", tab);
+            return next;
+          }, { replace: true })
+        }
+        className="gap-5"
+      >
         <div className="overflow-x-auto border-b">
           <TabsList className="h-auto min-w-max justify-start bg-transparent p-0">
             <TabsTrigger
-              value="data-flow"
+              value="bio-view"
               className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-teal-600 data-[state=active]:bg-transparent data-[state=active]:text-teal-700 data-[state=active]:shadow-none"
             >
-              <Route className="h-4 w-4" />
-              {t("数据流转")}
-            </TabsTrigger>
-            <TabsTrigger
-              value="plate-flow"
-              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-teal-600 data-[state=active]:bg-transparent data-[state=active]:text-teal-700 data-[state=active]:shadow-none"
-            >
-              <Grid2X2 className="h-4 w-4" />
-              {t("流程与孔板")}
+              <PanelsTopLeft className="h-4 w-4" />
+              {t("实验视图")}
             </TabsTrigger>
             <TabsTrigger
               value="execution"
@@ -341,111 +354,159 @@ export default function LabRunDetail() {
           </TabsList>
         </div>
 
-        <TabsContent value="data-flow" className="mt-0">
-          <RunDataFlow run={run} dataFlow={run.dataFlow} />
-        </TabsContent>
-
-        <TabsContent value="plate-flow" className="mt-0 space-y-4">
+        <TabsContent value="bio-view" className="mt-0 space-y-4">
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              onClick={() =>
+                setViewParams(current => {
+                  const next = new URLSearchParams(current);
+                  next.set("tab", "execution");
+                  return next;
+                }, { replace: true })
+              }
+            >
+              <ListChecks className="mr-1 h-4 w-4" />
+              {t("进入执行详情")}
+            </Button>
+          </div>
           {!run.integrityValid ? (
             <Alert variant="destructive">
               <CircleAlert className="h-4 w-4" />
-              <AlertTitle>{t("不能读取冻结孔板方案")}</AlertTitle>
+              <AlertTitle>{t("不能读取冻结实验视图")}</AlertTitle>
               <AlertDescription>
                 {t(
-                  "Run 快照完整性校验未通过，系统不会改用当前流程中的其他排板版本。"
+                  "Run 快照完整性校验未通过，系统不会改用当前流程模板重新生成历史视图。"
                 )}
               </AlertDescription>
             </Alert>
-          ) : cloningLayoutPlan ? (
-            <>
-              <Card className="border-teal-200 bg-teal-50/30">
-                <CardContent className="p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-semibold">
-                          {cloningLayoutPlan.name}
-                        </span>
-                        <Badge variant="outline">
-                          V{cloningLayoutPlan.version}
-                        </Badge>
-                        <Badge variant="secondary">{t("冻结规划快照")}</Badge>
-                      </div>
-                      <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                        {t(
-                          "目标号、容器与孔位来自本 Run 冻结的排板规划；它们不是实际执行、库存移动或实验结果记录。"
-                        )}
-                      </p>
-                    </div>
-                    <div className="grid shrink-0 grid-cols-2 gap-2 text-center text-xs">
-                      <div className="rounded-lg border bg-white px-3 py-2">
-                        <strong className="block text-base">
-                          {cloningLayoutPlan.sampleCount}
-                        </strong>
-                        {t("目标")}
-                      </div>
-                      <div className="rounded-lg border bg-white px-3 py-2">
-                        <strong className="block text-base">
-                          {cloningLayoutPlan.plateCount}
-                        </strong>
-                        {t("孔板")}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t border-teal-100 pt-3 text-[10px] text-muted-foreground">
-                    <span>
-                      {cloningLayoutPlan.nodeLabel
-                        ? t("来源节点：{node}", {
-                            node: cloningLayoutPlan.nodeLabel,
-                          })
-                        : t("流程级方案")}
-                    </span>
-                    <span>
-                      {t("引擎版本")} {cloningLayoutPlan.engineVersion}
-                    </span>
-                    <span className="font-mono">
-                      SHA-256 · {cloningLayoutPlan.snapshotHash}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-              <CloningPlateFlowViewer
-                plan={cloningLayoutPlan.plan}
-                exportBaseName={`${run.runNo}-cloning-layout-v${cloningLayoutPlan.version}`}
-                targetBindings={cloningLayoutPlan.targetBindings}
-                jsonExportValue={{
-                  run: { id: run.id, runNo: run.runNo, snapshotHash: run.snapshotHash },
-                  cloningLayoutPlan,
-                }}
-              />
-            </>
           ) : (
-            <Card>
-              <CardContent className="px-5 py-12 text-center">
-                <Grid2X2 className="mx-auto h-10 w-10 text-slate-300" />
-                <h2 className="mt-4 text-base font-semibold">
-                  {t("此 Run 未关联冻结排板方案")}
-                </h2>
-                <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                  {t(
-                    "这是旧 Run 或发起时未选择排板方案。系统不会读取当前流程的最新版本来补写历史 Run。"
-                  )}
-                </p>
-                <Button variant="outline" className="mt-5" asChild>
-                  <Link to={`/workflows/${run.workflowId}?view=plates`}>
-                    {t("查看来源流程当前孔板配置")}{" "}
-                    <ExternalLink className="ml-1 h-3.5 w-3.5" />
-                  </Link>
-                </Button>
-                <p className="mt-2 text-[10px] text-muted-foreground">
-                  {t("该链接展示当前流程配置，不属于本 Run 快照。")}
-                </p>
-              </CardContent>
-            </Card>
+            <BioViewRuntime
+              manifest={{
+                bioView: run.bioView,
+                workflow: {
+                  id: run.workflowId,
+                  name: run.workflowName,
+                },
+              }}
+              method={run.method}
+              nodes={run.nodes}
+              edges={run.methodEdges}
+              samples={run.resources.filter(resource => resource.role !== "material")}
+              materials={run.resources.filter(resource => resource.role === "material")}
+              cloningPlan={cloningLayoutPlan}
+              targetBindings={cloningLayoutPlan?.targetBindings}
+              runContext={run}
+              dataFlow={run.dataFlow}
+              samplePlatePlans={run.samplePlatePlans}
+              mode="run"
+            />
           )}
         </TabsContent>
 
         <TabsContent value="execution" className="mt-0 space-y-5">
+              {run.executionMode === "manual" ? <ManualExecutionWorkspace key={run.id} run={run} /> : <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <CheckCircle2 className="h-4 w-4 text-teal-600" />
+                    {t("下一步动作")}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-sm text-muted-foreground">{t("负责人")}：{run.operatorName || run.createdByName} · {t(LAB_RUN_STATUS_META[run.status].label)}</p>
+                  {run.readiness.issues.length === 0 ? (
+                    <div className="flex items-center gap-2 text-sm text-teal-700">
+                      <CheckCircle2 className="h-4 w-4" />
+                      {t("本次计划检查通过；启动后才会进入执行")}
+                    </div>
+                  ) : (
+                    run.readiness.issues.map((issue, index) => (
+                      <div
+                        key={`${issue.code}-${index}`}
+                        className={`flex items-start gap-2 text-sm ${issue.level === "blocking" ? "text-red-700" : "text-amber-700"}`}
+                      >
+                        {issue.level === "blocking" ? (
+                          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                        ) : (
+                          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                        )}
+                        <span>{issueText(issue)}</span>
+                      </div>
+                    ))
+                  )}
+                  <div className="rounded-lg bg-slate-950 p-3 text-xs leading-relaxed text-slate-300">
+                    {t(
+                      run.executionMode === "simulation"
+                        ? "演练用于检查步骤路径，不操作设备、不扣减库存，也不生成真实实验结果。"
+                        : "自动执行通道尚未接通，请联系设备负责人处理。"
+                    )}
+                  </div>
+                  {run.executionMode === "simulation" && run.status === "running" && <div className="space-y-3">{run.nodes.filter(n => n.status === "running" && n.type === "decision").map(node => <label className="block text-sm" key={node.nodeKey}>{node.label}<select className="ml-2 rounded border p-2" value={simulationDecisions[node.nodeKey] ?? ""} onChange={e => setSimulationDecisions({ ...simulationDecisions, [node.nodeKey]: e.target.value as "yes" | "no" })}><option value="">{t("请选择判断结论")}</option><option value="yes">{t("是")}</option><option value="no">{t("否")}</option></select></label>)}{run.nodes.some(n => n.status === "running" && n.type === "timer") && <label className="flex gap-2 text-sm"><input type="checkbox" checked={skipWait} onChange={e => setSkipWait(e.target.checked)}/>{t("仅在演练中快进等待，不作为实际等待记录")}</label>}</div>}
+                  {run.executionMode !== "simulation" ? (
+                    <Button className="w-full" disabled>
+                      <Play className="mr-1 h-4 w-4" />
+                      {t("等待 Edge 运行通道")}
+                    </Button>
+                  ) : run.status === "ready" ? (
+                    <Button
+                      className="w-full bg-blue-600 hover:bg-blue-500"
+                      disabled={
+                        !run.integrityValid ||
+                        run.readiness.summary.blocking > 0 ||
+                        startSimulationMut.isPending
+                      }
+                      onClick={() =>
+                        startSimulationMut.mutate({
+                          id: run.id,
+                          expectedRevision: run.revision,
+                          idempotencyKey: globalThis.crypto.randomUUID(),
+                        })
+                      }
+                    >
+                      <Play className="mr-1 h-4 w-4" />
+                      {t(
+                        startSimulationMut.isPending
+                          ? "正在启动模拟…"
+                          : "启动模拟执行"
+                      )}
+                    </Button>
+                  ) : run.status === "running" ? (
+                    <Button
+                      className="w-full bg-blue-600 hover:bg-blue-500"
+                      disabled={
+                        !run.integrityValid || advanceSimulationMut.isPending
+                      }
+                      onClick={() =>
+                        advanceSimulationMut.mutate({
+                          id: run.id,
+                          decisions: simulationDecisions, skipWait,
+                          expectedRevision: run.revision,
+                          idempotencyKey: globalThis.crypto.randomUUID(),
+                        })
+                      }
+                    >
+                      <Play className="mr-1 h-4 w-4" />
+                      {t(
+                        advanceSimulationMut.isPending
+                          ? "正在推进…"
+                          : "推进模拟一步"
+                      )}
+                    </Button>
+                  ) : (
+                    <Button className="w-full" disabled>
+                      <CheckCircle2 className="mr-1 h-4 w-4" />
+                      {t(
+                        run.status === "completed"
+                          ? "模拟运行已完成"
+                          : "模拟运行不可启动"
+                      )}
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>}
+          <details open={run.executionMode !== "manual"} className="rounded-xl border p-4">
+            <summary className="cursor-pointer font-medium">{t("全部步骤与计划明细")}</summary>
+            <div className="mt-4 space-y-4">
           <div className="grid gap-3 lg:grid-cols-4">
             {preparation.map((item, index) => (
               <Card
@@ -692,102 +753,7 @@ export default function LabRunDetail() {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <CheckCircle2 className="h-4 w-4 text-teal-600" />
-                    {t("执行就绪")}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {run.readiness.issues.length === 0 ? (
-                    <div className="flex items-center gap-2 text-sm text-teal-700">
-                      <CheckCircle2 className="h-4 w-4" />
-                      {t("当前检查项全部通过")}
-                    </div>
-                  ) : (
-                    run.readiness.issues.map((issue, index) => (
-                      <div
-                        key={`${issue.code}-${index}`}
-                        className={`flex items-start gap-2 text-sm ${issue.level === "blocking" ? "text-red-700" : "text-amber-700"}`}
-                      >
-                        {issue.level === "blocking" ? (
-                          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                        ) : (
-                          <Info className="mt-0.5 h-4 w-4 shrink-0" />
-                        )}
-                        <span>{issueText(issue)}</span>
-                      </div>
-                    ))
-                  )}
-                  <div className="rounded-lg bg-slate-950 p-3 text-xs leading-relaxed text-slate-300">
-                    {t(
-                      run.executionMode === "simulation"
-                        ? "这是受控模拟 Run。后续可接入节点执行器，但不会产生真机执行声明。"
-                        : "现场启动需要 Edge 心跳、设备租约、命令账本和回执闭环；当前入口保持锁定。"
-                    )}
-                  </div>
-                  {run.executionMode !== "simulation" ? (
-                    <Button className="w-full" disabled>
-                      <Play className="mr-1 h-4 w-4" />
-                      {t("等待 Edge 运行通道")}
-                    </Button>
-                  ) : run.status === "ready" ? (
-                    <Button
-                      className="w-full bg-blue-600 hover:bg-blue-500"
-                      disabled={
-                        !run.integrityValid ||
-                        run.readiness.summary.blocking > 0 ||
-                        startSimulationMut.isPending
-                      }
-                      onClick={() =>
-                        startSimulationMut.mutate({
-                          id: run.id,
-                          expectedRevision: run.revision,
-                          idempotencyKey: globalThis.crypto.randomUUID(),
-                        })
-                      }
-                    >
-                      <Play className="mr-1 h-4 w-4" />
-                      {t(
-                        startSimulationMut.isPending
-                          ? "正在启动模拟…"
-                          : "启动模拟执行"
-                      )}
-                    </Button>
-                  ) : run.status === "running" ? (
-                    <Button
-                      className="w-full bg-blue-600 hover:bg-blue-500"
-                      disabled={
-                        !run.integrityValid || advanceSimulationMut.isPending
-                      }
-                      onClick={() =>
-                        advanceSimulationMut.mutate({
-                          id: run.id,
-                          expectedRevision: run.revision,
-                          idempotencyKey: globalThis.crypto.randomUUID(),
-                        })
-                      }
-                    >
-                      <Play className="mr-1 h-4 w-4" />
-                      {t(
-                        advanceSimulationMut.isPending
-                          ? "正在推进…"
-                          : "推进模拟一步"
-                      )}
-                    </Button>
-                  ) : (
-                    <Button className="w-full" disabled>
-                      <CheckCircle2 className="mr-1 h-4 w-4" />
-                      {t(
-                        run.status === "completed"
-                          ? "模拟运行已完成"
-                          : "模拟运行不可启动"
-                      )}
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
+
 
               <Card>
                 <CardHeader>
@@ -823,6 +789,8 @@ export default function LabRunDetail() {
               </Card>
             </div>
           </div>
+            </div>
+          </details>
         </TabsContent>
       </Tabs>
 

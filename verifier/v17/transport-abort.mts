@@ -1,0 +1,35 @@
+import "dotenv/config";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { readdir } from "node:fs/promises";
+import path from "node:path";
+import { and, eq } from "drizzle-orm";
+import * as schema from "../../db/schema.ts";
+import { Session } from "../../contracts/constants.ts";
+const database = new URL(process.env.DATABASE_URL!); database.pathname = "/biomap_v15_qa"; process.env.DATABASE_URL = database.toString();
+const { getDb } = await import("../../api/queries/connection.ts");
+const { signSessionToken } = await import("../../api/security/session.ts");
+const { evidenceStorageConfig } = await import("../../api/services/evidenceStorage.ts");
+const fixture = JSON.parse(readFileSync("verifier/v17/raw-files-fixture.json", "utf8"));
+const db = getDb(); const [user] = await db.select().from(schema.users).where(eq(schema.users.id, fixture.ownerId));
+const cookie = `${Session.cookieName}=${await signSessionToken({ unionId: user.unionId })}`;
+const config = evidenceStorageConfig(), folder = path.join(config.root, config.namespace);
+const before = new Set(await readdir(folder));
+const controller = new AbortController();
+let pulled = false;
+const body = new ReadableStream<Uint8Array>({ pull(stream) { if (!pulled) { pulled = true; stream.enqueue(new Uint8Array(64 * 1024)); } } }, { highWaterMark: 0 });
+const name = "QA-cancelled-in-transit.bin";
+const upload = fetch(`http://127.0.0.1:3000/api/run-files/upload?${new URLSearchParams({ runId: String(fixture.runId), nodeKey: "assembly", name })}`, { method: "POST", headers: { Cookie: cookie, Origin: "http://127.0.0.1:3115" }, body, duplex: "half", signal: controller.signal } as RequestInit).then(() => "response", () => "aborted");
+let temporary: string | undefined;
+for (let attempt = 0; attempt < 100; attempt++) {
+  temporary = (await readdir(folder)).find(file => !before.has(file) && file.endsWith(".upload"));
+  if (temporary) break;
+  await new Promise(resolve => setTimeout(resolve, 20));
+}
+assert.ok(temporary, "Expected a live server-side partial upload");
+controller.abort(); assert.equal(await upload, "aborted");
+for (let attempt = 0; attempt < 100 && (await readdir(folder)).includes(temporary); attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+assert.ok(!(await readdir(folder)).includes(temporary));
+const rows = await db.select().from(schema.labRunEvidence).where(and(eq(schema.labRunEvidence.runId, fixture.runId), eq(schema.labRunEvidence.name, name)));
+assert.equal(rows.length, 0);
+console.log(JSON.stringify({ status: "passed", scope: "HTTP abort after observing a live partial file", partialFileRemoved: true, evidenceRows: rows.length })); process.exit(0);

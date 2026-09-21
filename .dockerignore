@@ -16,3 +16,4 @@ verifier/runs
 *.sql.gz
 *.pem
 *.key
+.data

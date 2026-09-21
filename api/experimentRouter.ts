@@ -18,6 +18,8 @@ import {
   experimentSamples,
   experimentSignatures,
   experiments,
+  labRunExecution,
+  labRuns,
   projects,
   samples,
   serviceProviders,
@@ -182,8 +184,10 @@ export const experimentRouter = createRouter({
           .where(inArray(externalResults.orderId, externalOrderIds))
           .orderBy(desc(externalResults.createdAt))
       : [];
+    const [sourceRun] = await db.select({ id: labRuns.id, name: labRuns.name, runNo: labRuns.runNo, sampleRequestId: labRuns.sampleRequestId, resultState: labRunExecution.resultState }).from(labRunExecution).innerJoin(labRuns, eq(labRunExecution.runId, labRuns.id)).where(eq(labRunExecution.experimentId, exp.id)).limit(1);
     return {
       ...exp,
+      sourceRun: sourceRun ?? null,
       project,
       sourceWorkflow,
       sourceNodeLabel,
@@ -424,12 +428,11 @@ export const experimentRouter = createRouter({
             message: "复核签名必须由记录创建者之外的复核人完成",
           });
         }
-        const result = await getDb().transaction((tx) =>
-          signExperiment(tx, input.id, {
-            id: ctx.user.id,
-            name: ctx.user.name,
-          }),
-        );
+        const result = await getDb().transaction(async (tx) => {
+          const [linkedTask] = await tx.select({ runId: labRunExecution.runId }).from(labRunExecution).where(eq(labRunExecution.experimentId, input.id)).limit(1);
+          if (linkedTask) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "请返回关联实验任务复核结果并签署，确保结果与实验记录同时确认" });
+          return signExperiment(tx, input.id, { id: ctx.user.id, name: ctx.user.name });
+        });
         return { ok: true, ...result };
       } catch (error) {
         if (error instanceof TRPCError) throw error;

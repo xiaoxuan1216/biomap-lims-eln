@@ -49,9 +49,9 @@ export const FLOW_NODE_TYPES: Record<
 
 export const WORKFLOW_STATUS: Record<string, { label: string; color: string }> = {
   draft: { label: "草稿", color: "#94a3b8" },
-  active: { label: "进行中", color: "#3b82f6" },
-  completed: { label: "已完成", color: "#10b981" },
-  archived: { label: "已归档", color: "#64748b" },
+  active: { label: "待确认草稿", color: "#3b82f6" },
+  completed: { label: "历史方法草稿", color: "#64748b" },
+  archived: { label: "已停用", color: "#64748b" },
 };
 
 export type FlowNodeStatus = "pending" | "in_progress" | "done" | "skipped";
